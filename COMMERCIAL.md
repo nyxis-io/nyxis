@@ -34,6 +34,8 @@ We map our commercial packages to your organization's operational scale:
 * **Included Features:**
   * Unlimited data ingestion volume and server instances.
   * **Nyxis-to-Apache Arrow Zero-Copy Memory Bridge**.
+  * **Distributed Schema Registry & Proxy** — real-time schema validation and drift resolution ([`nyxis-extensions`](../nyxis-extensions/)).
+  * **Hardware-Accelerated SIMD Guard** — AVX-512 / ARM NEON batch field operations ([`nyxis-extensions`](../nyxis-extensions/)).
   * 4-hour critical incident response SLA and legal indemnification.
 
 To purchase a license or request a custom enterprise evaluation contract, reach out directly to **licensing@nyxis.io**.
