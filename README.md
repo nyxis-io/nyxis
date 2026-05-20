@@ -2,7 +2,7 @@
 
 **A bi-modal serialization format that opens a 1.5 GB dataset in under 2 microseconds.**
 
-**Author:** Micael Malta · [Live demos →](https://nxs.covibe.us/index.html)
+**Author:** Micael Malta · [Live demos →](https://nyxis.io/demo)
 
 ---
 

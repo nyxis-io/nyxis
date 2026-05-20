@@ -114,7 +114,7 @@ The point is not comprehensiveness for its own sake. The point is that a `.nxb` 
 
 ## An invitation
 
-The spec is in `SPEC.md`. The RFC with security guidance and implementation notes is in `RFC.md`. Working code for all ten languages is in this repository. The browser demos — live at [nxs.covibe.us](https://nxs.covibe.us/index.html) — show the format under conditions that motivated the design: 14 million records, 60 FPS frame updates, 4 workers sharing one buffer, virtual scroll over 10 million log lines.
+The spec is in `SPEC.md`. The RFC with security guidance and implementation notes is in `RFC.md`. Working code for all ten languages is in this repository. The browser demos — live at [nyxis.io](https://nyxis.io/demo) — show the format under conditions that motivated the design: 14 million records, 60 FPS frame updates, 4 workers sharing one buffer, virtual scroll over 10 million log lines.
 
 Implement it, extend it, tell us where the spec is ambiguous.
 
