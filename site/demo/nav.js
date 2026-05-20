@@ -4,12 +4,6 @@
     { id: "use-cases", label: "Use cases", href: "/use-cases/" },
     { id: "demo", label: "Demo", href: "/demo/" },
     { id: "bench", label: "Benchmark", href: "/bench/" },
-    {
-      id: "github",
-      label: "GitHub",
-      href: "https://github.com/nyxis-io/nyxis",
-      external: true,
-    },
   ];
 
   var DEMO_TOOLS = [
@@ -49,16 +43,34 @@
     if (!root) return;
 
     var current = document.body.getAttribute("data-nav-current") || "";
+    var logo =
+      '<svg class="nav-logo" width="22" height="22" viewBox="0 0 24 24" aria-hidden="true">' +
+      '<rect x="2" y="2" width="9" height="9" rx="1.5" fill="currentColor" opacity="0.9"/>' +
+      '<rect x="13" y="2" width="9" height="9" rx="1.5" fill="currentColor" opacity="0.45"/>' +
+      '<rect x="2" y="13" width="9" height="9" rx="1.5" fill="currentColor" opacity="0.45"/>' +
+      '<rect x="13" y="13" width="9" height="9" rx="1.5" fill="currentColor"/>' +
+      "</svg>";
+
     var parts = [
       '<nav class="site-nav">',
-      '<a class="home" href="/">Nyxis</a>',
-      '<span class="sep">›</span>',
+      '<a class="nav-brand" href="/">' +
+        logo +
+        '<span class="nav-wordmark">Nyxis</span><span class="nav-tag">NXS</span></a>',
+      '<div class="nav-links">',
     ];
     GLOBAL.forEach(function (item) {
-      parts.push(link(item, current));
+      if (item.id === "github") {
+        parts.push(
+          '<a class="nav-github" href="' +
+            esc(item.href) +
+            '" rel="noopener" target="_blank">GitHub</a>'
+        );
+      } else {
+        parts.push(link(item, current));
+      }
     });
     parts.push(
-      '<button type="button" class="theme-toggle" aria-label="Theme"></button>',
+      '</div><button type="button" class="theme-toggle" aria-label="Theme"></button>',
       "</nav>"
     );
 

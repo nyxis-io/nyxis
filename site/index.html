@@ -5,23 +5,25 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Nyxis — Zero-Copy Binary Serialization Protocol</title>
 <meta name="description" content="Nyxis (NXS) is a zero-copy binary serialization protocol: sigil-typed .nxs source, memory-mapped .nxb wire format, tail-index random access, and ten MIT language drivers.">
-<script>(function(){try{if(localStorage.getItem("nxs-theme")==="dark")document.documentElement.removeAttribute("data-theme");else document.documentElement.dataset.theme="light";}catch(_){document.documentElement.dataset.theme="light";}})();</script>
+<script src="/demo/theme-init.js"></script>
 <link rel="stylesheet" href="/demo/theme.css">
 </head>
 <body data-nav-current="home">
 <div id="site-nav-root"></div>
 
 <section class="landing-hero">
-  <p class="page-eyebrow">Zero-copy binary serialization protocol</p>
-  <h1 class="page-title">Open a 1.5&nbsp;GB <code>.nxb</code> file in under 2&nbsp;microseconds</h1>
-  <p class="page-lead">
-    Nyxis is an infrastructure serialization standard — not a SaaS product. Human-readable <code>.nxs</code> compiles to
-    memory-mapped <code>.nxb</code> bytes you query by tail-index without <code>JSON.parse()</code> or full-file decode passes.
-  </p>
-  <div class="landing-actions">
-    <a class="btn btn-primary" href="/demo/">Try live demos</a>
-    <a class="btn btn-secondary" href="/use-cases/">View use cases</a>
-    <a class="btn btn-secondary" href="https://github.com/nyxis-io/nyxis/blob/main/SPEC.md" rel="noopener">Read the spec</a>
+  <div class="hero-inner">
+    <p class="page-eyebrow">Zero-copy binary serialization</p>
+    <h1 class="page-title">Open a 1.5&nbsp;GB <code>.nxb</code> in under 2&nbsp;µs</h1>
+    <p class="page-lead">
+      Nyxis is an infrastructure serialization standard — not application software. Human-readable <code>.nxs</code> compiles to
+      memory-mapped <code>.nxb</code> you query by tail-index, without <code>JSON.parse()</code> or full-file decode passes.
+    </p>
+    <div class="landing-actions">
+      <a class="btn btn-primary" href="/demo/">Try live demos</a>
+      <a class="btn btn-secondary" href="/use-cases/">Production use cases</a>
+      <a class="btn btn-secondary" href="https://github.com/nyxis-io/nyxis/blob/main/SPEC.md" rel="noopener">Specification</a>
+    </div>
   </div>
 </section>
 

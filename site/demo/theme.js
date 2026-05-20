@@ -8,7 +8,7 @@
   function readStored() {
     try {
       var v = localStorage.getItem(KEY);
-      return v === "light" || v === "dark" ? v : "light";
+      return v === "light" || v === "dark" ? v : "dark";
     } catch (_) {
       return "light";
     }
