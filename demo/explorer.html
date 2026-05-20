@@ -2,8 +2,8 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>NXS Log Explorer — 10M lines, smooth scroll</title>
-<script>(function(){try{if(localStorage.getItem("nxs-theme")==="light")document.documentElement.dataset.theme="light";}catch(_){}})();</script>
+<title>Explorer — Nyxis NXS</title>
+<script>(function(){try{if(localStorage.getItem("nxs-theme")==="dark")document.documentElement.removeAttribute("data-theme");else document.documentElement.dataset.theme="light";}catch(_){document.documentElement.dataset.theme="light";}})();</script>
 <link rel="stylesheet" href="theme.css">
 <style>
   * { box-sizing: border-box; }
@@ -33,13 +33,17 @@
     align-items: stretch;
     gap: 12px;
   }
-  .title-block h1 {
-    margin: 0;
-    font-size: 18px; font-weight: 600;
-    letter-spacing: -0.01em;
+  .title-block .page-eyebrow {
+    margin: 0 0 4px;
+    font-size: 11px;
   }
-  .title-block p {
-    margin: 0; color: var(--muted); font-size: 12px;
+  .title-block .page-title {
+    margin: 0;
+    font-size: 18px;
+  }
+  .title-block .page-lead {
+    margin: 0;
+    font-size: 12px;
   }
   .what-tested {
     margin: 0 0 10px;
@@ -277,24 +281,15 @@
   }
 </style>
 </head>
-<body>
-<nav class="site-nav">
-  <a class="home" href="index.html">NXS</a>
-  <span class="sep">›</span>
-  <a href="index.html">Home</a>
-  <a href="../bench/bench.html">Benchmark</a>
-  <a href="wal.html">WAL</a>
-  <a href="ticker.html">Ticker</a>
-  <a href="workers.html">Workers</a>
-  <a href="explorer.html" aria-current="page">Explorer</a>
-  <button type="button" class="theme-toggle" aria-label="Theme"></button>
-</nav>
-<main>
+<body data-nav-current="explorer" data-demo-subnav="true">
+<div id="site-nav-root"></div>
+<main class="page-main page-main--wide" style="padding-top: 24px;">
   <header class="hdr">
     <div class="drop-zone" id="drop">
       <div class="title-block">
-        <h1>NXS Log Explorer</h1>
-        <p>10M-line viewer — virtual scroll, in-place search, zero-copy parsing</p>
+        <p class="page-eyebrow">NXS · Nyxis · Demo</p>
+        <h1 class="page-title">Log explorer</h1>
+        <p class="page-lead">10M-line viewer — virtual scroll, in-place search, zero-copy parsing</p>
       </div>
       <div class="hint" id="drop-hint">
         Drop <code>.nxb</code> or <code>.json</code> here, <label for="file" class="upload-label">browse</label>, or
@@ -1060,6 +1055,7 @@ overlayEl.querySelectorAll(".load-btn").forEach(btn => {
   });
 });
 </script>
+<script src="nav.js"></script>
 <script src="theme.js"></script>
 </body>
 </html>

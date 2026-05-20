@@ -7,13 +7,15 @@ Interactive pages for WAL ingestion, workers, log explorer, and live ticker. The
 From `nyxis/` (requires [Docker](https://www.docker.com/) and the `shared_network` compose network, or adjust `docker-compose.yml`):
 
 ```bash
+make sdk          # clone nyxis-drivers if ../nyxis-drivers/js is empty
+make fixtures     # optional: benchmark datasets under bench/fixtures/
 docker compose up
 ```
 
 Open:
 
 - http://localhost:8000/demo/ — home
-- http://localhost:8000/bench/bench.html — browser benchmark charts
+- http://localhost:8000/bench/ — browser benchmark charts
 
 Static layout:
 

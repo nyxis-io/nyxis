@@ -2,50 +2,11 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>NXS vs JSON vs CSV — Browser Benchmark</title>
-<script>(function(){try{if(localStorage.getItem("nxs-theme")==="light")document.documentElement.dataset.theme="light";}catch(_){}})();</script>
-<link rel="stylesheet" href="theme.css">
+<title>Benchmark — Nyxis NXS</title>
+<script>(function(){try{if(localStorage.getItem("nxs-theme")==="dark")document.documentElement.removeAttribute("data-theme");else document.documentElement.dataset.theme="light";}catch(_){document.documentElement.dataset.theme="light";}})();</script>
+<link rel="stylesheet" href="../demo/theme.css">
 <style>
-  * { box-sizing: border-box; }
-  html, body {
-    margin: 0; padding: 0;
-    background: var(--bg);
-    color: var(--text);
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
-    font-size: 14px;
-    line-height: 1.5;
-  }
-  main {
-    max-width: 1080px;
-    margin: 0 auto;
-    padding: 32px 24px 80px;
-  }
-  h1 {
-    font-size: 28px; font-weight: 600;
-    margin: 0 0 4px;
-    letter-spacing: -0.01em;
-  }
-  .sub {
-    color: var(--muted);
-    margin: 0 0 12px;
-  }
-  .what-tested {
-    margin: 0 0 24px;
-    padding: 14px 18px;
-    background: var(--panel);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    font-size: 13px;
-    line-height: 1.55;
-    color: var(--text);
-  }
-  .what-tested strong:first-child {
-    display: block;
-    margin-bottom: 8px;
-    font-size: 13px;
-    font-weight: 600;
-    color: var(--text);
-  }
+  body { font-size: 14px; line-height: 1.5; }
   .controls {
     display: flex;
     flex-wrap: wrap;
@@ -197,21 +158,14 @@
   code { background: var(--panel-2); padding: 1px 5px; border-radius: 3px; font-size: 13px; }
 </style>
 </head>
-<body>
-<nav class="site-nav">
-  <a class="home" href="../demo/index.html">NXS</a>
-  <span class="sep">›</span>
-  <a href="../demo/index.html">Home</a>
-  <a href="bench.html" aria-current="page">Benchmark</a>
-  <a href="../demo/wal.html">WAL</a>
-  <a href="../demo/ticker.html">Ticker</a>
-  <a href="../demo/workers.html">Workers</a>
-  <a href="../demo/explorer.html">Explorer</a>
-  <button type="button" class="theme-toggle" aria-label="Theme"></button>
-</nav>
-<main>
-  <h1>NXS vs JSON vs CSV — Browser Benchmark</h1>
-  <p class="sub">The same fixtures used in the Node and Go benches, run in your browser over <code>fetch()</code>.</p>
+<body data-nav-current="bench">
+<div id="site-nav-root"></div>
+<main class="page-main page-main--bench">
+  <header class="page-header">
+    <p class="page-eyebrow">NXS · Nyxis</p>
+    <h1 class="page-title">Browser benchmark</h1>
+    <p class="page-lead">NXS vs JSON vs CSV — the same fixtures used in the Node and Go benches, run in your browser over <code>fetch()</code>.</p>
+  </header>
 
   <section class="what-tested" aria-label="What this page tests">
     <strong>What this page tests</strong>
@@ -227,7 +181,6 @@
         <button data-n="100000">100,000</button>
         <button data-n="1000000">1,000,000</button>
         <button data-n="10000000" title="~1.5 GB JSON — exceeds V8 string limit">10,000,000</button>
-        <button data-n="14000000" title="~2.1 GB JSON — well past V8 string limit">14,000,000</button>
       </span>
     </div>
     <button class="primary" id="run">Run benchmark</button>
@@ -948,6 +901,7 @@ $("#run").addEventListener("click", async () => {
 // Run once automatically on page load so the user sees something immediately.
 $("#run").click();
 </script>
-<script src="theme.js"></script>
+<script src="../demo/nav.js"></script>
+<script src="../demo/theme.js"></script>
 </body>
 </html>

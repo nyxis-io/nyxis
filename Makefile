@@ -22,7 +22,7 @@ CONF ?= $(abspath conformance)
 #   make all            # fix + test + conformance
 #   make install-git-hooks   # pre-commit → make lint (SKIP_HOOKS=1 to bypass once)
 
-.PHONY: all lint fix test conformance fuzz fixtures rust-examples install-git-hooks demo bench-node \
+.PHONY: all lint fix test conformance fuzz fixtures sdk rust-examples install-git-hooks demo bench-node \
         lint-rust  fix-rust  test-rust \
         lint-js    fix-js    test-js \
         lint-py    fix-py    test-py \
@@ -97,8 +97,17 @@ rust-examples:
 
 test-rust-ci: test-rust rust-examples
 
+# Clone nyxis-drivers if missing (required for /sdk/ in docker and browser demos).
+$(DRV)/js/nxs.js:
+	@if [ ! -f "$(DRV)/js/nxs.js" ]; then \
+	  echo "Cloning nyxis-drivers into $(DRV)…"; \
+	  git clone --depth 1 https://github.com/nyxis-io/nyxis-drivers.git "$(DRV)"; \
+	fi
+
+sdk: $(DRV)/js/nxs.js
+
 # Best-effort chmod; output path is FIXTURE_OUT (fallback: out/fixtures).
-fixtures:
+fixtures: $(DRV)/js/nxs.js
 	@chmod -R u+w $(FIXTURE_DIR) out/fixtures 2>/dev/null || true
 	cd rust && cargo run --release --bin gen_fixtures -- ../$(FIXTURE_OUT) $(FIXTURE_COUNT)
 

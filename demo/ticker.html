@@ -2,50 +2,11 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>NXS vs JSON — Live Ticker (Frame-drop demo)</title>
-<script>(function(){try{if(localStorage.getItem("nxs-theme")==="light")document.documentElement.dataset.theme="light";}catch(_){}})();</script>
+<title>Ticker — Nyxis NXS</title>
+<script>(function(){try{if(localStorage.getItem("nxs-theme")==="dark")document.documentElement.removeAttribute("data-theme");else document.documentElement.dataset.theme="light";}catch(_){document.documentElement.dataset.theme="light";}})();</script>
 <link rel="stylesheet" href="theme.css">
 <style>
-  * { box-sizing: border-box; }
-  html, body {
-    margin: 0; padding: 0;
-    background: var(--bg);
-    color: var(--text);
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
-    font-size: 14px;
-    line-height: 1.5;
-  }
-  main {
-    max-width: 1240px;
-    margin: 0 auto;
-    padding: 32px 24px 80px;
-  }
-  h1 {
-    font-size: 28px; font-weight: 600;
-    margin: 0 0 4px;
-    letter-spacing: -0.01em;
-  }
-  .sub {
-    color: var(--muted);
-    margin: 0 0 12px;
-  }
-  .what-tested {
-    margin: 0 0 24px;
-    padding: 14px 18px;
-    background: var(--panel);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    font-size: 13px;
-    line-height: 1.55;
-    color: var(--text);
-  }
-  .what-tested strong:first-child {
-    display: block;
-    margin-bottom: 8px;
-    font-size: 13px;
-    font-weight: 600;
-    color: var(--text);
-  }
+  body { font-size: 14px; line-height: 1.5; }
   .controls {
     display: flex;
     flex-wrap: wrap;
@@ -207,20 +168,14 @@
   code { background: var(--panel-2); padding: 1px 5px; border-radius: 3px; font-size: 13px; }
 </style>
 </head>
-<body>
-<nav class="site-nav">
-  <a class="home" href="index.html">NXS</a>
-  <span class="sep">›</span>
-  <a href="index.html">Home</a>
-  <a href="../bench/bench.html">Benchmark</a>
-  <a href="ticker.html" aria-current="page">Ticker</a>
-  <a href="workers.html">Workers</a>
-  <a href="explorer.html">Explorer</a>
-  <button type="button" class="theme-toggle" aria-label="Theme"></button>
-</nav>
-<main>
-  <h1>NXS vs JSON — Live Ticker</h1>
-  <p class="sub">A 60 FPS rAF loop updates record 0's <code>score</code> every frame, on both paths. JSON path re-parses the whole array every K frames (simulating a server push). NXS patches 8 bytes in place. Watch the sparkline.</p>
+<body data-nav-current="ticker" data-demo-subnav="true">
+<div id="site-nav-root"></div>
+<main class="page-main page-main--wide">
+  <header class="page-header">
+    <p class="page-eyebrow">NXS · Nyxis · Demo</p>
+    <h1 class="page-title">Live ticker</h1>
+    <p class="page-lead">A 60 FPS rAF loop updates record 0's <code>score</code> every frame on both paths. JSON re-parses the whole array every K frames (simulating a server push). NXS patches 8 bytes in place.</p>
+  </header>
 
   <section class="what-tested" aria-label="What this page tests">
     <strong>What this page tests</strong>
@@ -575,6 +530,7 @@ loadFixtures().catch(err => {
   setStatus("Load failed: " + err.message, "error");
 });
 </script>
+<script src="nav.js"></script>
 <script src="theme.js"></script>
 </body>
 </html>

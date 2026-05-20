@@ -9,6 +9,7 @@ services:
     networks:
       - shared_network
 
+  # Requires ../nyxis-drivers/js (run `make sdk` from nyxis/) for /sdk/nxs.js etc.
   nxs:
     image: nginx:alpine
     depends_on:
@@ -17,6 +18,7 @@ services:
       - "8000:80"
     volumes:
       - ./docker/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./site:/var/www/site:ro
       - ./demo:/var/www/demo:ro
       - ./bench:/var/www/bench:ro
       - ../nyxis-drivers/js:/var/www/sdk:ro

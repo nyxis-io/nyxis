@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Nyxis — Zero-Copy Binary Serialization Protocol</title>
+<meta name="description" content="Nyxis (NXS) is a zero-copy binary serialization protocol: sigil-typed .nxs source, memory-mapped .nxb wire format, tail-index random access, and ten MIT language drivers.">
+<script>(function(){try{if(localStorage.getItem("nxs-theme")==="dark")document.documentElement.removeAttribute("data-theme");else document.documentElement.dataset.theme="light";}catch(_){document.documentElement.dataset.theme="light";}})();</script>
+<link rel="stylesheet" href="/demo/theme.css">
+</head>
+<body data-nav-current="home">
+<div id="site-nav-root"></div>
+
+<section class="landing-hero">
+  <p class="page-eyebrow">Zero-copy binary serialization protocol</p>
+  <h1 class="page-title">Open a 1.5&nbsp;GB <code>.nxb</code> file in under 2&nbsp;microseconds</h1>
+  <p class="page-lead">
+    Nyxis is an infrastructure serialization standard — not a SaaS product. Human-readable <code>.nxs</code> compiles to
+    memory-mapped <code>.nxb</code> bytes you query by tail-index without <code>JSON.parse()</code> or full-file decode passes.
+  </p>
+  <div class="landing-actions">
+    <a class="btn btn-primary" href="/demo/">Try live demos</a>
+    <a class="btn btn-secondary" href="/use-cases/">View use cases</a>
+    <a class="btn btn-secondary" href="https://github.com/nyxis-io/nyxis/blob/main/SPEC.md" rel="noopener">Read the spec</a>
+  </div>
+</section>
+
+<div class="landing-badges" aria-label="Project status">
+  <a class="landing-badge" href="https://github.com/nyxis-io/nyxis/actions/workflows/rust.yml" rel="noopener" title="Rust CI on nyxis-io/nyxis">
+    <span class="dot" aria-hidden="true"></span>
+    <span class="label">Build</span>
+    <span class="value">Passing</span>
+  </a>
+  <a class="landing-badge" href="https://github.com/nyxis-io/nyxis/actions/workflows/conformance.yml" rel="noopener" title="Cross-language conformance on nyxis-io/nyxis">
+    <span class="dot" aria-hidden="true"></span>
+    <span class="label">Conformance</span>
+    <span class="value">10 / 10 languages</span>
+  </a>
+  <a class="landing-badge" href="https://github.com/nyxis-io/nyxis/blob/main/SPEC.md" rel="noopener" title="NXS binary specification">
+    <span class="dot" aria-hidden="true"></span>
+    <span class="label">Spec</span>
+    <span class="value">v1.1.0 stable</span>
+  </a>
+</div>
+
+<div class="stat-row">
+  <div class="stat">
+    <div class="value">&lt;2&nbsp;µs</div>
+    <div class="label">Cold open on 1.5&nbsp;GB (header + tail-index only)</div>
+  </div>
+  <div class="stat">
+    <div class="value">3.7M×</div>
+    <div class="label">vs JSON parse — Go, 1M records (open)</div>
+  </div>
+  <div class="stat">
+    <div class="value">10</div>
+    <div class="label">Language drivers (C, Go, JS, Python, …)</div>
+  </div>
+</div>
+
+<section class="landing-section">
+  <h2>Bimodal wire format</h2>
+  <pre class="code-block"><span class="key">user</span> {
+  <span class="key">id</span> <span class="sigil">=</span> 42
+  <span class="key">name</span> <span class="sigil">"</span>ada
+  <span class="key">score</span> <span class="sigil">~</span> 98.6
+  <span class="key">active</span> <span class="sigil">?</span> true
+}</pre>
+  <p class="page-lead" style="margin-top: 16px;">
+    Sigil-typed <code>.nxs</code> compiles to aligned <code>.nxb</code> cells. Readers <code>mmap</code> the wire image, use the tail-index for record offsets, and decode fields by key — no full-file parse pass.
+  </p>
+</section>
+
+<section class="landing-section">
+  <h2>Four pillars</h2>
+  <ul class="pillars">
+    <li>
+      <strong>Fast</strong>
+      <span>8-byte aligned atomic cells; zero-copy reads without deserialization.</span>
+    </li>
+    <li>
+      <strong>Flexible</strong>
+      <span>LEB128 bitmask per record; sparse objects pay nothing for absent fields.</span>
+    </li>
+    <li>
+      <strong>Compressible</strong>
+      <span>Interned field dictionary; records store 2-byte indices, not repeated strings.</span>
+    </li>
+    <li>
+      <strong>Human readable</strong>
+      <span><code>.nxs</code> is self-describing plain text — the source is the schema.</span>
+    </li>
+  </ul>
+</section>
+
+<section class="landing-section">
+  <h2>How it works</h2>
+  <p class="page-lead" style="margin-bottom: 20px;">
+    NXS moves parsing cost from query time to compile time. Producers emit structured <code>.nxb</code> payloads;
+    warehouses and dashboards read by pointer, not by re-parsing JSON at scale.
+  </p>
+  <pre class="arch-diagram" aria-label="Ingestion loop diagram"><span class="hl">[ The Ingestion Loop ]</span>
+
+Edge Apps (<span class="hl">.nxs</span>) ──► MIT Drivers (permissive) ──► Structured <span class="hl">.nxb</span> payload
+                                                        │
+Tableau / BI ◄── Apache Arrow bridge ◄── Snowflake ingest (pointer-speed reads)</pre>
+  <p class="page-lead" style="margin: 0; font-size: 14px;">
+    The open-core compiler and CLI compile human-readable sources; MIT SDKs embed in services without copyleft friction.
+    Enterprise extensions add the in-memory compactor and zero-copy Arrow bridge for multi-terabyte pipelines.
+  </p>
+</section>
+
+<section class="landing-section">
+  <h2>Explore</h2>
+  <ul class="card-list">
+    <li>
+      <a href="/demo/">
+        <div class="title">Browser demos</div>
+        <div class="desc">Ticker, workers, log explorer, WAL — interactive NXS in the browser.</div>
+      </a>
+    </li>
+    <li>
+      <a href="/demo/ticker.html">
+        <div class="title">Ticker</div>
+        <div class="desc">Per-frame score updates: full JSON re-parse vs in-place <code>float64</code> patch.</div>
+      </a>
+    </li>
+    <li>
+      <a href="/demo/workers.html">
+        <div class="title">Workers</div>
+        <div class="desc">Four Web Workers — structured clone vs <code>SharedArrayBuffer</code> handoff.</div>
+      </a>
+    </li>
+    <li>
+      <a href="/demo/explorer.html">
+        <div class="title">Log explorer</div>
+        <div class="desc">Virtual scroll over millions of lines backed by mapped <code>.nxb</code>.</div>
+      </a>
+    </li>
+    <li>
+      <a href="/demo/wal.html">
+        <div class="title">WAL / spans</div>
+        <div class="desc">OTel-style span ingestion — append-only WAL vs JSON payloads.</div>
+      </a>
+    </li>
+    <li>
+      <a href="/bench/">
+        <div class="title">Benchmark</div>
+        <div class="desc">NXS vs JSON vs CSV — open, random access, aggregates at 1k–10M records.</div>
+      </a>
+    </li>
+    <li>
+      <a href="/sdk/">
+        <div class="title">JavaScript SDK</div>
+        <div class="desc">MIT-licensed browser reader — static assets for your own demos.</div>
+      </a>
+    </li>
+  </ul>
+</section>
+
+<section class="landing-section enterprise-teaser">
+  <h2>Built for enterprise scale</h2>
+  <p class="page-lead">
+    Nyxis Core and multi-language SDKs are free and open for production within BSL limits — backed by
+    closed-source <strong>Enterprise Extensions</strong> for multi-terabyte data grids.
+  </p>
+  <ul class="enterprise-modules">
+    <li>
+      <strong>Nyxis In-Memory Compactor Daemon (<code>nxs-compactd</code>)</strong>
+      <span>Automated, highly threaded background defragmentation that packs <code>.nxb</code> data sectors on the fly — typically <strong>20–30% less</strong> data-lake storage slack.</span>
+    </li>
+    <li>
+      <strong>Apache Arrow zero-copy memory bridge</strong>
+      <span>High-throughput analytical projection via the Arrow C Data Interface — stream Nyxis payloads into Polars, DuckDB, Snowflake, and Tableau at register speed.</span>
+    </li>
+    <li>
+      <strong>Distributed schema registry &amp; proxy (<code>nxs-registryd</code>)</strong>
+      <span>Centralized gRPC contract management with real-time payload validation and automated runtime schema drift resolution.</span>
+    </li>
+  </ul>
+  <div class="landing-actions" style="justify-content: flex-start; margin-top: 8px;">
+    <a class="btn btn-primary" href="/use-cases/">Explore enterprise use cases</a>
+    <a class="btn btn-secondary" href="https://github.com/nyxis-io/nyxis/blob/main/COMMERCIAL.md" rel="noopener">View commercial pricing</a>
+  </div>
+  <p class="enterprise-footnote">
+    Core &amp; CLI: <a href="https://github.com/nyxis-io/nyxis/blob/main/LICENSE" rel="noopener">BSL 1.1</a>
+    (free under $1M revenue / 100&nbsp;GB per month).
+    SDKs: <a href="https://github.com/nyxis-io/nyxis-drivers" rel="noopener">MIT</a> across ten languages.
+  </p>
+</section>
+
+<footer class="site-footer">
+  <span>© Nyxis · NXS format v1.1</span>
+  <div class="links">
+    <a href="https://github.com/nyxis-io/nyxis">nyxis (compiler &amp; spec)</a>
+    <a href="https://github.com/nyxis-io/nyxis-drivers">nyxis-drivers (SDKs)</a>
+    <a href="https://github.com/nyxis-io/nyxis/blob/main/SPEC.md" rel="noopener">Specification</a>
+  </div>
+</footer>
+
+<script src="/demo/nav.js"></script>
+<script src="/demo/theme.js"></script>
+</body>
+</html>

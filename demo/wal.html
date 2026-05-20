@@ -2,22 +2,11 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>NXS WAL vs JSON — Span Ingestion Benchmark</title>
-<script>(function(){try{if(localStorage.getItem("nxs-theme")==="light")document.documentElement.dataset.theme="light";}catch(_){}})();</script>
+<title>WAL — Nyxis NXS</title>
+<script>(function(){try{if(localStorage.getItem("nxs-theme")==="dark")document.documentElement.removeAttribute("data-theme");else document.documentElement.dataset.theme="light";}catch(_){document.documentElement.dataset.theme="light";}})();</script>
 <link rel="stylesheet" href="theme.css">
 <style>
-  * { box-sizing: border-box; }
-  html, body {
-    margin: 0; padding: 0;
-    background: var(--bg);
-    color: var(--text);
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
-    font-size: 14px;
-    line-height: 1.5;
-  }
-  main { max-width: 980px; margin: 0 auto; padding: 32px 24px 80px; }
-  h1 { font-size: 28px; font-weight: 600; margin: 0 0 4px; letter-spacing: -0.01em; }
-  .sub { color: var(--muted); margin: 0 0 28px; }
+  body { font-size: 14px; line-height: 1.5; }
 
   /* ── Controls ── */
   .controls {
@@ -152,21 +141,14 @@
   code { background: var(--panel-2); padding: 1px 5px; border-radius: 3px; font-size: 13px; }
 </style>
 </head>
-<body>
-<nav class="site-nav">
-  <a class="home" href="index.html">NXS</a>
-  <span class="sep">›</span>
-  <a href="index.html">Home</a>
-  <a href="../bench/bench.html">Benchmark</a>
-  <a href="wal.html" aria-current="page">WAL</a>
-  <a href="ticker.html">Ticker</a>
-  <a href="workers.html">Workers</a>
-  <a href="explorer.html">Explorer</a>
-  <button type="button" class="theme-toggle" aria-label="Theme"></button>
-</nav>
-<main>
-  <h1>NXS WAL vs JSON — Span Ingestion</h1>
-  <p class="sub">Live in-browser comparison: NXS generic encoder, NXS fast-path (fixed-layout, no BigInt), NXS sealed, NXS WASM, and JSON NDJSON.</p>
+<body data-nav-current="wal" data-demo-subnav="true">
+<div id="site-nav-root"></div>
+<main class="page-main">
+  <header class="page-header">
+    <p class="page-eyebrow">NXS · Nyxis · Demo</p>
+    <h1 class="page-title">WAL / span ingestion</h1>
+    <p class="page-lead">Live comparison: NXS generic encoder, fast-path, sealed, WASM, and JSON NDJSON for OTel-style spans.</p>
+  </header>
 
   <div class="controls">
     <label>Spans:</label>
@@ -1046,6 +1028,7 @@ $("run-btn").addEventListener("click", async () => {
 // Kick off WASM load after DOM is ready
 initWasm();
 </script>
+<script src="nav.js"></script>
 <script src="theme.js"></script>
 </body>
 </html>
