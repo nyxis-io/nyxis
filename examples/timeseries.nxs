@@ -1,0 +1,24 @@
+# Example 3: Time-series sensor readings
+sensor_data {
+    device_id: "sensor-7f3a"
+    location: "server-room-b2"
+    unit: $celsius
+    readings {
+        point { ts: @2026-04-30, value: ~21.4, ok: ?true }
+        point { ts: @2026-04-30, value: ~21.6, ok: ?true }
+        point { ts: @2026-04-30, value: ~22.1, ok: ?true }
+        point { ts: @2026-04-30, value: ~22.8, ok: ?true }
+        point { ts: @2026-04-30, value: ~23.5, ok: ?true }
+        point { ts: @2026-04-30, value: ~24.1, ok: ?true }
+        point { ts: @2026-04-30, value: ~24.0, ok: ?false }
+        point { ts: @2026-04-30, value: ~23.7, ok: ?true }
+        point { ts: @2026-04-30, value: ~23.3, ok: ?true }
+        point { ts: @2026-04-30, value: ~22.9, ok: ?true }
+    }
+    stats {
+        min: ~21.4
+        max: ~24.1
+        avg: ~22.94
+        count: =10
+    }
+}

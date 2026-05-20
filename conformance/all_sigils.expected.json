@@ -1,0 +1,1 @@
+{"record_count":1,"keys":["i64_val","f64_val","bool_val","str_val","time_val","bytes_val"],"records":[{"i64_val":-9876543210,"f64_val":3.14159265358979001,"bool_val":false,"str_val":"sigil test","time_val":1700000000000000000}]}

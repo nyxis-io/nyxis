@@ -1,0 +1,85 @@
+# Para-Programmatic Context
+context
+
+# Rust
+rust/target
+# rust/Cargo.lock is intentionally committed for reproducible builds
+
+# Generated fixtures (regenerate with: make fixtures)
+bench/fixtures/
+# Makefile fallback when js/fixtures is not writable (e.g. root-owned deploy tree)
+out/fixtures/
+
+# Python build artifacts
+# _nxs.c is hand-written source — committed; only the compiled .so is excluded
+py/_nxs.cpython-*.so
+py/__pycache__/
+js/__pycache__/
+**/__pycache__/
+*.pyc
+
+# Ruby build artifacts
+ruby/ext/nxs/Makefile
+ruby/ext/nxs/*.o
+ruby/ext/nxs/*.bundle
+ruby/ext/nxs/*.bundle.dSYM/
+ruby/ext/nxs/mkmf.log
+
+# PHP Composer (phpstan for make lint)
+php/vendor/
+
+# PHP build artifacts
+php/nxs_ext/.libs/
+php/nxs_ext/autom4te.cache/
+php/nxs_ext/modules/
+php/nxs_ext/config.h
+php/nxs_ext/config.h.in~
+php/nxs_ext/config.log
+php/nxs_ext/config.nice
+php/nxs_ext/config.status
+php/nxs_ext/configure
+php/nxs_ext/libtool
+php/nxs_ext/Makefile
+php/nxs_ext/Makefile.fragments
+php/nxs_ext/Makefile.objects
+php/nxs_ext/nxs.la
+php/nxs_ext/nxs_ext.c.bak
+php/nxs_ext/*.lo
+php/nxs_ext/*.dep
+
+# Go binaries
+go/bench
+
+# Kotlin / Gradle
+kotlin/.gradle/
+kotlin/build/
+# gradle/wrapper/gradle-wrapper.jar and gradlew are intentionally committed
+
+# WebAssembly build artifacts (nxs_reducers.wasm is pre-built and committed)
+# js/wasm/*.wasm — intentionally tracked; built by .github/workflows/build-wasm.yml
+
+# Editor / tooling
+.playwright-mcp/
+.ruby-lsp/
+
+# C compiled binaries
+c/test
+c/bench
+
+# C# build output
+csharp/bin/
+csharp/obj/
+
+# Swift build output
+swift/.build/
+swift/.swiftlint-cache/
+
+# Screenshot artifacts
+*.png
+workers-*.png
+index-*.png
+bench-*.png
+ticker-*.png
+
+# Para-Programmatic Context
+.para-worktrees/

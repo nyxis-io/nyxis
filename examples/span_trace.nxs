@@ -1,0 +1,238 @@
+# Example: Distributed Trace — AI-assisted checkout flow
+#
+# A realistic 14-span trace from a production e-commerce + ML platform.
+# The request enters at the API gateway, fans out across auth, catalogue,
+# recommendations (LLM), inventory, payments, and notification services.
+# One span errors (payment declined), triggering a retry that succeeds.
+# One span is the root LLM inference call with a token-count payload.
+#
+# Fields match the canonical SpanSchema in rust/src/wal.rs:
+#   trace_id_hi / trace_id_lo  — 128-bit trace ID split into two i64
+#   span_id                    — 64-bit span ID
+#   parent_span_id             — 64-bit parent (0 = root span)
+#   name                       — operation name  (e.g. "http.server", "db.query")
+#   service                    — originating service
+#   start_time_ns              — wall-clock start, Unix nanoseconds
+#   duration_ns                — elapsed nanoseconds
+#   status_code                — 0 OK · 1 ERROR · 2 UNSET
+#   payload                    — opaque JSON blob (used for LLM token metadata here)
+#
+# Trace topology (indentation = parent relationship):
+#
+#   [gateway]     http.server                         ROOT   0 ms → 312 ms
+#     [auth-svc]    jwt.verify                               1 ms → 3.2 ms
+#       [users-db]    db.select users                        1.4 ms → 2.8 ms
+#     [session-svc]   session.lookup                         2 ms → 2.9 ms
+#       [redis]         cache.get session                    2.1 ms → 2.6 ms
+#     [catalogue-svc]  http.client GET /items                4 ms → 18 ms
+#       [catalogue-db]  db.select items                      4.5 ms → 16 ms
+#         [catalogue-db]  db.index_scan category_idx         4.8 ms → 15 ms
+#     [recommend-svc]  llm.inference rerank                  20 ms → 198 ms  (LLM span)
+#       [vector-db]     db.ann_search embeddings             20.5 ms → 35 ms
+#     [inventory-svc]  grpc.unary CheckStock                 22 ms → 31 ms
+#       [inventory-db]  db.select inventory                  22.4 ms → 30 ms
+#     [payment-svc]   http.client POST /charge (ERROR)       200 ms → 248 ms
+#     [payment-svc]   http.client POST /charge (retry OK)    252 ms → 298 ms
+#     [notify-svc]    pubsub.publish order.confirmed         299 ms → 302 ms
+
+# ── Root span ─────────────────────────────────────────────────────────────────
+
+span_root {
+    trace_id_hi:    =7823419865032751104
+    trace_id_lo:    =-4312098765432198144
+    span_id:        =1000000000000000001
+    parent_span_id: =0
+    name:           "http.server"
+    service:        "gateway"
+    start_time_ns:  @2024-11-14T09:31:00
+    duration_ns:    =312000000
+    status_code:    =0
+}
+
+# ── Auth subtree ──────────────────────────────────────────────────────────────
+
+span_auth {
+    trace_id_hi:    =7823419865032751104
+    trace_id_lo:    =-4312098765432198144
+    span_id:        =1000000000000000002
+    parent_span_id: =1000000000000000001
+    name:           "jwt.verify"
+    service:        "auth-svc"
+    start_time_ns:  @2024-11-14T09:31:00.001
+    duration_ns:    =2200000
+    status_code:    =0
+}
+
+span_users_db {
+    trace_id_hi:    =7823419865032751104
+    trace_id_lo:    =-4312098765432198144
+    span_id:        =1000000000000000003
+    parent_span_id: =1000000000000000002
+    name:           "db.select"
+    service:        "users-db"
+    start_time_ns:  @2024-11-14T09:31:00.0014
+    duration_ns:    =1400000
+    status_code:    =0
+}
+
+# ── Session subtree ───────────────────────────────────────────────────────────
+
+span_session {
+    trace_id_hi:    =7823419865032751104
+    trace_id_lo:    =-4312098765432198144
+    span_id:        =1000000000000000004
+    parent_span_id: =1000000000000000001
+    name:           "session.lookup"
+    service:        "session-svc"
+    start_time_ns:  @2024-11-14T09:31:00.002
+    duration_ns:    =900000
+    status_code:    =0
+}
+
+span_redis {
+    trace_id_hi:    =7823419865032751104
+    trace_id_lo:    =-4312098765432198144
+    span_id:        =1000000000000000005
+    parent_span_id: =1000000000000000004
+    name:           "cache.get"
+    service:        "redis"
+    start_time_ns:  @2024-11-14T09:31:00.0021
+    duration_ns:    =500000
+    status_code:    =0
+}
+
+# ── Catalogue subtree ─────────────────────────────────────────────────────────
+
+span_catalogue_http {
+    trace_id_hi:    =7823419865032751104
+    trace_id_lo:    =-4312098765432198144
+    span_id:        =1000000000000000006
+    parent_span_id: =1000000000000000001
+    name:           "http.client"
+    service:        "catalogue-svc"
+    start_time_ns:  @2024-11-14T09:31:00.004
+    duration_ns:    =14000000
+    status_code:    =0
+}
+
+span_catalogue_db {
+    trace_id_hi:    =7823419865032751104
+    trace_id_lo:    =-4312098765432198144
+    span_id:        =1000000000000000007
+    parent_span_id: =1000000000000000006
+    name:           "db.select"
+    service:        "catalogue-db"
+    start_time_ns:  @2024-11-14T09:31:00.0045
+    duration_ns:    =11500000
+    status_code:    =0
+}
+
+span_catalogue_idx {
+    trace_id_hi:    =7823419865032751104
+    trace_id_lo:    =-4312098765432198144
+    span_id:        =1000000000000000008
+    parent_span_id: =1000000000000000007
+    name:           "db.index_scan"
+    service:        "catalogue-db"
+    start_time_ns:  @2024-11-14T09:31:00.0048
+    duration_ns:    =10200000
+    status_code:    =0
+}
+
+# ── Recommendations subtree (LLM) ─────────────────────────────────────────────
+# payload carries token counts and model metadata for cost accounting.
+
+span_recommend {
+    trace_id_hi:    =7823419865032751104
+    trace_id_lo:    =-4312098765432198144
+    span_id:        =1000000000000000009
+    parent_span_id: =1000000000000000001
+    name:           "llm.inference"
+    service:        "recommend-svc"
+    start_time_ns:  @2024-11-14T09:31:00.020
+    duration_ns:    =178000000
+    status_code:    =0
+    payload:        "{\"model\":\"text-embedding-3-small\",\"prompt_tokens\":312,\"completion_tokens\":0,\"total_tokens\":312,\"top_k\":20,\"reranked\":12,\"latency_to_first_token_ms\":22}"
+}
+
+span_vector_db {
+    trace_id_hi:    =7823419865032751104
+    trace_id_lo:    =-4312098765432198144
+    span_id:        =1000000000000000010
+    parent_span_id: =1000000000000000009
+    name:           "db.ann_search"
+    service:        "vector-db"
+    start_time_ns:  @2024-11-14T09:31:00.0205
+    duration_ns:    =14500000
+    status_code:    =0
+}
+
+# ── Inventory subtree ─────────────────────────────────────────────────────────
+
+span_inventory {
+    trace_id_hi:    =7823419865032751104
+    trace_id_lo:    =-4312098765432198144
+    span_id:        =1000000000000000011
+    parent_span_id: =1000000000000000001
+    name:           "grpc.unary"
+    service:        "inventory-svc"
+    start_time_ns:  @2024-11-14T09:31:00.022
+    duration_ns:    =9000000
+    status_code:    =0
+}
+
+span_inventory_db {
+    trace_id_hi:    =7823419865032751104
+    trace_id_lo:    =-4312098765432198144
+    span_id:        =1000000000000000012
+    parent_span_id: =1000000000000000011
+    name:           "db.select"
+    service:        "inventory-db"
+    start_time_ns:  @2024-11-14T09:31:00.0224
+    duration_ns:    =7600000
+    status_code:    =0
+}
+
+# ── Payment spans (error + retry) ─────────────────────────────────────────────
+# First attempt fails (payment gateway timeout → status_code=1).
+# Retry succeeds 4 ms later with a different provider.
+
+span_payment_fail {
+    trace_id_hi:    =7823419865032751104
+    trace_id_lo:    =-4312098765432198144
+    span_id:        =1000000000000000013
+    parent_span_id: =1000000000000000001
+    name:           "http.client"
+    service:        "payment-svc"
+    start_time_ns:  @2024-11-14T09:31:00.200
+    duration_ns:    =48000000
+    status_code:    =1
+    payload:        "{\"attempt\":1,\"provider\":\"stripe\",\"error\":\"upstream_timeout\",\"http_status\":504}"
+}
+
+span_payment_retry {
+    trace_id_hi:    =7823419865032751104
+    trace_id_lo:    =-4312098765432198144
+    span_id:        =1000000000000000014
+    parent_span_id: =1000000000000000001
+    name:           "http.client"
+    service:        "payment-svc"
+    start_time_ns:  @2024-11-14T09:31:00.252
+    duration_ns:    =46000000
+    status_code:    =0
+    payload:        "{\"attempt\":2,\"provider\":\"adyen\",\"transaction_id\":\"txn_9f3a21c8\",\"http_status\":200}"
+}
+
+# ── Notification (fire-and-forget) ────────────────────────────────────────────
+
+span_notify {
+    trace_id_hi:    =7823419865032751104
+    trace_id_lo:    =-4312098765432198144
+    span_id:        =1000000000000000015
+    parent_span_id: =1000000000000000001
+    name:           "pubsub.publish"
+    service:        "notify-svc"
+    start_time_ns:  @2024-11-14T09:31:00.299
+    duration_ns:    =3100000
+    status_code:    =0
+}

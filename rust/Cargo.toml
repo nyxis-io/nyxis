@@ -1,0 +1,79 @@
+[package]
+name = "nyxis"
+version = "1.0.0"
+edition = "2021"
+rust-version = "1.75"
+authors = ["Micael Malta"]
+license = "BUSL-1.1"
+description = "Zero-copy compiler and reader for the Nyxis (NXS) bi-modal serialization format"
+repository = "https://github.com/nyxis-io/nyxis"
+documentation = "https://docs.rs/nyxis"
+readme = "README.md"
+keywords = ["serialization", "binary", "zero-copy", "nxs", "nyxis"]
+categories = ["encoding", "parser-implementations", "command-line-utilities"]
+
+[lib]
+name = "nxs"
+path = "src/lib.rs"
+
+[[bin]]
+name = "nxs"
+path = "src/main.rs"
+
+[[bin]]
+name = "bench"
+path = "src/bench.rs"
+
+[[bin]]
+name = "gen_fixtures"
+path = "src/gen_fixtures.rs"
+
+[[bin]]
+name = "gen_conformance"
+path = "../conformance/generate.rs"
+
+[[bin]]
+name = "conformance_runner"
+path = "../conformance/run_rust.rs"
+
+[[bin]]
+name = "nxs-trace"
+path = "src/bin/nxs_trace.rs"
+
+[[bin]]
+name = "nxs-import"
+path = "src/bin/nxs_import.rs"
+
+[[bin]]
+name = "nxs-export"
+path = "src/bin/nxs_export.rs"
+
+[[bin]]
+name = "nxs-inspect"
+path = "src/bin/nxs_inspect.rs"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+clap = { version = "4.5", features = ["derive"] }
+csv = "1"
+quick-xml = { version = "0.36", features = ["encoding"] }
+base64 = "0.22"
+tempfile = "3"
+serde_yaml2 = "0.1"
+
+[[test]]
+name = "exit_codes"
+path = "tests/convert/exit_codes.rs"
+
+[[test]]
+name = "json_import"
+path = "tests/convert/json_import.rs"
+
+[[test]]
+name = "e2e"
+path = "tests/convert/e2e.rs"
+
+[dev-dependencies]
+assert_cmd = "2"
+predicates = "3"

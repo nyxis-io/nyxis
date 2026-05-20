@@ -1,0 +1,47 @@
+# Example 2: Product Catalog
+catalog {
+    version: =3
+    generated_at: @2026-04-30
+    products {
+        item {
+            sku: "NX-1001"
+            name: "Nyxis Keyboard Pro"
+            price: ~149.99
+            stock: =342
+            available: ?true
+            category: $electronics
+            weight_kg: ~0.85
+            tags: [$featured, $new]
+        }
+        item {
+            sku: "NX-1002"
+            name: "Ergonomic Mouse X"
+            price: ~59.95
+            stock: =1204
+            available: ?true
+            category: $electronics
+            weight_kg: ~0.12
+            tags: [$bestseller]
+        }
+        item {
+            sku: "NX-2001"
+            name: "Standing Desk Frame"
+            price: ~499.00
+            stock: =0
+            available: ?false
+            category: $furniture
+            weight_kg: ~22.50
+            tags: [$out_of_stock]
+        }
+        item {
+            sku: "NX-3001"
+            name: "USB-C Hub 7-in-1"
+            price: ~34.99
+            stock: =876
+            available: ?true
+            category: $accessories
+            weight_kg: ~0.09
+            tags: [$featured, $sale]
+        }
+    }
+}

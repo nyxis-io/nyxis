@@ -1,0 +1,26 @@
+# Example 1: User Profile
+user {
+    id: =42
+    username: "alice_wonder"
+    email: "alice@example.com"
+    age: =31
+    balance: ~2874.99
+    active: ?true
+    role: $admin
+    bio: "Software engineer and open-source contributor."
+    created_at: @2022-03-15
+    last_login: @2026-04-29
+    tags: [$admin, $beta, $verified]
+    address {
+        street: "123 Maple St"
+        city: "Springfield"
+        zip: "62701"
+        country: "US"
+    }
+    preferences {
+        theme: $dark
+        notifications: ?true
+        language: "en-US"
+        items_per_page: =25
+    }
+}

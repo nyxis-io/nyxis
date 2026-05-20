@@ -1,0 +1,233 @@
+name: Conformance
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'conformance/**'
+      - 'rust/**'
+      - 'js/**'
+      - 'py/**'
+      - 'go/**'
+      - 'ruby/**'
+      - 'php/**'
+      - 'c/**'
+      - 'swift/**'
+      - 'kotlin/**'
+      - 'csharp/**'
+      - 'Makefile'
+      - '.github/workflows/conformance.yml'
+  pull_request:
+    paths:
+      - 'conformance/**'
+      - 'rust/**'
+      - 'js/**'
+      - 'py/**'
+      - 'go/**'
+      - 'ruby/**'
+      - 'php/**'
+      - 'c/**'
+      - 'swift/**'
+      - 'kotlin/**'
+      - 'csharp/**'
+      - 'Makefile'
+      - '.github/workflows/conformance.yml'
+
+jobs:
+  generate-vectors:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            rust/target
+          key: rust-conformance-${{ hashFiles('rust/Cargo.lock') }}
+          restore-keys: rust-conformance-
+
+      - run: make conformance-generate
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: conformance-vectors-${{ github.sha }}
+          path: conformance/
+          retention-days: 1
+
+  run-rust:
+    needs: generate-vectors
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            rust/target
+          key: rust-conformance-${{ hashFiles('rust/Cargo.lock') }}
+          restore-keys: rust-conformance-
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: conformance-vectors-${{ github.sha }}
+          path: conformance/
+
+      - run: make conformance-run-rust
+
+  run-js:
+    needs: generate-vectors
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: conformance-vectors-${{ github.sha }}
+          path: conformance/
+
+      - run: make conformance-run-js
+
+  run-python:
+    needs: generate-vectors
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: conformance-vectors-${{ github.sha }}
+          path: conformance/
+
+      - run: make conformance-run-py
+
+  run-go:
+    needs: generate-vectors
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: conformance-vectors-${{ github.sha }}
+          path: conformance/
+
+      - run: make conformance-run-go
+
+  run-ruby:
+    needs: generate-vectors
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.3'
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: conformance-vectors-${{ github.sha }}
+          path: conformance/
+
+      - run: make conformance-run-ruby
+
+  run-php:
+    needs: generate-vectors
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: conformance-vectors-${{ github.sha }}
+          path: conformance/
+
+      - run: make conformance-run-php
+
+  run-c:
+    needs: generate-vectors
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: conformance-vectors-${{ github.sha }}
+          path: conformance/
+
+      - run: make conformance-run-c
+
+  run-swift:
+    needs: generate-vectors
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: conformance-vectors-${{ github.sha }}
+          path: conformance/
+
+      - run: make conformance-run-swift
+
+  run-kotlin:
+    needs: generate-vectors
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: conformance-vectors-${{ github.sha }}
+          path: conformance/
+
+      - run: make conformance-run-kotlin
+
+  run-csharp:
+    needs: generate-vectors
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.0'
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: conformance-vectors-${{ github.sha }}
+          path: conformance/
+
+      - run: make conformance-run-csharp
+        env:
+          DOTNET_FRAMEWORK: net9.0

@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# Run before every commit. Install once: make install-git-hooks
+# Bypass once: SKIP_HOOKS=1 git commit ...
+set -euo pipefail
+if [[ -n "${SKIP_HOOKS:-}" ]]; then
+	exit 0
+fi
+cd "$(git rev-parse --show-toplevel)"
+exec make lint

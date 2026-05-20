@@ -1,0 +1,29 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: demo/Dockerfile
+    expose:
+      - "8000"
+    restart: unless-stopped
+    networks:
+      - shared_network
+
+  nxs:
+    image: nginx:alpine
+    depends_on:
+      - app
+    ports:
+      - "8000:80"
+    volumes:
+      - ./docker/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./demo:/var/www/demo:ro
+      - ./bench:/var/www/bench:ro
+      - ../nyxis-drivers/js:/var/www/sdk:ro
+    restart: unless-stopped
+    networks:
+      - shared_network
+
+networks:
+  shared_network:
+    external: true

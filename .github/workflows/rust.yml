@@ -1,0 +1,77 @@
+name: Rust
+
+on:
+  push:
+    branches: [main]
+    paths: ['rust/**', 'examples/**', 'conformance/**', 'Makefile', '.github/workflows/rust.yml']
+    tags:
+      - 'rust/**'
+  pull_request:
+    paths: ['rust/**', 'examples/**', 'conformance/**', 'Makefile', '.github/workflows/rust.yml']
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            rust/target
+          key: rust-ci-${{ hashFiles('rust/Cargo.lock') }}
+          restore-keys: rust-
+
+      - run: make lint-rust
+      - run: make test-rust-ci
+
+      - name: Converter smoke test (nxs-import / nxs-export on 1k fixture)
+        run: |
+          cd rust
+          cargo build --release --bin nxs-import --bin nxs-export --bin nxs-inspect --bin gen_fixtures
+          ./target/release/gen_fixtures /tmp/nxs_fixtures 1000
+          ./target/release/nxs-import --from json /tmp/nxs_fixtures/records_1000.json /tmp/smoke.nxb
+          ./target/release/nxs-export --to json /tmp/smoke.nxb /tmp/smoke_out.json
+          python3 -c "
+          import json, sys
+          orig = json.load(open('/tmp/nxs_fixtures/records_1000.json'))
+          exp  = json.load(open('/tmp/smoke_out.json'))
+          assert len(orig) == len(exp), f'record count mismatch: {len(orig)} vs {len(exp)}'
+          print(f'smoke: {len(exp)} records verified')
+          "
+          rm -rf /tmp/nxs_fixtures /tmp/smoke.nxb /tmp/smoke_out.json
+
+  fuzz:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install LLVM/Clang (required to build libfuzzer-sys on Linux)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential llvm-dev libclang-dev clang
+
+      - uses: dtolnay/rust-toolchain@nightly
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            rust/target
+            rust/fuzz/target
+          key: rust-fuzz-${{ hashFiles('rust/Cargo.lock', 'rust/fuzz/Cargo.toml') }}
+          restore-keys: |
+            rust-fuzz-
+            rust-nightly-
+
+      - name: Install cargo-fuzz
+        run: cargo install cargo-fuzz
+
+      - run: make fuzz FUZZ_TIME=60

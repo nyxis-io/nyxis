@@ -1,0 +1,1065 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>NXS Log Explorer — 10M lines, smooth scroll</title>
+<script>(function(){try{if(localStorage.getItem("nxs-theme")==="light")document.documentElement.dataset.theme="light";}catch(_){}})();</script>
+<link rel="stylesheet" href="theme.css">
+<style>
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    font-size: 13px;
+    line-height: 1.5;
+    height: 100vh;
+    overflow: hidden;
+  }
+  main {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 14px 18px;
+    gap: 10px;
+  }
+
+  /* ── Header ─────────────────────────────────────────────────────────── */
+  header.hdr {
+    display: flex;
+    align-items: stretch;
+    gap: 12px;
+  }
+  .title-block h1 {
+    margin: 0;
+    font-size: 18px; font-weight: 600;
+    letter-spacing: -0.01em;
+  }
+  .title-block p {
+    margin: 0; color: var(--muted); font-size: 12px;
+  }
+  .what-tested {
+    margin: 0 0 10px;
+    padding: 10px 14px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    font-size: 12px;
+    line-height: 1.5;
+    color: var(--text);
+    flex-shrink: 0;
+  }
+  .what-tested strong:first-child {
+    display: block;
+    margin-bottom: 6px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text);
+  }
+  .drop-zone {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 10px 16px;
+    background: var(--panel);
+    border: 1px dashed var(--border);
+    border-radius: 8px;
+    transition: border-color 0.15s, background 0.15s;
+  }
+  .drop-zone.drag {
+    border-color: var(--accent);
+    background: var(--panel-2);
+  }
+  .drop-zone .hint {
+    color: var(--muted); font-size: 12px; flex: 1;
+  }
+  .drop-zone .upload-label {
+    color: var(--accent);
+    text-decoration: underline;
+    cursor: pointer;
+  }
+  .drop-zone .upload-label:hover { color: var(--text); }
+  .drop-zone .file-info {
+    color: var(--text);
+    font-variant-numeric: tabular-nums;
+    font-size: 12px;
+  }
+  .drop-zone .file-info strong { color: var(--accent); }
+  button, input[type="text"], input[type="number"] {
+    background: var(--panel-2);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 6px 12px;
+    font-size: 13px;
+    font-family: inherit;
+  }
+  button { cursor: pointer; }
+  button.primary { background: var(--accent); color: var(--on-accent); border-color: var(--accent); font-weight: 600; }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+  input[type="text"]:focus, input[type="number"]:focus, button:focus {
+    outline: 1px solid var(--accent); outline-offset: 1px;
+  }
+
+  /* ── Toolbar ────────────────────────────────────────────────────────── */
+  .toolbar {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    padding: 8px 12px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+  }
+  .toolbar label { color: var(--muted); font-size: 12px; }
+  .toolbar .grow { flex: 1; }
+  .search-wrap {
+    flex: 1;
+    position: relative;
+    display: flex;
+    align-items: center;
+  }
+  .search-wrap input {
+    width: 100%;
+    padding-right: 140px;
+  }
+  .search-wrap .badge {
+    position: absolute;
+    right: 8px;
+    color: var(--muted);
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+    pointer-events: none;
+  }
+  .search-wrap .badge.active { color: var(--good); }
+  .search-wrap .badge.searching { color: var(--warn); }
+
+  .jump {
+    display: flex; gap: 6px; align-items: center;
+  }
+  .jump input { width: 120px; font-variant-numeric: tabular-nums; }
+
+  .nav-btns { display: flex; gap: 4px; }
+  .nav-btns button { padding: 6px 10px; }
+
+  /* ── Main pane ──────────────────────────────────────────────────────── */
+  .viewer {
+    flex: 1;
+    position: relative;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+    min-height: 0;
+  }
+  .scroll {
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+    font-family: "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+    font-size: 12px;
+    line-height: var(--row-height);
+  }
+  .scroll::-webkit-scrollbar { width: 12px; background: var(--panel); }
+  .scroll::-webkit-scrollbar-thumb {
+    background: var(--panel-2);
+    border-radius: 6px;
+    border: 2px solid var(--panel);
+  }
+  .scroll::-webkit-scrollbar-thumb:hover { background: var(--border); }
+
+  /* Inner spacer sized to total virtual height. */
+  .spacer { position: relative; width: 100%; }
+  /* Rows are absolutely positioned inside the spacer; we only create ~60
+     nodes and move them with transform: translateY. */
+  .row {
+    position: absolute;
+    left: 0; right: 0;
+    height: var(--row-height);
+    padding: 0 14px;
+    display: flex;
+    gap: 12px;
+    white-space: nowrap;
+    overflow: hidden;
+    color: var(--text);
+  }
+  .row:hover { background: var(--row-hover-accent); }
+  .row.match { background: var(--row-match-bg); }
+  .row.current-match { background: var(--row-current-match-bg); }
+  .row .lineno {
+    color: var(--muted);
+    width: 10ch;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    flex-shrink: 0;
+  }
+  .row .ts {
+    color: var(--accent);
+    width: 24ch;
+    flex-shrink: 0;
+  }
+  .row .component {
+    color: var(--good);
+    width: 20ch;
+    flex-shrink: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .row .msg {
+    color: var(--text);
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .row .score {
+    color: var(--warn);
+    width: 10ch;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    flex-shrink: 0;
+  }
+  .row .flag {
+    width: 3ch;
+    color: var(--muted);
+    flex-shrink: 0;
+  }
+  .row .flag.on { color: var(--good); }
+
+  /* Overlay shown before a file is loaded. */
+  .overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--overlay-scrim);
+    color: var(--muted);
+    font-size: 14px;
+    z-index: 10;
+    text-align: center;
+    padding: 20px;
+  }
+  .overlay.hide { display: none; }
+
+  /* ── Status bar ─────────────────────────────────────────────────────── */
+  .status {
+    display: flex;
+    gap: 20px;
+    padding: 6px 12px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    font-size: 12px;
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+    align-items: center;
+  }
+  .status .sep { color: var(--border); }
+  .status strong { color: var(--text); font-weight: 600; }
+  .status .ok { color: var(--good); }
+  .status .warn { color: var(--warn); }
+  .status .bad { color: var(--bad); }
+  .status .grow { flex: 1; }
+
+  kbd {
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 1px 5px;
+    font-size: 11px;
+    font-family: "SF Mono", Menlo, monospace;
+    color: var(--muted);
+  }
+</style>
+</head>
+<body>
+<nav class="site-nav">
+  <a class="home" href="index.html">NXS</a>
+  <span class="sep">›</span>
+  <a href="index.html">Home</a>
+  <a href="../bench/bench.html">Benchmark</a>
+  <a href="wal.html">WAL</a>
+  <a href="ticker.html">Ticker</a>
+  <a href="workers.html">Workers</a>
+  <a href="explorer.html" aria-current="page">Explorer</a>
+  <button type="button" class="theme-toggle" aria-label="Theme"></button>
+</nav>
+<main>
+  <header class="hdr">
+    <div class="drop-zone" id="drop">
+      <div class="title-block">
+        <h1>NXS Log Explorer</h1>
+        <p>10M-line viewer — virtual scroll, in-place search, zero-copy parsing</p>
+      </div>
+      <div class="hint" id="drop-hint">
+        Drop <code>.nxb</code> or <code>.json</code> here, <label for="file" class="upload-label">browse</label>, or
+      </div>
+      <button type="button" id="pick">Choose file</button>
+      <input type="file" id="file" accept=".nxb,.NXB,.json,.JSON,application/json,application/octet-stream" hidden>
+      <div class="file-info" id="file-info"></div>
+    </div>
+  </header>
+
+  <section class="what-tested" aria-label="What this page tests">
+    <strong>What this page tests</strong>
+    UI scalability for a <strong>very large</strong> log-shaped dataset (millions of rows): a fixed <strong>row pool</strong> and a tall inner <strong>spacer</strong> with scroll scaling map viewport position to record indices without creating one DOM node per line. With <code>.nxb</code>, field reads use the binary tail-index for <strong>random access</strong> without holding a full JS object graph for every record. With <code>.json</code>, the file is parsed once into an array, then the same virtual list runs over that in-memory model (useful for comparison). Search, jump-to-line, and the status bar’s <strong>render</strong> timing show whether scrolling stays smooth under load.
+  </section>
+
+  <div class="toolbar">
+    <div class="search-wrap">
+      <input type="text" id="search" placeholder="Search username substring…  (Ctrl/Cmd+F)" autocomplete="off" spellcheck="false">
+      <span class="badge" id="search-badge"></span>
+    </div>
+    <div class="nav-btns">
+      <button id="prev-match" title="Previous match (Shift+Enter)">‹</button>
+      <button id="next-match" title="Next match (Enter)">›</button>
+    </div>
+    <div class="jump">
+      <label>Jump to line:</label>
+      <input type="number" id="jump-input" min="1" placeholder="1">
+      <button id="jump-btn">Go</button>
+    </div>
+  </div>
+
+  <div class="viewer">
+    <div class="scroll" id="scroll" tabindex="0">
+      <div class="spacer" id="spacer"></div>
+    </div>
+    <div class="overlay" id="overlay">Loading fixture…</div>
+  </div>
+
+  <div class="status">
+    <span id="status-pos">—</span>
+    <span class="sep">│</span>
+    <span id="status-matches">No search active</span>
+    <span class="grow"></span>
+    <span id="status-frame" class="ok">—</span>
+    <span class="sep">│</span>
+    <span class="muted">
+      <kbd>↑↓</kbd> <kbd>PgUp</kbd> <kbd>PgDn</kbd> <kbd>Home</kbd> <kbd>End</kbd>
+      <kbd>Enter</kbd> next match
+    </span>
+  </div>
+</main>
+
+<script type="module">
+import { NxsReader } from "/sdk/nxs.js";
+
+// ── Constants ──────────────────────────────────────────────────────────────
+const ROW_HEIGHT = 22;
+const BUFFER_ROWS = 8;                 // rows rendered above/below viewport
+// Browsers cap CSS element height. Safe common ceiling is ~33_000_000 px
+// (Chrome, Safari, Firefox all safe well above 16M, but we stay conservative).
+const MAX_VIRTUAL_PX = 16_000_000;
+const NXS_MAGIC = 0x4E595842;
+// Default to the 1M fixture (~137 MB) — safe for all browsers / memory sizes.
+// Users can pick 10M explicitly from the toolbar if they have the RAM.
+const DEFAULT_FIXTURE = "../bench/fixtures/records_1000000.nxb";
+
+// ── DOM refs ──────────────────────────────────────────────────────────────
+const $ = s => document.querySelector(s);
+const scrollEl = $("#scroll");
+const spacerEl = $("#spacer");
+const overlayEl = $("#overlay");
+const searchEl = $("#search");
+const searchBadge = $("#search-badge");
+const statusPos = $("#status-pos");
+const statusMatches = $("#status-matches");
+const statusFrame = $("#status-frame");
+const dropEl = $("#drop");
+const fileInput = $("#file");
+const fileInfoEl = $("#file-info");
+
+const fmtInt = n => n.toLocaleString();
+const fmtBytes = n =>
+  n < 1024 ? `${n} B` :
+  n < 1048576 ? `${(n/1024).toFixed(1)} KB` :
+  n < 1073741824 ? `${(n/1048576).toFixed(1)} MB` :
+                  `${(n/1073741824).toFixed(2)} GB`;
+
+// ── State ─────────────────────────────────────────────────────────────────
+let reader = null;          // NxsReader (binary mode)
+let cursor = null;          // reusable cursor for render
+let slots = null;           // { id, username, email, created_at, score, active }
+let jsonRecords = null;     // null = .nxb mode; else Array<{id,username,email,tsDay,score,active}>
+let recordCount = 0;
+let rawBuffer = null;       // underlying ArrayBuffer (to send to worker)
+let _lastLoadedUrl = null;  // set when loading from a known URL; null for drag-and-drop
+
+let virtualHeight = 0;      // actual CSS height of spacer
+let scrollScale = 1;        // recordCount / (virtualHeight / ROW_HEIGHT) when capped
+let totalRowsVirtual = 0;   // virtualHeight / ROW_HEIGHT
+
+// Render pool: ~60 DOM rows reused on every scroll. Each is an object with
+// { el, lineno, ts, component, msg, score, flag, renderedIndex }.
+const rowPool = [];
+
+let currentMatches = null;  // Int32Array of matched record indices
+let currentMatchIdx = -1;
+let searchToken = 0;
+
+// Worker for search over .nxb (not used for JSON uploads).
+let worker = null;
+
+function teardownExplorerWorker() {
+  if (worker) {
+    worker.removeEventListener("message", onWorkerMessage);
+    worker.terminate();
+    worker = null;
+  }
+}
+
+function jsonCreatedAtToDay(obj) {
+  const v =
+    obj.created_at ??
+    obj.createdAt ??
+    obj.date ??
+    obj.timestamp ??
+    obj.time;
+  if (v === undefined || v === null) return "";
+  if (typeof v === "number") {
+    const ms = v > 1e14 ? Math.round(v / 1_000_000) : v < 1e11 ? v * 1000 : v;
+    const d = new Date(ms);
+    return Number.isFinite(d.getTime()) ? d.toISOString().slice(0, 10) : "";
+  }
+  const s = String(v);
+  if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
+  const t = Date.parse(s);
+  return Number.isFinite(t) ? new Date(t).toISOString().slice(0, 10) : "";
+}
+
+/** Accepts gen_fixtures-style rows or any array of objects with overlapping keys. */
+function jsonToExplorerRows(parsed) {
+  let arr;
+  if (Array.isArray(parsed)) arr = parsed;
+  else if (parsed && typeof parsed === "object" && Array.isArray(parsed.records)) arr = parsed.records;
+  else {
+    throw new Error("JSON must be an array of objects or { \"records\": [...] }");
+  }
+  const out = new Array(arr.length);
+  for (let idx = 0; idx < arr.length; idx++) {
+    const o = arr[idx];
+    const obj = o && typeof o === "object" ? o : {};
+    let id = obj.id ?? obj.ID;
+    if (typeof id !== "number" && typeof id !== "bigint") id = idx;
+    if (typeof id === "bigint") id = Number(id);
+    const username = String(obj.username ?? obj.user ?? obj.name ?? "");
+    const email = String(obj.email ?? obj.mail ?? "");
+    let score = obj.score;
+    if (typeof score !== "number" || Number.isNaN(score)) score = parseFloat(score);
+    if (Number.isNaN(score)) score = undefined;
+    const active =
+      typeof obj.active === "boolean"
+        ? obj.active
+        : obj.active === 1 || obj.active === "true" || String(obj.active).toLowerCase() === "1";
+    out[idx] = {
+      id,
+      username,
+      email,
+      tsDay: jsonCreatedAtToDay(obj),
+      score,
+      active,
+    };
+  }
+  return out;
+}
+
+function applyViewportLayout(name, sizeBytes, sourceLabel) {
+  const ideal = recordCount * ROW_HEIGHT;
+  if (ideal <= MAX_VIRTUAL_PX) {
+    virtualHeight = ideal;
+    scrollScale = 1;
+  } else {
+    virtualHeight = MAX_VIRTUAL_PX;
+    scrollScale = recordCount * ROW_HEIGHT / virtualHeight;
+  }
+  totalRowsVirtual = Math.floor(virtualHeight / ROW_HEIGHT);
+  spacerEl.style.height = `${virtualHeight}px`;
+
+  scrollEl.scrollTop = 0;
+  matchesSet.clear();
+  currentMatches = null;
+  currentMatchIdx = -1;
+  lastFirstVr = -1;
+  searchBadge.textContent = "";
+  searchBadge.className = "badge";
+  updateMatchesStatus();
+
+  const tag = sourceLabel ? `${escapeHtml(name)} <span style="color:var(--muted)">(${sourceLabel})</span>` : escapeHtml(name);
+  fileInfoEl.innerHTML = `<strong>${tag}</strong> — ${fmtBytes(sizeBytes)} — ${fmtInt(recordCount)} records`;
+  overlayEl.classList.add("hide");
+
+  ensureRowPool();
+  scheduleRender();
+}
+
+// ── Virtual scroller ─────────────────────────────────────────────────────
+//
+// Strategy: scrollEl has a fixed viewport height; spacerEl has a height of
+// recordCount * ROW_HEIGHT (capped at MAX_VIRTUAL_PX). When capped, each
+// ROW_HEIGHT band maps to ~scrollScale records; we render one pool row per
+// virtual row vr at translateY(vr * ROW_HEIGHT) with record floor(vr * scrollScale).
+// The pool is sized once; only textContent changes per frame.
+
+function computePoolSize() {
+  const viewportRows = Math.ceil(scrollEl.clientHeight / ROW_HEIGHT);
+  // Window = visible + buffer on each side.
+  return viewportRows + BUFFER_ROWS * 2;
+}
+
+function ensureRowPool() {
+  const target = computePoolSize();
+  while (rowPool.length < target) {
+    const el = document.createElement("div");
+    el.className = "row";
+    // Each field gets its own span so textContent updates don't blow away
+    // sibling formatting. lineno / ts / component / msg / score / flag.
+    const lineno = document.createElement("span"); lineno.className = "lineno";
+    const ts = document.createElement("span"); ts.className = "ts";
+    const component = document.createElement("span"); component.className = "component";
+    const msg = document.createElement("span"); msg.className = "msg";
+    const score = document.createElement("span"); score.className = "score";
+    const flag = document.createElement("span"); flag.className = "flag";
+    el.append(lineno, ts, component, msg, score, flag);
+    spacerEl.appendChild(el);
+    rowPool.push({ el, lineno, ts, component, msg, score, flag, renderedIndex: -1 });
+  }
+  // If pool is larger than needed after a resize, hide the surplus.
+  for (let i = target; i < rowPool.length; i++) {
+    rowPool[i].el.style.display = "none";
+  }
+  for (let i = 0; i < target; i++) {
+    rowPool[i].el.style.display = "";
+  }
+}
+
+// Inverse: record index -> scroll position.
+function recordIdxToScrollTop(idx) {
+  return Math.floor(idx / scrollScale) * ROW_HEIGHT;
+}
+
+// Track the currently-rendered *virtual row* window (spacer slots). When
+// scrollScale > 1, consecutive record indices share one slot — we must index
+// by virtual row, not raw record index, or multiple pool rows get the same
+// translateY and stack (broken UI on 10M+ files).
+let lastFirstVr = -1;
+let lastWindowSize = 0;
+let frameAvgMs = 0;
+const matchesSet = new Set();  // O(1) lookup of record idx -> is-a-match
+
+let rafPending = false;
+function scheduleRender() {
+  if (rafPending) return;
+  rafPending = true;
+  requestAnimationFrame(render);
+}
+
+function render() {
+  rafPending = false;
+  if (!reader && jsonRecords === null) return;
+
+  const t0 = performance.now();
+  const scrollTop = scrollEl.scrollTop;
+  // Index by virtual row (one spacer band per ROW_HEIGHT px). Each band shows
+  // the first record in that band: floor(vr * scrollScale).
+  const firstVr = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - BUFFER_ROWS);
+  const poolSize = rowPool.length;
+  const maxVr = totalRowsVirtual - 1;
+  const lastVr = Math.min(maxVr, firstVr + poolSize - 1);
+  const activeRows = firstVr > maxVr ? 0 : lastVr - firstVr + 1;
+
+  // Fast path: nothing changed.
+  if (firstVr === lastFirstVr && lastWindowSize === activeRows) {
+    return;
+  }
+  lastFirstVr = firstVr;
+  lastWindowSize = activeRows;
+
+  for (let i = 0; i < poolSize; i++) {
+    const vr = firstVr + i;
+    const row = rowPool[i];
+    if (vr < 0 || vr > maxVr) {
+      if (row.renderedIndex !== -1) {
+        row.el.style.display = "none";
+        row.renderedIndex = -1;
+      }
+      continue;
+    }
+    const idx = Math.min(recordCount - 1, Math.floor(vr * scrollScale));
+    row.el.style.display = "";
+    row.renderedIndex = idx;
+    // One pool row per virtual band — never duplicate translateY.
+    const virtualTop = vr * ROW_HEIGHT;
+    row.el.style.transform = `translateY(${virtualTop}px)`;
+    renderRow(row, idx);
+  }
+
+  const elapsed = performance.now() - t0;
+  frameAvgMs = frameAvgMs * 0.8 + elapsed * 0.2;
+  updateStatus(scrollTop);
+}
+
+function renderRow(row, idx) {
+  if (jsonRecords !== null) {
+    const r = jsonRecords[idx];
+    row.lineno.textContent = String(r.id ?? idx + 1).padStart(9, " ");
+    row.ts.textContent = r.tsDay || "";
+    row.component.textContent = r.username || "";
+    row.msg.textContent = r.email || "";
+    row.score.textContent = r.score !== undefined ? r.score.toFixed(2) : "";
+    row.flag.textContent = r.active ? "●" : "○";
+    row.flag.className = r.active ? "flag on" : "flag";
+  } else {
+    // Reuse cursor — zero allocation per record.
+    cursor.seek(idx);
+    const id = cursor.getI64BySlot(slots.id);
+    row.lineno.textContent = (id !== undefined ? id : idx + 1).toString().padStart(9, " ");
+    const tsNs = cursor.getI64BySlot(slots.created_at);
+    row.ts.textContent = tsNs !== undefined
+      ? new Date(Math.round(tsNs / 1_000_000)).toISOString().slice(0, 10)
+      : "";
+    const uname = cursor.getStrBySlot(slots.username);
+    row.component.textContent = uname || "";
+    const mail = cursor.getStrBySlot(slots.email);
+    row.msg.textContent = mail || "";
+    const score = cursor.getF64BySlot(slots.score);
+    row.score.textContent = score !== undefined ? score.toFixed(2) : "";
+    const active = cursor.getBoolBySlot(slots.active);
+    row.flag.textContent = active ? "●" : "○";
+    row.flag.className = active ? "flag on" : "flag";
+  }
+
+  // Match highlighting
+  let cls = "row";
+  if (matchesSet.has(idx)) {
+    cls = currentMatches && currentMatchIdx >= 0 && currentMatches[currentMatchIdx] === idx
+      ? "row current-match" : "row match";
+  }
+  if (row.el.className !== cls) row.el.className = cls;
+}
+
+function updateStatus(scrollTop) {
+  // Center of viewport as a record index (works for scrollScale > 1).
+  const viewportRows = Math.ceil(scrollEl.clientHeight / ROW_HEIGHT);
+  const topVr = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT));
+  const centerVr =
+    totalRowsVirtual <= 0 ? 0 : Math.min(totalRowsVirtual - 1, topVr + (viewportRows >> 1));
+  const centerIdx =
+    recordCount <= 0 ? 0 : Math.min(recordCount - 1, Math.floor(centerVr * scrollScale));
+  statusPos.innerHTML = `line <strong>${fmtInt(centerIdx + 1)}</strong> of <strong>${fmtInt(recordCount)}</strong>`;
+  statusFrame.textContent = `render ${frameAvgMs.toFixed(1)} ms`;
+  statusFrame.className = frameAvgMs < 4 ? "ok" : frameAvgMs < 10 ? "warn" : "bad";
+}
+
+// ── Loading ──────────────────────────────────────────────────────────────
+async function loadBuffer(buffer, name, sizeBytes) {
+  jsonRecords = null;
+  // Validate magic.
+  const dv = new DataView(buffer);
+  if (dv.byteLength < 4 || dv.getUint32(0, true) !== NXS_MAGIC) {
+    showError(`Not an NXS file: ${name}. Magic bytes don't match.`);
+    return;
+  }
+
+  try {
+    reader = new NxsReader(buffer);
+  } catch (e) {
+    showError(`Failed to parse ${name}: ${e.message}`);
+    return;
+  }
+
+  rawBuffer = buffer;
+  recordCount = reader.recordCount;
+  cursor = reader.cursor();
+
+  // Resolve all slots once.
+  slots = {
+    id: reader.slot("id"),
+    username: reader.slot("username"),
+    email: reader.slot("email"),
+    created_at: reader.slot("created_at"),
+    score: reader.slot("score"),
+    active: reader.slot("active"),
+  };
+
+  // Tell the worker to fetch the file itself — no buffer copy across the
+  // postMessage boundary. If the name looks like a fixture path, derive a
+  // relative URL the worker can fetch. For drag-and-dropped files the worker
+  // won't be able to re-fetch, so we fall back to a direct transfer only
+  // when a URL is available.
+  ensureWorker();
+  if (worker) {
+    const fixtureUrl = _lastLoadedUrl;
+    if (fixtureUrl) {
+      worker.postMessage({ type: "load-url", url: fixtureUrl });
+    } else {
+      const copy = buffer.slice(0);
+      worker.postMessage({ type: "load", buffer: copy }, [copy]);
+    }
+  }
+
+  applyViewportLayout(name, sizeBytes);
+}
+
+async function loadJsonString(text, name, sizeBytes) {
+  let parsed;
+  try {
+    parsed = JSON.parse(text);
+  } catch (e) {
+    showError(`Invalid JSON in ${name}: ${e.message}`);
+    return;
+  }
+
+  let rows;
+  try {
+    rows = jsonToExplorerRows(parsed);
+  } catch (e) {
+    showError(`${name}: ${e.message}`);
+    return;
+  }
+
+  teardownExplorerWorker();
+  reader = null;
+  cursor = null;
+  slots = null;
+  rawBuffer = null;
+  jsonRecords = rows;
+  recordCount = jsonRecords.length;
+  _lastLoadedUrl = null;
+  applyViewportLayout(name, sizeBytes, "JSON");
+}
+
+function ensureWorker() {
+  if (worker) return;
+  try {
+    worker = new Worker("./explorer_worker.js", { type: "module" });
+    worker.addEventListener("message", onWorkerMessage);
+  } catch (e) {
+    console.warn("Worker unavailable, falling back to main-thread search:", e);
+    worker = null;
+  }
+}
+
+function onWorkerMessage(ev) {
+  const msg = ev.data;
+  if (msg.type === "loaded") {
+    // Worker has its own reader now; searches will use it.
+  } else if (msg.type === "search-progress") {
+    if (msg.token !== searchToken) return;
+    const pct = ((msg.scanned / msg.total) * 100).toFixed(0);
+    searchBadge.textContent = `scanning ${pct}% · ${fmtInt(msg.matches)} so far`;
+    searchBadge.className = "badge searching";
+  } else if (msg.type === "search-done") {
+    if (msg.token !== searchToken) return;
+    if (msg.aborted) return;
+    currentMatches = msg.matches;
+    matchesSet.clear();
+    for (let i = 0; i < currentMatches.length; i++) matchesSet.add(currentMatches[i]);
+    if (currentMatches.length > 0) {
+      currentMatchIdx = 0;
+      searchBadge.textContent = `${fmtInt(currentMatches.length)} matches`;
+      searchBadge.className = "badge active";
+      jumpToRecord(currentMatches[0]);
+    } else {
+      currentMatchIdx = -1;
+      searchBadge.textContent = "no matches";
+      searchBadge.className = "badge";
+    }
+    updateMatchesStatus();
+    lastFirstVr = -1;
+    scheduleRender();
+  }
+}
+
+// ── Search (main-thread fallback) ────────────────────────────────────────
+//
+// Only used if Worker isn't available. For 10M records this will block the
+// UI for ~0.5–1 s which is acceptable for a fallback path.
+function searchMainThread(query) {
+  const token = ++searchToken;
+  if (!query) {
+    currentMatches = null;
+    matchesSet.clear();
+    currentMatchIdx = -1;
+    searchBadge.textContent = "";
+    searchBadge.className = "badge";
+    updateMatchesStatus();
+    lastFirstVr = -1;
+    scheduleRender();
+    return;
+  }
+  searchBadge.textContent = "scanning…";
+  searchBadge.className = "badge searching";
+
+  // Defer to a microtask so the UI paints the "scanning" badge first.
+  Promise.resolve().then(() => {
+    if (token !== searchToken) return;
+    const needle = query.toLowerCase();
+    const results = [];
+    if (jsonRecords !== null) {
+      for (let i = 0; i < recordCount; i++) {
+        const u = jsonRecords[i].username;
+        if (u && String(u).toLowerCase().indexOf(needle) !== -1) results.push(i);
+      }
+    } else {
+      const cur = reader.cursor();
+      const uSlot = slots.username;
+      for (let i = 0; i < recordCount; i++) {
+        cur.seek(i);
+        const u = cur.getStrBySlot(uSlot);
+        if (u && u.toLowerCase().indexOf(needle) !== -1) results.push(i);
+      }
+    }
+    if (token !== searchToken) return;
+    currentMatches = new Int32Array(results);
+    matchesSet.clear();
+    for (const i of results) matchesSet.add(i);
+    currentMatchIdx = results.length ? 0 : -1;
+    searchBadge.textContent = results.length ? `${fmtInt(results.length)} matches` : "no matches";
+    searchBadge.className = results.length ? "badge active" : "badge";
+    if (results.length) jumpToRecord(results[0]);
+    updateMatchesStatus();
+    lastFirstVr = -1;
+    scheduleRender();
+  });
+}
+
+function startSearch(query) {
+  query = query.trim();
+  // Clear old match state immediately so the UI feels responsive.
+  matchesSet.clear();
+  currentMatchIdx = -1;
+  lastFirstVr = -1;
+
+  if (!query) {
+    searchToken++;  // cancel any in-flight
+    currentMatches = null;
+    searchBadge.textContent = "";
+    searchBadge.className = "badge";
+    updateMatchesStatus();
+    scheduleRender();
+    return;
+  }
+
+  if (jsonRecords !== null) {
+    searchMainThread(query);
+    return;
+  }
+
+  if (worker) {
+    searchToken++;
+    searchBadge.textContent = "scanning…";
+    searchBadge.className = "badge searching";
+    worker.postMessage({ type: "search", query });
+  } else {
+    searchMainThread(query);
+  }
+}
+
+function updateMatchesStatus() {
+  if (!currentMatches || currentMatches.length === 0) {
+    statusMatches.textContent = searchEl.value ? "No matches" : "No search active";
+    return;
+  }
+  const pos = currentMatchIdx + 1;
+  statusMatches.innerHTML = `match <strong>${fmtInt(pos)}</strong> of <strong>${fmtInt(currentMatches.length)}</strong>`;
+}
+
+function nextMatch(dir) {
+  if (!currentMatches || currentMatches.length === 0) return;
+  currentMatchIdx = (currentMatchIdx + dir + currentMatches.length) % currentMatches.length;
+  jumpToRecord(currentMatches[currentMatchIdx]);
+  updateMatchesStatus();
+  lastFirstVr = -1;
+  scheduleRender();
+}
+
+// ── Navigation ───────────────────────────────────────────────────────────
+function jumpToRecord(idx) {
+  const clamped = Math.max(0, Math.min(recordCount - 1, idx));
+  // Center the target in the viewport when possible.
+  const viewportRows = Math.ceil(scrollEl.clientHeight / ROW_HEIGHT);
+  const target = recordIdxToScrollTop(clamped) - (viewportRows >> 1) * ROW_HEIGHT;
+  scrollEl.scrollTop = Math.max(0, target);
+  scheduleRender();
+}
+
+// ── Event wiring ─────────────────────────────────────────────────────────
+scrollEl.addEventListener("scroll", scheduleRender, { passive: true });
+window.addEventListener("resize", () => { ensureRowPool(); lastFirstVr = -1; scheduleRender(); });
+
+// Debounced search (100ms).
+let searchDebounce = null;
+searchEl.addEventListener("input", () => {
+  if (searchDebounce) clearTimeout(searchDebounce);
+  searchDebounce = setTimeout(() => startSearch(searchEl.value), 100);
+});
+
+searchEl.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") {
+    e.preventDefault();
+    if (currentMatches && currentMatches.length) {
+      nextMatch(e.shiftKey ? -1 : 1);
+    } else {
+      // Force immediate search if no matches yet.
+      if (searchDebounce) clearTimeout(searchDebounce);
+      startSearch(searchEl.value);
+    }
+  } else if (e.key === "Escape") {
+    searchEl.value = "";
+    startSearch("");
+    scrollEl.focus();
+  }
+});
+
+$("#next-match").addEventListener("click", () => nextMatch(1));
+$("#prev-match").addEventListener("click", () => nextMatch(-1));
+
+$("#jump-btn").addEventListener("click", () => {
+  const v = parseInt($("#jump-input").value, 10);
+  if (Number.isFinite(v)) jumpToRecord(v - 1);
+});
+$("#jump-input").addEventListener("keydown", (e) => {
+  if (e.key === "Enter") { e.preventDefault(); $("#jump-btn").click(); }
+});
+
+// Keyboard navigation when the scroll pane (or body) is focused.
+document.addEventListener("keydown", (e) => {
+  // Cmd/Ctrl+F focuses search.
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "f") {
+    e.preventDefault();
+    searchEl.focus();
+    searchEl.select();
+    return;
+  }
+  // Don't hijack keys while typing in an input.
+  if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA") return;
+  if (!reader && jsonRecords === null) return;
+
+  const viewportRows = Math.ceil(scrollEl.clientHeight / ROW_HEIGHT);
+  const page = Math.max(1, viewportRows - 2);
+  let handled = true;
+  switch (e.key) {
+    case "ArrowDown": scrollEl.scrollTop += ROW_HEIGHT; break;
+    case "ArrowUp":   scrollEl.scrollTop -= ROW_HEIGHT; break;
+    case "PageDown":  scrollEl.scrollTop += page * ROW_HEIGHT; break;
+    case "PageUp":    scrollEl.scrollTop -= page * ROW_HEIGHT; break;
+    case "Home":      scrollEl.scrollTop = 0; break;
+    case "End":       scrollEl.scrollTop = virtualHeight; break;
+    default: handled = false;
+  }
+  if (handled) { e.preventDefault(); scheduleRender(); }
+});
+
+// Drag-and-drop.
+;["dragenter", "dragover"].forEach(t => dropEl.addEventListener(t, (e) => {
+  e.preventDefault(); e.stopPropagation();
+  dropEl.classList.add("drag");
+}));
+;["dragleave", "drop"].forEach(t => dropEl.addEventListener(t, (e) => {
+  e.preventDefault(); e.stopPropagation();
+  if (t === "dragleave" && e.target !== dropEl) return;
+  dropEl.classList.remove("drag");
+}));
+dropEl.addEventListener("drop", async (e) => {
+  const f = e.dataTransfer?.files?.[0];
+  if (f) await loadFile(f);
+});
+
+$("#pick").addEventListener("click", () => fileInput.click());
+fileInput.addEventListener("change", async (e) => {
+  const f = e.target.files?.[0];
+  if (f) await loadFile(f);
+  fileInput.value = "";
+});
+
+function fileLooksLikeJson(file) {
+  const n = (file.name || "").toLowerCase();
+  const t = (file.type || "").toLowerCase();
+  return n.endsWith(".json") || t === "application/json" || t === "text/json";
+}
+
+async function loadFile(file) {
+  overlayEl.classList.remove("hide");
+  overlayEl.textContent = `Loading ${file.name}…`;
+  try {
+    _lastLoadedUrl = null;  // drag-and-drop: no URL for worker to re-fetch
+    if (fileLooksLikeJson(file)) {
+      const text = await file.text();
+      await loadJsonString(text, file.name, file.size);
+    } else {
+      const buf = await file.arrayBuffer();
+      await loadBuffer(buf, file.name, file.size);
+    }
+  } catch (e) {
+    showError(`Failed to load ${file.name}: ${e.message}`);
+  }
+}
+
+function showError(msg) {
+  overlayEl.textContent = msg;
+  overlayEl.classList.remove("hide");
+  console.error(msg);
+}
+
+function escapeHtml(s) {
+  return s.replace(/[&<>"']/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", "\"":"&quot;", "'":"&#39;" }[c]));
+}
+
+// ── Boot: show quick-load buttons, don't auto-fetch ───────────────────────
+ensureRowPool();
+
+const QUICK_SIZES = [
+  { label: "1,000 records (~127 KB)",    path: "../bench/fixtures/records_1000.nxb" },
+  { label: "10,000 records (~1.2 MB)",   path: "../bench/fixtures/records_10000.nxb" },
+  { label: "100,000 records (~13 MB)",   path: "../bench/fixtures/records_100000.nxb" },
+  { label: "1,000,000 records (~132 MB)", path: "../bench/fixtures/records_1000000.nxb" },
+  { label: "10,000,000 records (~1.3 GB)", path: "../bench/fixtures/records_10000000.nxb" },
+];
+
+overlayEl.innerHTML = `
+  <div style="max-width:480px;text-align:center">
+    <p style="margin:0 0 16px;font-size:15px;color:var(--muted)">
+      Drop <code>.nxb</code> / <code>.json</code>, click <strong>Choose file</strong>,<br>
+      or load a built-in fixture:
+    </p>
+    <div style="display:flex;flex-direction:column;gap:8px">
+      ${QUICK_SIZES.map(s => `<button
+        class="load-btn"
+        style="background:var(--panel-2);border:1px solid var(--border);color:var(--text);
+               border-radius:6px;padding:8px 16px;cursor:pointer;font-family:inherit;font-size:13px"
+        data-path="${s.path}">${s.label}</button>`).join("")}
+    </div>
+  </div>
+`;
+
+overlayEl.querySelectorAll(".load-btn").forEach(btn => {
+  btn.addEventListener("click", async () => {
+    const path = btn.dataset.path;
+    const name = path.split("/").pop();
+    overlayEl.innerHTML = `<div><p>Fetching ${name}…</p></div>`;
+    try {
+      const res = await fetch(path);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const buf = await res.arrayBuffer();
+      _lastLoadedUrl = path;
+      await loadBuffer(buf, name, buf.byteLength);
+    } catch (e) {
+      overlayEl.innerHTML = `
+        <div>
+          <p style="color:var(--bad)">Failed to load: ${escapeHtml(e.message)}</p>
+          <p>Drop a <code>.nxb</code> file above or click <strong>Choose file</strong>.</p>
+        </div>
+      `;
+    }
+  });
+});
+</script>
+<script src="theme.js"></script>
+</body>
+</html>

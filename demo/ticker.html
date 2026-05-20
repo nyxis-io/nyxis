@@ -1,0 +1,580 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>NXS vs JSON — Live Ticker (Frame-drop demo)</title>
+<script>(function(){try{if(localStorage.getItem("nxs-theme")==="light")document.documentElement.dataset.theme="light";}catch(_){}})();</script>
+<link rel="stylesheet" href="theme.css">
+<style>
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    font-size: 14px;
+    line-height: 1.5;
+  }
+  main {
+    max-width: 1240px;
+    margin: 0 auto;
+    padding: 32px 24px 80px;
+  }
+  h1 {
+    font-size: 28px; font-weight: 600;
+    margin: 0 0 4px;
+    letter-spacing: -0.01em;
+  }
+  .sub {
+    color: var(--muted);
+    margin: 0 0 12px;
+  }
+  .what-tested {
+    margin: 0 0 24px;
+    padding: 14px 18px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    font-size: 13px;
+    line-height: 1.55;
+    color: var(--text);
+  }
+  .what-tested strong:first-child {
+    display: block;
+    margin-bottom: 8px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text);
+  }
+  .controls {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px 20px;
+    align-items: center;
+    padding: 16px 20px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    margin-bottom: 24px;
+  }
+  .controls label { color: var(--muted); }
+  .controls .group {
+    display: flex; align-items: center; gap: 8px;
+  }
+  .controls input[type=range] { width: 140px; }
+  .controls .val {
+    font-variant-numeric: tabular-nums;
+    color: var(--text);
+    min-width: 40px;
+    text-align: right;
+  }
+  select, button {
+    background: var(--panel-2);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 6px 12px;
+    font-size: 14px;
+    font-family: inherit;
+    cursor: pointer;
+  }
+  button.primary { background: var(--accent); color: var(--on-accent); border-color: var(--accent); font-weight: 600; }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+  select:focus, button:focus { outline: 1px solid var(--accent); outline-offset: 1px; }
+
+  .status {
+    font-size: 13px; color: var(--muted);
+    min-height: 18px;
+  }
+  .status.running { color: var(--warn); }
+  .status.done { color: var(--good); }
+  .status.error { color: var(--bad); }
+
+  .columns {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+  }
+
+  section.card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 20px 22px;
+    margin-bottom: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+  section.card h2 {
+    margin: 0 0 2px;
+    font-size: 16px; font-weight: 600;
+    display: flex; align-items: center; gap: 10px;
+  }
+  section.card h2 .dot {
+    width: 10px; height: 10px; border-radius: 50%;
+    display: inline-block;
+  }
+  section.card.json h2 .dot { background: var(--warn); }
+  section.card.nxs h2 .dot  { background: var(--accent); }
+  section.card .desc {
+    color: var(--muted);
+    font-size: 13px;
+    margin: 0;
+  }
+
+  .big-score {
+    font-variant-numeric: tabular-nums;
+    font-size: 52px;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    line-height: 1.1;
+    padding: 12px 0 0;
+    color: var(--text);
+  }
+  .big-score.json { color: var(--warn); }
+  .big-score.nxs  { color: var(--accent); }
+
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 8px;
+  }
+  .stat {
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 8px 10px;
+  }
+  .stat .k {
+    font-size: 11px;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  .stat .v {
+    font-size: 18px;
+    font-variant-numeric: tabular-nums;
+    font-weight: 600;
+  }
+  .stat.drops .v.hot { color: var(--bad); }
+
+  .sparkline {
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 8px;
+    height: 70px;
+    position: relative;
+  }
+  .sparkline .bars {
+    display: flex;
+    align-items: flex-end;
+    gap: 1px;
+    height: 100%;
+  }
+  .sparkline .bars .bar {
+    flex: 1;
+    background: var(--accent);
+    border-radius: 1px 1px 0 0;
+    min-height: 1px;
+    transition: none;
+  }
+  .sparkline .bars .bar.bad {
+    background: var(--bad);
+  }
+  .sparkline .legend {
+    position: absolute;
+    top: 4px; right: 8px;
+    font-size: 10px;
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+  }
+  .sparkline .budget-line {
+    position: absolute;
+    left: 8px; right: 8px;
+    border-top: 1px dashed var(--border);
+    pointer-events: none;
+  }
+
+  footer {
+    color: var(--muted);
+    font-size: 12px;
+    margin-top: 40px;
+    border-top: 1px solid var(--border);
+    padding-top: 16px;
+  }
+  code { background: var(--panel-2); padding: 1px 5px; border-radius: 3px; font-size: 13px; }
+</style>
+</head>
+<body>
+<nav class="site-nav">
+  <a class="home" href="index.html">NXS</a>
+  <span class="sep">›</span>
+  <a href="index.html">Home</a>
+  <a href="../bench/bench.html">Benchmark</a>
+  <a href="ticker.html" aria-current="page">Ticker</a>
+  <a href="workers.html">Workers</a>
+  <a href="explorer.html">Explorer</a>
+  <button type="button" class="theme-toggle" aria-label="Theme"></button>
+</nav>
+<main>
+  <h1>NXS vs JSON — Live Ticker</h1>
+  <p class="sub">A 60 FPS rAF loop updates record 0's <code>score</code> every frame, on both paths. JSON path re-parses the whole array every K frames (simulating a server push). NXS patches 8 bytes in place. Watch the sparkline.</p>
+
+  <section class="what-tested" aria-label="What this page tests">
+    <strong>What this page tests</strong>
+    Main-thread frame budgeting under a continuous <code>requestAnimationFrame</code> loop. Both columns update the same logical field (<code>record[0].score</code>) each frame; <strong>pressure</strong> repeats that work multiple times per frame. The JSON column mutates a parsed array and, every <em>K</em> frames, <code>JSON.stringify</code>s and <code>JSON.parse</code>s the full ~15&nbsp;MB document (simulating a replaced server payload). The NXS column writes via <code>DataView.setFloat64</code> at a cached byte offset into mapped <code>.nxb</code> bytes — no per-frame allocations. The stats and sparklines show FPS, per-path work time, and frames over a 20&nbsp;ms budget; the <strong>Long tasks</strong> panel lists browser <code>longtask</code> entries (&gt;50&nbsp;ms), which usually spike on the JSON path when re-parse aligns with rAF.
+  </section>
+
+  <div class="controls">
+    <button class="primary" id="run">Run</button>
+    <div class="group">
+      <label>JSON re-parse every K frames</label>
+      <input type="range" id="reparse" min="1" max="60" value="10">
+      <span class="val" id="reparse-val">10</span>
+    </div>
+    <div class="group">
+      <label>Pressure (updates/frame)</label>
+      <input type="range" id="pressure" min="1" max="480" step="1" value="1">
+      <span class="val" id="pressure-val">1</span>
+    </div>
+    <span class="status" id="status">Ready.</span>
+  </div>
+
+  <div class="columns">
+    <!-- JSON column -->
+    <section class="card json" id="col-json">
+      <h2><span class="dot"></span>JSON path</h2>
+      <p class="desc">Mutates <code>parsed[0].score</code>; re-serialises + re-parses the full 15 MB array every K frames.</p>
+      <div class="big-score json" id="score-json">—</div>
+      <div class="stats">
+        <div class="stat"><div class="k">FPS</div><div class="v" id="fps-json">0</div></div>
+        <div class="stat"><div class="k">Last frame</div><div class="v" id="last-json">—</div></div>
+        <div class="stat"><div class="k">Avg frame</div><div class="v" id="avg-json">—</div></div>
+        <div class="stat"><div class="k">Max frame</div><div class="v" id="max-json">—</div></div>
+        <div class="stat drops"><div class="k">Dropped (&gt;20ms)</div><div class="v" id="drops-json">0</div></div>
+      </div>
+      <div class="sparkline">
+        <div class="bars" id="spark-json"></div>
+        <div class="legend">50 most recent work-times · red &gt; 20 ms (over budget)</div>
+      </div>
+    </section>
+
+    <!-- NXS column -->
+    <section class="card nxs" id="col-nxs">
+      <h2><span class="dot"></span>NXS path</h2>
+      <p class="desc">In-place <code>DataView.setFloat64</code> at the cached byte offset of record 0's <code>score</code>. Zero allocations per frame.</p>
+      <div class="big-score nxs" id="score-nxs">—</div>
+      <div class="stats">
+        <div class="stat"><div class="k">FPS</div><div class="v" id="fps-nxs">0</div></div>
+        <div class="stat"><div class="k">Last frame</div><div class="v" id="last-nxs">—</div></div>
+        <div class="stat"><div class="k">Avg frame</div><div class="v" id="avg-nxs">—</div></div>
+        <div class="stat"><div class="k">Max frame</div><div class="v" id="max-nxs">—</div></div>
+        <div class="stat drops"><div class="k">Dropped (&gt;20ms)</div><div class="v" id="drops-nxs">0</div></div>
+      </div>
+      <div class="sparkline">
+        <div class="bars" id="spark-nxs"></div>
+        <div class="legend">50 most recent work-times · red &gt; 20 ms (over budget)</div>
+      </div>
+    </section>
+  </div>
+
+  <section class="card" style="margin-top: 16px;">
+    <h2>Long tasks (PerformanceObserver)</h2>
+    <p class="desc">Entries of type <code>longtask</code> (&gt; 50 ms) reported by the browser while the demo runs. If the JSON path is dominating the main thread, they land here.</p>
+    <div id="longtasks" style="font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; color: var(--muted); max-height: 140px; overflow-y: auto;">No long tasks observed.</div>
+  </section>
+
+</main>
+
+<script type="module">
+import { NxsReader } from "/sdk/nxs.js";
+
+// ── Utilities ─────────────────────────────────────────────────────────────
+
+const $ = sel => document.querySelector(sel);
+
+// Auto-selects µs when < 1 ms for sub-millisecond work times.
+function fmtWork(ms) {
+  if (ms < 0.001) return "0 µs";
+  if (ms < 1) return `${(ms * 1000).toFixed(0)} µs`;
+  return `${ms.toFixed(2)} ms`;
+}
+
+function setStatus(msg, cls = "") {
+  const el = $("#status");
+  el.textContent = msg;
+  el.className = `status ${cls}`;
+}
+
+const FIXTURE_NXB  = "../bench/fixtures/records_100000.nxb";
+const FIXTURE_JSON = "../bench/fixtures/records_100000.json";
+const FRAME_BUDGET_MS = 20;      // anything longer than this is a "dropped frame"
+const SPARK_LEN = 50;
+
+// ── State ─────────────────────────────────────────────────────────────────
+
+let reader = null;        // NxsReader
+let scoreByteOffset = -1; // absolute byte offset of record 0's score f64
+let nxsView = null;       // DataView aliased over reader.bytes
+
+let jsonParsed = null;    // live JS array
+let jsonSerialized = ""; // most recent serialised form (for re-parse path)
+
+let running = false;
+let rafId = 0;
+
+const stats = {
+  json: { last: 0, max: 0, maxWork: 0, drops: 0, frames: 0, totalTime: 0, totalWork: 0, spark: new Array(SPARK_LEN).fill(0) },
+  nxs:  { last: 0, max: 0, maxWork: 0, drops: 0, frames: 0, totalTime: 0, totalWork: 0, spark: new Array(SPARK_LEN).fill(0) },
+};
+
+let prevFrameTs = 0; // last rAF timestamp (shared; rAF fires for both columns in same tick)
+
+// ── Fixture loading ───────────────────────────────────────────────────────
+
+async function loadFixtures() {
+  setStatus("Fetching fixtures…", "running");
+  const [nxbBuf, jsonText] = await Promise.all([
+    fetch(FIXTURE_NXB).then(r => r.arrayBuffer()),
+    fetch(FIXTURE_JSON).then(r => r.text()),
+  ]);
+
+  // NXS: construct reader over a mutable Uint8Array so in-place patches work.
+  const bytes = new Uint8Array(nxbBuf);
+  reader = new NxsReader(bytes);
+  nxsView = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+
+  // Resolve record 0's score field to an absolute byte offset. We do this
+  // once and cache — every subsequent frame just writes 8 bytes.
+  const slot = reader.slot("score");
+  const obj  = reader.record(0);
+  obj.getF64BySlot(slot); // forces header parsing + populates _offsetTableStart
+  const rawOff = obj._resolveSlot(slot);
+  if (rawOff < 0) throw new Error("score field missing on record 0");
+  scoreByteOffset = rawOff;
+
+  // JSON: parse once, keep both the parsed form and the serialised form.
+  jsonParsed = JSON.parse(jsonText);
+  jsonSerialized = jsonText;
+
+  setStatus(`Loaded ${reader.recordCount.toLocaleString()} records — NXS ${(bytes.length/1048576).toFixed(1)} MB, JSON ${(jsonText.length/1048576).toFixed(1)} MB.`, "done");
+}
+
+// ── Frame work ────────────────────────────────────────────────────────────
+// Two independent work functions so one column can be "hot" while the other stays idle.
+
+function workJson(newScore, frameIndex, reparseEvery) {
+  // 1) In-place mutate the parsed structure (cheap).
+  jsonParsed[0].score = newScore;
+
+  // 2) Every K frames, re-serialise + re-parse the whole array. This is the
+  //    realistic "server just pushed a new snapshot" path — JSON has no way
+  //    to patch bytes in place so you must walk the whole doc again.
+  if (frameIndex % reparseEvery === 0) {
+    jsonSerialized = JSON.stringify(jsonParsed);
+    jsonParsed = JSON.parse(jsonSerialized);
+  }
+
+  return jsonParsed[0].score;
+}
+
+function workNxs(newScore /*, frameIndex */) {
+  // Overwrite 8 bytes at the cached offset. Zero allocations.
+  nxsView.setFloat64(scoreByteOffset, newScore, true);
+  // Read it back (the "display" path — same cost a real consumer would pay).
+  return nxsView.getFloat64(scoreByteOffset, true);
+}
+
+// ── rAF loop ──────────────────────────────────────────────────────────────
+
+let frameIndex = 0;
+
+function frame(ts) {
+  if (!running) return;
+
+  const reparseEvery = parseInt($("#reparse").value, 10);
+  const pressure     = parseInt($("#pressure").value, 10);
+
+  // ── JSON column work ────────────────────────────────────────────
+  const t0j = performance.now();
+  let jsonScore = 0;
+  for (let k = 0; k < pressure; k++) {
+    // cycle newScore so the display is lively
+    const v = ((frameIndex * pressure + k) % 1000) / 10;
+    jsonScore = workJson(v, frameIndex * pressure + k, reparseEvery);
+  }
+  const t1j = performance.now();
+
+  // ── NXS column work ─────────────────────────────────────────────
+  const t0n = performance.now();
+  let nxsScore = 0;
+  for (let k = 0; k < pressure; k++) {
+    const v = ((frameIndex * pressure + k) % 1000) / 10;
+    nxsScore = workNxs(v);
+  }
+  const t1n = performance.now();
+
+  // Frame deltas (compared against previous rAF timestamp).
+  const dt = prevFrameTs === 0 ? 16.67 : ts - prevFrameTs;
+  prevFrameTs = ts;
+
+  // We attribute the overall frame delta to each column, since both ran
+  // in the same tick. But we also show per-column *work time* in the
+  // "last frame" stat — that's the part of the delta this column caused.
+  recordFrame("json", dt, t1j - t0j);
+  recordFrame("nxs",  dt, t1n - t0n);
+
+  // Render
+  $("#score-json").textContent = jsonScore.toFixed(2);
+  $("#score-nxs").textContent  = nxsScore.toFixed(2);
+  renderStats("json");
+  renderStats("nxs");
+
+  frameIndex++;
+  rafId = requestAnimationFrame(frame);
+}
+
+function recordFrame(col, dt, workMs) {
+  const s = stats[col];
+  s.frames++;
+  s.totalTime += dt;
+  s.totalWork += workMs;
+  s.last = workMs;
+  if (workMs > s.maxWork) s.maxWork = workMs;
+  if (workMs > FRAME_BUDGET_MS) s.drops++;
+  // Sparkline shows per-column work time, same rule.
+  s.spark.push(workMs);
+  if (s.spark.length > SPARK_LEN) s.spark.shift();
+}
+
+function renderStats(col) {
+  const s = stats[col];
+  const fps = s.totalTime > 0 ? (s.frames / (s.totalTime / 1000)) : 0;
+  const avg = s.frames > 0 ? s.totalWork / s.frames : 0;
+  $(`#fps-${col}`).textContent   = fps.toFixed(1);
+  $(`#last-${col}`).textContent  = fmtWork(s.last);
+  $(`#max-${col}`).textContent   = fmtWork(s.maxWork);
+  $(`#avg-${col}`).textContent   = fmtWork(avg);
+  const drops = $(`#drops-${col}`);
+  drops.textContent = s.drops.toString();
+  drops.classList.toggle("hot", s.drops > 0);
+  renderSparkline(col);
+}
+
+function renderSparkline(col) {
+  const host = $(`#spark-${col}`);
+  const spark = stats[col].spark;
+  // Scale bars so 33 ms = 100% (2x budget). Anything >20 ms is red.
+  const maxMs = 33;
+  // Rebuild child nodes only if count mismatches (first render).
+  if (host.childElementCount !== spark.length) {
+    host.innerHTML = "";
+    for (let i = 0; i < spark.length; i++) {
+      const b = document.createElement("div");
+      b.className = "bar";
+      host.appendChild(b);
+    }
+  }
+  const kids = host.children;
+  for (let i = 0; i < spark.length; i++) {
+    const v = spark[i];
+    const h = Math.min(100, (v / maxMs) * 100);
+    const el = kids[i];
+    el.style.height = h.toFixed(0) + "%";
+    if (v > FRAME_BUDGET_MS) el.classList.add("bad");
+    else el.classList.remove("bad");
+  }
+}
+
+// ── PerformanceObserver for long tasks ─────────────────────────────────────
+
+function setupLongTaskObserver() {
+  if (typeof PerformanceObserver === "undefined") return;
+  const supported = PerformanceObserver.supportedEntryTypes || [];
+  if (!supported.includes("longtask")) return;
+
+  const list = $("#longtasks");
+  let seen = 0;
+  try {
+    const obs = new PerformanceObserver(entries => {
+      for (const e of entries.getEntries()) {
+        seen++;
+        if (seen === 1) list.innerHTML = "";
+        const line = document.createElement("div");
+        line.textContent = `[${new Date().toLocaleTimeString()}] longtask duration=${e.duration.toFixed(1)} ms`;
+        list.prepend(line);
+        while (list.childElementCount > 40) list.removeChild(list.lastChild);
+      }
+    });
+    obs.observe({ entryTypes: ["longtask"] });
+  } catch (err) {
+    // Some browsers reject the observe call for specific entry types.
+    console.warn("longtask observer unavailable:", err);
+  }
+}
+
+// ── Wiring ────────────────────────────────────────────────────────────────
+
+function resetStats() {
+  for (const col of ["json", "nxs"]) {
+    stats[col].last = 0;
+    stats[col].max = 0;
+    stats[col].drops = 0;
+    stats[col].frames = 0;
+    stats[col].totalTime = 0;
+    stats[col].spark = new Array(SPARK_LEN).fill(0);
+  }
+  prevFrameTs = 0;
+  frameIndex = 0;
+}
+
+async function start() {
+  if (running) {
+    // Stop
+    running = false;
+    cancelAnimationFrame(rafId);
+    $("#run").textContent = "Run";
+    setStatus("Stopped.", "");
+    return;
+  }
+
+  if (!reader) {
+    try {
+      await loadFixtures();
+    } catch (err) {
+      console.error(err);
+      setStatus("Load failed: " + err.message, "error");
+      return;
+    }
+  }
+
+  resetStats();
+  running = true;
+  $("#run").textContent = "Stop";
+  setStatus("Running…", "running");
+  prevFrameTs = 0;
+  rafId = requestAnimationFrame(frame);
+}
+
+$("#run").addEventListener("click", start);
+
+$("#reparse").addEventListener("input", e => {
+  $("#reparse-val").textContent = e.target.value;
+});
+$("#pressure").addEventListener("input", e => {
+  $("#pressure-val").textContent = e.target.value;
+});
+
+setupLongTaskObserver();
+
+// Pre-load so the first Run click is snappy.
+loadFixtures().catch(err => {
+  console.error(err);
+  setStatus("Load failed: " + err.message, "error");
+});
+</script>
+<script src="theme.js"></script>
+</body>
+</html>
