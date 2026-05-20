@@ -18,6 +18,9 @@ on:
 env:
   DRV: ${{ github.workspace }}/nyxis-drivers
 
+permissions:
+  contents: read
+
 jobs:
   generate-vectors:
     runs-on: ubuntu-latest
@@ -76,6 +79,7 @@ jobs:
         with:
           repository: nyxis-io/nyxis-drivers
           path: nyxis-drivers
+          token: ${{ secrets.NYXIS_CI_AUTOMATION_TOKEN || github.token }}
 
       - uses: actions/setup-node@v4
         with:
@@ -99,6 +103,7 @@ jobs:
         with:
           repository: nyxis-io/nyxis-drivers
           path: nyxis-drivers
+          token: ${{ secrets.NYXIS_CI_AUTOMATION_TOKEN || github.token }}
 
       - uses: actions/setup-python@v5
         with:
@@ -122,6 +127,7 @@ jobs:
         with:
           repository: nyxis-io/nyxis-drivers
           path: nyxis-drivers
+          token: ${{ secrets.NYXIS_CI_AUTOMATION_TOKEN || github.token }}
 
       - uses: actions/setup-go@v5
         with:
@@ -145,6 +151,7 @@ jobs:
         with:
           repository: nyxis-io/nyxis-drivers
           path: nyxis-drivers
+          token: ${{ secrets.NYXIS_CI_AUTOMATION_TOKEN || github.token }}
 
       - uses: ruby/setup-ruby@v1
         with:
@@ -168,6 +175,7 @@ jobs:
         with:
           repository: nyxis-io/nyxis-drivers
           path: nyxis-drivers
+          token: ${{ secrets.NYXIS_CI_AUTOMATION_TOKEN || github.token }}
 
       - uses: shivammathur/setup-php@v2
         with:
@@ -191,6 +199,7 @@ jobs:
         with:
           repository: nyxis-io/nyxis-drivers
           path: nyxis-drivers
+          token: ${{ secrets.NYXIS_CI_AUTOMATION_TOKEN || github.token }}
 
       - uses: actions/download-artifact@v4
         with:
@@ -210,6 +219,7 @@ jobs:
         with:
           repository: nyxis-io/nyxis-drivers
           path: nyxis-drivers
+          token: ${{ secrets.NYXIS_CI_AUTOMATION_TOKEN || github.token }}
 
       - uses: actions/download-artifact@v4
         with:
@@ -229,6 +239,7 @@ jobs:
         with:
           repository: nyxis-io/nyxis-drivers
           path: nyxis-drivers
+          token: ${{ secrets.NYXIS_CI_AUTOMATION_TOKEN || github.token }}
 
       - uses: actions/setup-java@v4
         with:
@@ -255,6 +266,7 @@ jobs:
         with:
           repository: nyxis-io/nyxis-drivers
           path: nyxis-drivers
+          token: ${{ secrets.NYXIS_CI_AUTOMATION_TOKEN || github.token }}
 
       - uses: actions/setup-dotnet@v4
         with:
