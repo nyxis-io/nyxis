@@ -4,7 +4,9 @@
 # Usage: ruby conformance/run_ruby.rb conformance/
 
 require "json"
-require_relative "../../nyxis-drivers/ruby/nxs"
+
+drv = ENV["DRV"] || File.expand_path("../../nyxis-drivers", __dir__)
+require File.join(drv, "ruby", "nxs")
 
 MAGIC_LIST = 0x4E59584C
 

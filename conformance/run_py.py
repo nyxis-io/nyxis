@@ -9,8 +9,10 @@ import os
 import struct
 import sys
 
-# Add the py/ directory to the import path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "nyxis-drivers", "py"))
+_drv = os.environ.get("DRV") or os.path.join(
+    os.path.dirname(__file__), "..", "..", "nyxis-drivers"
+)
+sys.path.insert(0, os.path.join(os.path.abspath(_drv), "py"))
 from nxs import NxsReader, NxsError
 
 MAGIC_LIST = 0x4E59584C  # NYXL

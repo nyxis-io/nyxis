@@ -5,8 +5,8 @@
  */
 declare(strict_types=1);
 
-// Load the NXS reader
-require_once __DIR__ . '/../../nyxis-drivers/php/Nxs.php';
+$drv = getenv('DRV') ?: dirname(__DIR__, 2) . '/nyxis-drivers';
+require_once rtrim($drv, '/') . '/php/Nxs.php';
 
 use Nxs\Reader as NxsReader;
 use Nxs\NxsException;

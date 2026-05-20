@@ -2,16 +2,17 @@
 // NXS conformance runner for JavaScript (Node.js)
 // Usage: node conformance/run_js.js conformance/
 
-import { createRequire } from "module";
 import { readFileSync, readdirSync } from "fs";
 import { join, dirname } from "path";
-import { fileURLToPath } from "url";
+import { fileURLToPath, pathToFileURL } from "url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const conformanceDir = process.argv[2] || join(__dirname);
 
-// Load the NXS reader from the js/ directory
-import { NxsReader, NxsError } from "../../nyxis-drivers/js/nxs.js";
+const drv = process.env.DRV || join(__dirname, "..", "..", "nyxis-drivers");
+const { NxsReader, NxsError } = await import(
+  pathToFileURL(join(drv, "js", "nxs.js")).href
+);
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
