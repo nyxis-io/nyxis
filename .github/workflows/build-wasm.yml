@@ -7,6 +7,10 @@ on:
       - 'bench/wasm/nxs_reducers.c'
       - 'bench/wasm/build.sh'
       - '.github/workflows/build-wasm.yml'
+  pull_request:
+    paths:
+      - 'bench/wasm/**'
+      - '.github/workflows/build-wasm.yml'
 
 jobs:
   build:
@@ -21,8 +25,9 @@ jobs:
         working-directory: bench/wasm
         run: bash build.sh
 
-      - name: Commit updated WASM binary
-        uses: stefanzweifel/git-auto-commit-action@v5
-        with:
-          commit_message: "chore: rebuild nxs_reducers.wasm [skip ci]"
-          file_pattern: bench/wasm/nxs_reducers.wasm
+      - name: Verify committed WASM matches build
+        run: |
+          git diff --exit-code bench/wasm/nxs_reducers.wasm || {
+            echo "::error::bench/wasm/nxs_reducers.wasm is out of date. Run: bash bench/wasm/build.sh && git add bench/wasm/nxs_reducers.wasm"
+            exit 1
+          }

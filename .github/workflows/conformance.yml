@@ -6,32 +6,17 @@ on:
     paths:
       - 'conformance/**'
       - 'rust/**'
-      - 'js/**'
-      - 'py/**'
-      - 'go/**'
-      - 'ruby/**'
-      - 'php/**'
-      - 'c/**'
-      - 'swift/**'
-      - 'kotlin/**'
-      - 'csharp/**'
       - 'Makefile'
       - '.github/workflows/conformance.yml'
   pull_request:
     paths:
       - 'conformance/**'
       - 'rust/**'
-      - 'js/**'
-      - 'py/**'
-      - 'go/**'
-      - 'ruby/**'
-      - 'php/**'
-      - 'c/**'
-      - 'swift/**'
-      - 'kotlin/**'
-      - 'csharp/**'
       - 'Makefile'
       - '.github/workflows/conformance.yml'
+
+env:
+  DRV: ${{ github.workspace }}/nyxis-drivers
 
 jobs:
   generate-vectors:
@@ -87,6 +72,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: nyxis-io/nyxis-drivers
+          path: nyxis-drivers
 
       - uses: actions/setup-node@v4
         with:
@@ -98,12 +87,18 @@ jobs:
           path: conformance/
 
       - run: make conformance-run-js
+        env:
+          DRV: ${{ env.DRV }}
 
   run-python:
     needs: generate-vectors
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: nyxis-io/nyxis-drivers
+          path: nyxis-drivers
 
       - uses: actions/setup-python@v5
         with:
@@ -115,12 +110,18 @@ jobs:
           path: conformance/
 
       - run: make conformance-run-py
+        env:
+          DRV: ${{ env.DRV }}
 
   run-go:
     needs: generate-vectors
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: nyxis-io/nyxis-drivers
+          path: nyxis-drivers
 
       - uses: actions/setup-go@v5
         with:
@@ -132,12 +133,18 @@ jobs:
           path: conformance/
 
       - run: make conformance-run-go
+        env:
+          DRV: ${{ env.DRV }}
 
   run-ruby:
     needs: generate-vectors
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: nyxis-io/nyxis-drivers
+          path: nyxis-drivers
 
       - uses: ruby/setup-ruby@v1
         with:
@@ -149,12 +156,18 @@ jobs:
           path: conformance/
 
       - run: make conformance-run-ruby
+        env:
+          DRV: ${{ env.DRV }}
 
   run-php:
     needs: generate-vectors
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: nyxis-io/nyxis-drivers
+          path: nyxis-drivers
 
       - uses: shivammathur/setup-php@v2
         with:
@@ -166,12 +179,18 @@ jobs:
           path: conformance/
 
       - run: make conformance-run-php
+        env:
+          DRV: ${{ env.DRV }}
 
   run-c:
     needs: generate-vectors
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: nyxis-io/nyxis-drivers
+          path: nyxis-drivers
 
       - uses: actions/download-artifact@v4
         with:
@@ -179,12 +198,18 @@ jobs:
           path: conformance/
 
       - run: make conformance-run-c
+        env:
+          DRV: ${{ env.DRV }}
 
   run-swift:
     needs: generate-vectors
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: nyxis-io/nyxis-drivers
+          path: nyxis-drivers
 
       - uses: actions/download-artifact@v4
         with:
@@ -192,12 +217,18 @@ jobs:
           path: conformance/
 
       - run: make conformance-run-swift
+        env:
+          DRV: ${{ env.DRV }}
 
   run-kotlin:
     needs: generate-vectors
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: nyxis-io/nyxis-drivers
+          path: nyxis-drivers
 
       - uses: actions/setup-java@v4
         with:
@@ -212,12 +243,18 @@ jobs:
           path: conformance/
 
       - run: make conformance-run-kotlin
+        env:
+          DRV: ${{ env.DRV }}
 
   run-csharp:
     needs: generate-vectors
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: nyxis-io/nyxis-drivers
+          path: nyxis-drivers
 
       - uses: actions/setup-dotnet@v4
         with:
@@ -231,3 +268,4 @@ jobs:
       - run: make conformance-run-csharp
         env:
           DOTNET_FRAMEWORK: net9.0
+          DRV: ${{ env.DRV }}
