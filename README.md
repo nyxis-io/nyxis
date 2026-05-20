@@ -92,6 +92,25 @@ Span schema: 14 services, 20 OTel operation names, realistic per-op duration dis
 
 ---
 
+## Language drivers ([`nyxis-drivers`](https://github.com/nyxis-io/nyxis-drivers))
+
+This repository (**nyxis**) contains the Rust compiler, format spec, conformance vectors, browser demos, benchmarks, and MCP server. The **ten language SDKs** (readers, writers, and native extensions) live in the MIT-licensed sibling repo [**nyxis-io/nyxis-drivers**](https://github.com/nyxis-io/nyxis-drivers): C, Go, Python, JavaScript, Ruby, PHP, Kotlin, C#, and Swift.
+
+| Registry / channel | Install |
+| --- | --- |
+| **PyPI** | `pip install nyxis` |
+| **RubyGems** | `gem install nyxis` |
+| **NuGet** | `dotnet add package nyxis` |
+| **Packagist** | `composer require nyxis/nyxis` |
+| **npm** | `npm install nyxis` |
+| **Go** | `go get github.com/nyxis-io/nyxis-drivers/go` |
+| **C (source)** | [GitHub Releases](https://github.com/nyxis-io/nyxis-drivers/releases) (`c/v*` tags) |
+| **From source** | Clone [nyxis-drivers](https://github.com/nyxis-io/nyxis-drivers) — see its [README](https://github.com/nyxis-io/nyxis-drivers/blob/main/README.md) |
+
+For the split-repo layout and licensing boundaries, see [GOVERNANCE.md](./GOVERNANCE.md).
+
+---
+
 ## Language Support
 
 
@@ -109,27 +128,27 @@ Span schema: 14 services, 20 OTel operation names, realistic per-op duration dis
 | **C#**         | ✅ .NET 9+           | —                | `SumF64`, `MinF64`, `MaxF64`, `SumI64`                     | `dotnet run`          |
 
 
-All ten implementations read the same `.nxb` binary produced by the Rust compiler.
+All ten implementations live in [**nyxis-drivers**](https://github.com/nyxis-io/nyxis-drivers) and read the same `.nxb` binary produced by the Rust compiler in this repo.
 
 ---
 
 ## Browser Demos
 
-Live at **[nxs.covibe.us](https://nxs.covibe.us/index.html)**
+Live at **[nyxis.io](https://nyxis.io/demo)**
 
 
 | Demo                                | What it shows                                                                        |
 | ----------------------------------- | ------------------------------------------------------------------------------------ |
-| `[bench.html](js/bench.html)`       | NXS vs JSON vs CSV — open, random access, reducer, cold pipeline — up to 14M records |
-| `[ticker.html](js/ticker.html)`     | 60 FPS in-place byte patch vs full JSON re-parse — jank visible in sparkline         |
-| `[workers.html](js/workers.html)`   | 4 Web Workers, 1 `SharedArrayBuffer`, 0 bytes copied — vs 57 MB × 4 for JSON         |
-| `[explorer.html](js/explorer.html)` | 10M-line log explorer — virtual scroll, live search, zero-copy                       |
-| `[wal.html](js/wal.html)`           | WAL ingestion — 5 encoders (generic, fast, sealed, WASM, JSON) — live cross-language chart |
+| `[bench/bench.html](bench/bench.html)`       | NXS vs JSON vs CSV — open, random access, reducer, cold pipeline — up to 14M records |
+| `[demo/ticker.html](demo/ticker.html)`     | 60 FPS in-place byte patch vs full JSON re-parse — jank visible in sparkline         |
+| `[demo/workers.html](demo/workers.html)`   | 4 Web Workers, 1 `SharedArrayBuffer`, 0 bytes copied — vs 57 MB × 4 for JSON         |
+| `[demo/explorer.html](demo/explorer.html)` | 10M-line log explorer — virtual scroll, live search, zero-copy                       |
+| `[demo/wal.html](demo/wal.html)`           | WAL ingestion — 5 encoders (generic, fast, sealed, WASM, JSON) — live cross-language chart |
 
 
 ```bash
-cd js && python3 server.py   # required for SharedArrayBuffer (sets COOP/COEP headers)
-# open http://localhost:8000
+make demo   # Docker — serves /demo/, /bench/, and driver SDK assets
+# or: cd demo && python3 server.py   # COOP/COEP headers for SharedArrayBuffer
 ```
 
 ---
@@ -188,24 +207,17 @@ A `.nxb` file is four segments: a 32-byte preamble, an embedded schema header, a
 ## Quick Start
 
 ```bash
-# Generate test fixtures (required by all language benchmarks and tests)
-cd rust && cargo run --release --bin gen_fixtures -- ../js/fixtures 1000
-
-# Compile a .nxs source file
+# Core (this repo) — fixtures + compiler
+make fixtures                    # → bench/fixtures/
 cargo build --release
-./target/release/nxs ../examples/user_profile.nxs
+./rust/target/release/nxs examples/user_profile.nxs
 
-# Run all language tests
-cd js     && node test.js ../js/fixtures
-cd py     && python test_nxs.py ../js/fixtures
-cd go     && go test ./...
-ruby ruby/test.rb js/fixtures
-php php/test.php js/fixtures
-cd c      && make test && ./test ../js/fixtures
-cd swift  && swift run nxs-test ../js/fixtures
-cd kotlin && gradle run --args="../js/fixtures"
-cd csharp && dotnet run -- ../js/fixtures
+# Drivers — clone https://github.com/nyxis-io/nyxis-drivers (sibling or monorepo)
+git clone https://github.com/nyxis-io/nyxis-drivers.git
+cd nyxis-drivers && make fixtures && make test
 ```
+
+In the [nyxis monorepo](https://github.com/nyxis-io/nyxis) workspace, use `make -C nyxis-drivers test` after `make -C nyxis fixtures`.
 
 ---
 
@@ -276,7 +288,9 @@ Add to `.claude/settings.json`:
 
 ## CI
 
-Every language has its own GitHub Actions workflow triggered on changes to its directory. Fixtures are generated once by the Rust workflow and shared as artifacts. See `[.github/workflows/](.github/workflows/)`.
+**This repo:** Rust build, conformance vector generation, WASM build, and cross-language conformance jobs (each checks out [**nyxis-drivers**](https://github.com/nyxis-io/nyxis-drivers)). See [`.github/workflows/`](.github/workflows/).
+
+**Drivers repo:** per-language test and publish workflows on [nyxis-io/nyxis-drivers](https://github.com/nyxis-io/nyxis-drivers/tree/main/.github/workflows).
 
 ---
 
@@ -290,4 +304,4 @@ Production use outside of these parameters requires a commercial license. See [C
 
 ## Status
 
-**Stable (v1.1).** The spec now supports streamable sealed `.nxb` files: writers can emit schema and record bytes before the final Tail-Index is known, then seal with `FooterTailPtr + MagicFooter`. The `conformance/` directory contains vectors validated by runners in Rust, JS, Python, Go, Ruby, PHP, C, Swift, Kotlin, and C#.
+**Stable (v1.1).** The spec now supports streamable sealed `.nxb` files: writers can emit schema and record bytes before the final Tail-Index is known, then seal with `FooterTailPtr + MagicFooter`. The `conformance/` directory contains vectors validated by runners in this repo (Rust) and in [nyxis-drivers](https://github.com/nyxis-io/nyxis-drivers) (JS, Python, Go, Ruby, PHP, C, Swift, Kotlin, C#).
