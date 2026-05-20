@@ -6,7 +6,7 @@ rust/target
 # rust/Cargo.lock is intentionally committed for reproducible builds
 
 # Generated fixtures (regenerate with: make fixtures)
-bench/fixtures/
+site/bench/fixtures/
 # Makefile fallback when js/fixtures is not writable (e.g. root-owned deploy tree)
 out/fixtures/
 

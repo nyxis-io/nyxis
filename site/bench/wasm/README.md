@@ -10,17 +10,17 @@ Requires LLVM/Clang with the `wasm32-unknown-unknown` target:
 ```bash
 # macOS
 brew install llvm
-bash bench/wasm/build.sh
+bash site/bench/wasm/build.sh
 
 # Ubuntu / CI
 apt-get install -y clang lld
-bash bench/wasm/build.sh
+bash site/bench/wasm/build.sh
 ```
 
 ## Downloading from CI
 
 Every push to `main` triggers the `build-wasm.yml` workflow, which builds
-`nxs_reducers.wasm` and commits it back to `bench/wasm/`. You can download the
+`nxs_reducers.wasm` and commits it back to `site/bench/wasm/`. You can download the
 artifact directly from the GitHub Actions run if you need it before the commit
 lands.
 

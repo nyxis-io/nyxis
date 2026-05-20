@@ -8,7 +8,7 @@ From `nyxis/` (requires [Docker](https://www.docker.com/) and the `shared_networ
 
 ```bash
 make sdk          # clone nyxis-drivers if ../nyxis-drivers/js is empty
-make fixtures     # optional: benchmark datasets under bench/fixtures/
+make fixtures     # optional: benchmark datasets under site/bench/fixtures/
 docker compose up
 ```
 
@@ -21,8 +21,8 @@ Static layout:
 
 | URL path | Files |
 |----------|--------|
-| `/demo/` | This directory |
-| `/bench/` | `../bench/` |
+| `/demo/` | `site/demo/` |
+| `/bench/` | `site/bench/` |
 | `/sdk/` | `../../nyxis-drivers/js/` (reader, writer, `wasm.js`) |
 
 For COOP/COEP (SharedArrayBuffer), use nginx via compose — not plain `python3 -m http.server`.

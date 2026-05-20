@@ -139,11 +139,11 @@ Live at **[nyxis.io](https://nyxis.io/demo)**
 
 | Demo                                | What it shows                                                                        |
 | ----------------------------------- | ------------------------------------------------------------------------------------ |
-| `[bench/bench.html](bench/bench.html)`       | NXS vs JSON vs CSV — open, random access, reducer, cold pipeline — up to 14M records |
-| `[demo/ticker.html](demo/ticker.html)`     | 60 FPS in-place byte patch vs full JSON re-parse — jank visible in sparkline         |
-| `[demo/workers.html](demo/workers.html)`   | 4 Web Workers, 1 `SharedArrayBuffer`, 0 bytes copied — vs 57 MB × 4 for JSON         |
-| `[demo/explorer.html](demo/explorer.html)` | 10M-line log explorer — virtual scroll, live search, zero-copy                       |
-| `[demo/wal.html](demo/wal.html)`           | WAL ingestion — 5 encoders (generic, fast, sealed, WASM, JSON) — live cross-language chart |
+| `[site/bench/](site/bench/)`               | NXS vs JSON vs CSV — open, random access, reducer, cold pipeline — up to 14M records |
+| `[site/demo/ticker.html](site/demo/ticker.html)`     | 60 FPS in-place byte patch vs full JSON re-parse — jank visible in sparkline         |
+| `[site/demo/workers.html](site/demo/workers.html)`   | 4 Web Workers, 1 `SharedArrayBuffer`, 0 bytes copied — vs 57 MB × 4 for JSON         |
+| `[site/demo/explorer.html](site/demo/explorer.html)` | 10M-line log explorer — virtual scroll, live search, zero-copy                       |
+| `[site/demo/wal.html](site/demo/wal.html)`           | WAL ingestion — 5 encoders (generic, fast, sealed, WASM, JSON) — live cross-language chart |
 
 
 ```bash
@@ -208,7 +208,7 @@ A `.nxb` file is four segments: a 32-byte preamble, an embedded schema header, a
 
 ```bash
 # Core (this repo) — fixtures + compiler
-make fixtures                    # → bench/fixtures/
+make fixtures                    # → site/bench/fixtures/
 cargo build --release
 ./rust/target/release/nxs examples/user_profile.nxs
 

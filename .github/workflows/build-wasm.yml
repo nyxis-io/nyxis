@@ -4,12 +4,12 @@ on:
   push:
     branches: [main]
     paths:
-      - 'bench/wasm/nxs_reducers.c'
-      - 'bench/wasm/build.sh'
+      - 'site/bench/wasm/nxs_reducers.c'
+      - 'site/bench/wasm/build.sh'
       - '.github/workflows/build-wasm.yml'
   pull_request:
     paths:
-      - 'bench/wasm/**'
+      - 'site/bench/wasm/**'
       - '.github/workflows/build-wasm.yml'
 
 jobs:
@@ -22,7 +22,7 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y clang lld
 
       - name: Build nxs_reducers.wasm
-        working-directory: bench/wasm
+        working-directory: site/bench/wasm
         run: bash build.sh
 
       # Committed .wasm may differ by OS/toolchain; CI only verifies the Linux build succeeds.

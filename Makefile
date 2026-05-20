@@ -39,7 +39,7 @@ CONF ?= $(abspath conformance)
         conformance-run-kotlin conformance-run-csharp conformance-run-rust \
         lint-mcp fix-mcp build-mcp test-mcp install-mcp
 
-FIXTURE_DIR     ?= bench/fixtures
+FIXTURE_DIR     ?= site/bench/fixtures
 FIXTURE_COUNT   ?= 1000
 # Writable path for .nxb/.json/.csv: defaults to FIXTURE_DIR, or out/fixtures when that dir is not writable.
 FIXTURE_OUT     := $(shell d="$(FIXTURE_DIR)"; mkdir -p "$$d" out/fixtures 2>/dev/null; \
@@ -57,7 +57,7 @@ demo:
 	docker compose up
 
 bench-node:
-	node bench/bench.js $(FIXTURE_OUT)
+	node site/bench/bench.js $(FIXTURE_OUT)
 
 # ── Top-level ─────────────────────────────────────────────────────────────────
 
