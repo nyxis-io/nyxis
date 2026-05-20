@@ -2,8 +2,15 @@
   var GLOBAL = [
     { id: "home", label: "Home", href: "/" },
     { id: "use-cases", label: "Use cases", href: "/use-cases/" },
+    { id: "pricing", label: "Commercial pricing", href: "/pricing/" },
     { id: "demo", label: "Demo", href: "/demo/" },
     { id: "bench", label: "Benchmark", href: "/bench/" },
+    {
+      id: "github",
+      label: "GitHub workspace",
+      href: "https://github.com/nyxis-io/nyxis",
+      external: true,
+    },
   ];
 
   var DEMO_TOOLS = [

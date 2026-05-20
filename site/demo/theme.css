@@ -1126,3 +1126,246 @@ pre,
 .use-case-group:first-of-type {
   margin-top: 0;
 }
+
+/* ---- Pricing page ---- */
+.pricing-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 14px;
+  margin-bottom: 28px;
+  align-items: stretch;
+}
+
+@media (max-width: 960px) {
+  .pricing-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.pricing-tier {
+  display: flex;
+  flex-direction: column;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 24px 22px 22px;
+  box-shadow: var(--shadow);
+}
+
+.pricing-tier--free {
+  border-top: 3px solid var(--good);
+}
+
+.pricing-tier--growth {
+  border-top: 3px solid var(--accent);
+  background: linear-gradient(165deg, var(--panel) 0%, var(--panel-2) 100%);
+}
+
+.pricing-tier--principal {
+  border-top: 3px solid var(--warm);
+}
+
+.pricing-tier__label {
+  margin: 0 0 6px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.pricing-tier__name {
+  margin: 0 0 12px;
+  font-size: 1.15rem;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  line-height: 1.2;
+}
+
+.pricing-tier__price {
+  margin: 0;
+  line-height: 1.1;
+}
+
+.pricing-tier__price .amount {
+  font-size: 2rem;
+  font-weight: 700;
+  letter-spacing: -0.04em;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.pricing-tier--growth .pricing-tier__price .amount,
+.pricing-tier--principal .pricing-tier__price .amount {
+  color: var(--accent);
+}
+
+.pricing-tier__price .period {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--muted);
+}
+
+.pricing-tier__billing {
+  margin: 6px 0 14px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.pricing-tier__target {
+  margin: 0 0 18px;
+  font-size: 14px;
+  color: var(--muted);
+  line-height: 1.55;
+  flex-grow: 0;
+}
+
+.pricing-tier__includes-title {
+  margin: 0 0 10px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.pricing-tier__includes {
+  margin: 0 0 20px;
+  padding-left: 1.15rem;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--text);
+  flex-grow: 1;
+}
+
+.pricing-tier__includes li + li {
+  margin-top: 8px;
+}
+
+.pricing-tier__includes code {
+  font-family: var(--font-mono);
+  font-size: 0.88em;
+}
+
+.pricing-tier__cta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: auto;
+}
+
+.pricing-note {
+  margin: 0 0 48px;
+  font-size: 13px;
+  color: var(--muted);
+  line-height: 1.6;
+  padding: 14px 18px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.pricing-note a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.pricing-note a:hover {
+  text-decoration: underline;
+}
+
+.pricing-faq {
+  margin-bottom: 48px;
+}
+
+.pricing-faq h2 {
+  font-size: 1.25rem;
+  font-weight: 700;
+  margin: 0 0 10px;
+  letter-spacing: -0.03em;
+}
+
+.pricing-faq-lead {
+  margin-bottom: 20px;
+}
+
+.pricing-faq-item {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  margin-bottom: 10px;
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+
+.pricing-faq-item summary {
+  padding: 16px 20px;
+  font-weight: 600;
+  font-size: 15px;
+  cursor: pointer;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.pricing-faq-item summary::-webkit-details-marker {
+  display: none;
+}
+
+.pricing-faq-item summary::after {
+  content: "+";
+  font-size: 18px;
+  font-weight: 400;
+  color: var(--muted);
+  flex-shrink: 0;
+}
+
+.pricing-faq-item[open] summary::after {
+  content: "−";
+}
+
+.pricing-faq-item summary:hover {
+  background: var(--nav-hover-bg);
+}
+
+.pricing-faq-body {
+  padding: 0 20px 18px;
+  border-top: 1px solid var(--border);
+}
+
+.pricing-faq-body p {
+  margin: 14px 0 0;
+  font-size: 15px;
+  line-height: 1.65;
+  color: var(--text);
+}
+
+.pricing-cta-band {
+  background: linear-gradient(165deg, var(--panel) 0%, var(--panel-2) 100%);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 32px 28px;
+  text-align: center;
+  box-shadow: var(--shadow);
+}
+
+.pricing-cta-band h2 {
+  margin: 0 0 10px;
+  font-size: 1.25rem;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+}
+
+.pricing-cta-band p {
+  margin: 0 auto 22px;
+  max-width: 32rem;
+  color: var(--muted);
+  font-size: 15px;
+  line-height: 1.6;
+}
+
+.pricing-cta-band .landing-actions {
+  justify-content: center;
+}

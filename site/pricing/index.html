@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Nyxis — Commercial Pricing</title>
+<meta name="description" content="Transparent Nyxis open-core pricing: free BSL production tier, Enterprise Core at $3,500/year, and Principal Scale from $15,000/year for Arrow bridge, schema registry, and SIMD guard.">
+<script src="/demo/theme-init.js"></script>
+<link rel="stylesheet" href="/demo/theme.css">
+</head>
+<body data-nav-current="pricing">
+<div id="site-nav-root"></div>
+
+<main class="page-main">
+  <header class="page-header">
+    <p class="page-eyebrow">Open-core licensing</p>
+    <h1 class="page-title">Commercial pricing</h1>
+    <p class="page-lead">
+      Nyxis is infrastructure software with explicit legal boundaries — not opaque enterprise sales.
+      Qualify your tier in minutes: revenue and throughput gates for free production use, annual seats for
+      commercial clearance and proprietary performance extensions.
+    </p>
+  </header>
+
+  <div class="pricing-grid" role="list">
+    <article class="pricing-tier pricing-tier--free" role="listitem">
+      <p class="pricing-tier__label">Tier 1</p>
+      <h2 class="pricing-tier__name">Ecosystem Open-Source</h2>
+      <p class="pricing-tier__price"><span class="amount">$0</span></p>
+      <p class="pricing-tier__target">
+        Hobbyists, indie developers, and early-stage startups within BSL production limits.
+      </p>
+      <h3 class="pricing-tier__includes-title">Included</h3>
+      <ul class="pricing-tier__includes">
+        <li>100% free production use when gross annual revenue is <strong>under $1M USD</strong> <em>and</em> processed data is <strong>under 100&nbsp;GB/month</strong>.</li>
+        <li>Core Rust compiler and CLI workspace.</li>
+        <li>All 10+ permissive MIT-licensed language client drivers (C, Go, Python, TypeScript, and others).</li>
+        <li>Deterministic BSL&nbsp;1.1 license expiration — converts fully to MIT on <strong>2029-05-20</strong>.</li>
+      </ul>
+      <div class="pricing-tier__cta">
+        <a class="btn btn-secondary" href="https://github.com/nyxis-io/nyxis" rel="noopener">GitHub workspace</a>
+        <a class="btn btn-secondary" href="https://github.com/nyxis-io/nyxis/blob/main/LICENSE" rel="noopener">BSL 1.1 terms</a>
+      </div>
+    </article>
+
+    <article class="pricing-tier pricing-tier--growth" role="listitem">
+      <p class="pricing-tier__label">Tier 2</p>
+      <h2 class="pricing-tier__name">Enterprise Core</h2>
+      <p class="pricing-tier__price"><span class="amount">$3,500</span> <span class="period">/ year</span></p>
+      <p class="pricing-tier__billing">Billed annually</p>
+      <p class="pricing-tier__target">
+        High-growth startups and mid-market engineering teams exceeding open-source thresholds.
+      </p>
+      <h3 class="pricing-tier__includes-title">Included</h3>
+      <ul class="pricing-tier__includes">
+        <li>Commercial production license clearing all BSL&nbsp;1.1 revenue and throughput restrictions.</li>
+        <li>Commercial SLA for core specification bug fixes and compiler security patches.</li>
+        <li>Full access to <strong>Nyxis In-Memory Compactor Daemon</strong> (<code>nxs-compactd</code>) for background database sector defragmentation and online <code>.nxb</code> file repacking.</li>
+      </ul>
+      <div class="pricing-tier__cta">
+        <a class="btn btn-primary" href="mailto:licensing@nyxis.io?subject=Nyxis%20Enterprise%20Core%20license">Request license</a>
+      </div>
+    </article>
+
+    <article class="pricing-tier pricing-tier--principal" role="listitem">
+      <p class="pricing-tier__label">Tier 3</p>
+      <h2 class="pricing-tier__name">Principal Scale</h2>
+      <p class="pricing-tier__price"><span class="amount">$15,000</span> <span class="period">/ year</span></p>
+      <p class="pricing-tier__billing">Starting tier · scaled by cluster volume</p>
+      <p class="pricing-tier__target">
+        Large-scale enterprise data operations, database builders, and high-volume AI infrastructure.
+      </p>
+      <h3 class="pricing-tier__includes-title">Included</h3>
+      <ul class="pricing-tier__includes">
+        <li>Everything in Enterprise Core.</li>
+        <li><strong>Apache Arrow zero-copy memory bridge</strong> — instant columnar mapping via the Arrow C Data Interface for Snowflake, Polars, and DataFusion pipelines.</li>
+        <li><strong>Distributed schema registry &amp; proxy</strong> (<code>nxs-registryd</code>) — centralized gRPC contract verification with automated schema drift resolution.</li>
+        <li><strong>Hardware-accelerated SIMD guard</strong> — AVX-512 and ARM NEON vectorized kernels for native parallel batch search across raw binary buffers.</li>
+        <li><strong>24/7/365</strong> direct architectural advisory channel.</li>
+      </ul>
+      <div class="pricing-tier__cta">
+        <a class="btn btn-primary" href="mailto:licensing@nyxis.io?subject=Nyxis%20Principal%20Scale%20evaluation">Contact licensing</a>
+        <a class="btn btn-secondary" href="/use-cases/">View use cases</a>
+      </div>
+    </article>
+  </div>
+
+  <p class="pricing-note">
+    Written commercial terms and eligibility detail also live in
+    <a href="https://github.com/nyxis-io/nyxis/blob/main/COMMERCIAL.md" rel="noopener">COMMERCIAL.md</a>
+    on GitHub. MIT client drivers remain free in all tiers —
+    <a href="https://github.com/nyxis-io/nyxis-drivers" rel="noopener">nyxis-drivers</a>.
+  </p>
+
+  <section class="pricing-faq" aria-labelledby="pricing-faq-heading">
+    <h2 id="pricing-faq-heading">Self-qualification FAQ</h2>
+    <p class="page-lead pricing-faq-lead">
+      Use these answers to filter your evaluation before engaging sales — most teams know their tier from revenue and throughput alone.
+    </p>
+
+    <details class="pricing-faq-item" open>
+      <summary>How are &ldquo;Revenue&rdquo; and &ldquo;Throughput&rdquo; measured for the free tier?</summary>
+      <div class="pricing-faq-body">
+        <p>
+          If your company makes over <strong>$1,000,000 USD</strong> in gross annual revenue,
+          <em>or</em> your production applications serialize or deserialize more than
+          <strong>100&nbsp;GB</strong> of <code>.nxb</code> payloads across your network lanes in a single calendar month,
+          your standard BSL&nbsp;1.1 allowance expires. You must step into a paid commercial agreement.
+        </p>
+      </div>
+    </details>
+
+    <details class="pricing-faq-item">
+      <summary>Are our client applications bound by the BSL license?</summary>
+      <div class="pricing-faq-body">
+        <p>
+          No. All client-side readers and writers (<code>nyxis-drivers</code>) are licensed under the ultra-permissive
+          MIT license. You can embed them in edge applications, mobile devices, IoT hardware, or client browsers with
+          absolutely zero copyleft or compliance friction. Only the core compilation engine and private performance
+          daemons require a commercial seat.
+        </p>
+      </div>
+    </details>
+
+    <details class="pricing-faq-item">
+      <summary>Which tier do I need if I only exceed one BSL gate?</summary>
+      <div class="pricing-faq-body">
+        <p>
+          Either gate triggers commercial licensing. You must comply with <strong>both</strong> the revenue cap and the
+          monthly throughput cap to remain on the free tier. Crossing either threshold moves you to Enterprise Core or
+          Principal Scale depending on scale and extension requirements.
+        </p>
+      </div>
+    </details>
+  </section>
+
+  <section class="pricing-cta-band">
+    <h2>Ready to procure?</h2>
+    <p>Enterprise architects and procurement teams can open a thread with tier, cluster footprint, and target go-live date.</p>
+    <div class="landing-actions">
+      <a class="btn btn-primary" href="mailto:licensing@nyxis.io">licensing@nyxis.io</a>
+      <a class="btn btn-secondary" href="/use-cases/">Production use cases</a>
+      <a class="btn btn-secondary" href="/demo/">Live demos</a>
+    </div>
+  </section>
+</main>
+
+<footer class="site-footer">
+  <span>© Nyxis · NXS format v1.1</span>
+  <div class="links">
+    <a href="https://github.com/nyxis-io/nyxis">nyxis (compiler &amp; spec)</a>
+    <a href="https://github.com/nyxis-io/nyxis-drivers">nyxis-drivers (SDKs)</a>
+    <a href="https://github.com/nyxis-io/nyxis/blob/main/COMMERCIAL.md" rel="noopener">COMMERCIAL.md</a>
+  </div>
+</footer>
+
+<script src="/demo/nav.js"></script>
+<script src="/demo/theme.js"></script>
+</body>
+</html>
