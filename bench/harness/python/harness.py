@@ -88,7 +88,7 @@ def measure(fn, *, records: int, metric: str) -> tuple[int, int, int, int]:
     q3 = samples[(3 * len(samples)) // 4]
     trimmed = samples[len(samples) // 4 : (3 * len(samples)) // 4 + 1]
     p50 = int(statistics.median(trimmed))
-    p99 = int(trimmed[int((len(trimmed) - 1) * 0.99)])
+    p99 = int(samples[int((len(samples) - 1) * 0.99)])
     return p50, p99, q3 - q1, samples_n
 
 

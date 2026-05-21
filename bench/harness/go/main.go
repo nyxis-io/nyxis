@@ -45,7 +45,7 @@ func measure(fn func()) (p50, p99, iqr int64) {
 	iqr = q3 - q1
 	trim := buf[samples/4 : (3*samples)/4+1]
 	p50 = trim[len(trim)/2]
-	p99 = trim[int(float64(len(trim)-1)*0.99)]
+	p99 = buf[int(float64(samples-1)*0.99)]
 	return p50, p99, iqr
 }
 

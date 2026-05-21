@@ -80,8 +80,8 @@ fn measure(mut f: impl FnMut()) -> (i64, i64, i64) {
     let iqr = q3 - q1;
     let trim = &buf[SAMPLES / 4..=(3 * SAMPLES) / 4];
     let p50 = trim[trim.len() / 2];
-    let p99_idx = ((trim.len() as f64 - 1.0) * 0.99).round() as usize;
-    let p99 = trim[p99_idx.min(trim.len() - 1)];
+    let p99_idx = ((buf.len() as f64 - 1.0) * 0.99).round() as usize;
+    let p99 = buf[p99_idx.min(buf.len() - 1)];
     (p50, p99, iqr)
 }
 

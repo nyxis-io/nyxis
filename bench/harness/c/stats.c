@@ -70,7 +70,7 @@ bench_stats_t bench_measure(void (*fn)(void *ctx), void *ctx) {
     int64_t *trimmed_buf = samples + trim_lo;
 
     out.p50_ns = percentile(trimmed_buf, trimmed, 0.50);
-    out.p99_ns = percentile(trimmed_buf, trimmed, 0.99);
+    out.p99_ns = percentile(samples, BENCH_SAMPLES, 0.99);
 
     free(samples);
     return out;

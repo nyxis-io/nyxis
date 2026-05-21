@@ -12,7 +12,7 @@ typedef struct {
     int samples;
 } bench_stats_t;
 
-/* Measure fn() BENCH_WARMUP + BENCH_SAMPLES times; report IQR-trimmed median as p50. */
+/* Measure fn() BENCH_WARMUP + BENCH_SAMPLES times; p50 = IQR-trimmed median, p99 = full sample. */
 bench_stats_t bench_measure(void (*fn)(void *ctx), void *ctx);
 
 int64_t bench_now_ns(void);
