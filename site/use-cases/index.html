@@ -15,38 +15,46 @@
 <main class="page-main">
   <header class="page-header">
     <p class="page-eyebrow">Production architectures</p>
-    <h1 class="page-title">High-throughput system topologies</h1>
+    <h1 class="page-title">From browser limits to production topologies</h1>
     <p class="page-lead">
-      Nyxis is a wire-format and compiler stack for systems engineers — the same category as Protocol Buffers, FlatBuffers,
-      and Cap'n Proto — not a customer-support or ticketing platform. Start with why <code>JSON.parse()</code> hits hard V8
-      walls, then how the bimodal standard and nine production topologies bypass them.
+      Nyxis is a wire-format and compiler stack for systems engineers — alongside Protobuf, FlatBuffers, and Cap'n Proto,
+      not a ticketing or CRM product. This page follows one arc: the constraint that breaks JSON in the browser, the
+      protocol that answers it, then eight reference deployments teams already run in production.
     </p>
   </header>
 
-  <nav class="use-case-toc" aria-label="Catalog contents">
+  <nav class="use-case-toc" aria-label="Page outline">
     <h2>On this page</h2>
+    <p class="use-case-toc-act">Act I — The constraint</p>
     <ol>
-      <li><a href="#v8-limits">V8 allocation limits vs Nyxis</a></li>
+      <li><a href="#v8-limits">Why <code>JSON.parse()</code> hits V8 walls</a></li>
+    </ol>
+    <p class="use-case-toc-act">Act II — The protocol</p>
+    <ol start="2">
       <li><a href="#bimodal">Bimodal standard (<code>.nxs</code> / <code>.nxb</code>)</a></li>
       <li><a href="#streaming">Streamable ingest &amp; WAL sealing (v1.1)</a></li>
-      <li><a href="#access-logs">NGINX, Envoy &amp; API gateway access log viewers</a></li>
-      <li><a href="#k8s-aggregators">Kubernetes container stdout aggregators</a></li>
-      <li><a href="#apm-traces">APM trace explorers &amp; distributed span tables</a></li>
-      <li><a href="#llm-tracing">LLM generation tracing &amp; AI observability</a></li>
-      <li><a href="#web-workers">Zero-copy Web Worker handoffs</a></li>
-      <li><a href="#hft-wal">HFT &amp; event-streaming WALs</a></li>
-      <li><a href="#mcp">AI agent tools &amp; MCP servers</a></li>
+    </ol>
+    <p class="use-case-toc-act">Act III — Production topologies</p>
+    <ol start="4">
+      <li><a href="#catalog">How the catalog is organized</a></li>
+      <li><a href="#k8s-aggregators">Kubernetes stdout aggregators</a></li>
       <li><a href="#iot-edge">Edge IoT &amp; fleet telemetry</a></li>
+      <li><a href="#access-logs">NGINX &amp; API gateway log viewers</a></li>
+      <li><a href="#web-workers">Web Worker zero-copy handoffs</a></li>
+      <li><a href="#apm-traces">APM trace &amp; span explorers</a></li>
+      <li><a href="#llm-tracing">LLM generation tracing &amp; observability</a></li>
+      <li><a href="#mcp">MCP agent tools &amp; servers</a></li>
+      <li><a href="#hft-wal">HFT &amp; event-streaming WALs</a></li>
       <li><a href="#crash-wal">Crash-resilient append-only ledgers</a></li>
     </ol>
   </nav>
 
   <section class="landing-section" id="v8-limits">
-    <h2>Defeating the core allocation limits of the browser engine</h2>
-    <p class="page-lead" style="margin-bottom: 16px;">
-      This is the single most powerful structural advantage of Nyxis over JSON. Because <code>JSON.parse()</code> crashes,
-      slows down, or silently corrupts data at native JavaScript memory and precision walls, Nyxis was architected to bypass
-      all three — not patch them after the fact.
+    <p class="use-case-toc-act">Act I</p>
+    <h2>Why <code>JSON.parse()</code> hits hard V8 walls</h2>
+    <p class="story-bridge">
+      Principal architects evaluating Nyxis usually already ship JSON in the browser. Act I names the three engine limits
+      that make multi-gigabyte interactive grids and precise IDs impossible — before any wire format is introduced.
     </p>
 
     <h3>The hidden walls of V8</h3>
@@ -127,19 +135,18 @@
     </div>
 
     <p class="bimodal-compare page-lead" style="margin: 20px 0 0; font-size: 14px;">
-      Once this baseline is clear, the production blueprints below — NGINX access viewers, Kubernetes aggregators,
-      LLM trace tables, and WAL-backed pipelines — are architectures that are <strong>physically impractical</strong> with
-      browser-scale <code>JSON.parse()</code> alone. Continue with the bimodal wire format, streamable v1.1 sealing, then
-      the topology catalog.
+      <strong>Act II</strong> introduces the mechanism — human <code>.nxs</code> source compiled to memory-mapped
+      <code>.nxb</code> — that makes every row in the matrix above achievable in production.
     </p>
-    <div class="landing-actions" style="justify-content: flex-start; margin-top: 16px;">
-      <a class="btn btn-secondary" href="/demo/explorer.html">Log explorer demo</a>
-      <a class="btn btn-secondary" href="/bench/">NXS vs JSON benchmarks</a>
-    </div>
   </section>
 
   <section class="landing-section bimodal-standard" id="bimodal">
+    <p class="use-case-toc-act">Act II</p>
     <h2>The bimodal standard: <code>.nxs</code> ↔ <code>.nxb</code></h2>
+    <p class="story-bridge">
+      Git-friendly text for humans; aligned binary with a cross-record tail-index for machines. That split is what lets
+      teams review schema in CI while runtimes open terabyte-scale files in microseconds.
+    </p>
     <div class="bimodal-grid">
       <div class="bimodal-col">
         <h3><code>.nxs</code> — human layer</h3>
@@ -176,10 +183,9 @@
 
   <section class="landing-section" id="streaming">
     <h2>Streamable ingest &amp; WAL sealing (v1.1)</h2>
-    <p class="page-lead" style="margin-bottom: 16px;">
-      Nyxis is not only a batch compile-and-mmap format. Spec v1.1 defines how producers <strong>stream</strong> schema and record
-      bytes while a segment is still open, then seal a random-access tail-index in the final footer — and how append-only WALs
-      avoid rewriting that index on every hot-path append.
+    <p class="story-bridge">
+      Batch <code>mmap</code> is the read path; streaming and append-only WALs are how live systems <em>produce</em> those
+      files without rebuilding indexes on every write — the bridge from protocol theory to the topologies in Act III.
     </p>
     <div class="bimodal-grid">
       <div class="bimodal-col">
@@ -200,17 +206,83 @@
         </p>
       </div>
     </div>
-    <p class="bimodal-compare page-lead" style="margin: 16px 0 0; font-size: 14px;">
-      <strong>Where it shows up below:</strong> HFT and event pipelines use WAL delta patching; crash-resilient ledgers rely on
-      streamable v1.1 footers; edge gateways and K8s aggregators can ship partial segments that seal at rotation time.
-    </p>
     <div class="landing-actions" style="justify-content: flex-start; margin-top: 20px;">
       <a class="btn btn-secondary" href="/demo/wal.html">WAL / spans demo</a>
-      <a class="btn btn-secondary" href="https://github.com/nyxis-io/nyxis/blob/main/SPEC.md#v110--2026-05-18-streamable-nxb" rel="noopener">Spec v1.1 streaming</a>
+      <a class="btn btn-secondary" href="/demo/explorer.html">Log explorer demo</a>
+      <a class="btn btn-secondary" href="/bench/">NXS vs JSON benchmarks</a>
     </div>
   </section>
 
-  <p class="use-case-group">Observability &amp; edge operations</p>
+  <section class="use-case-catalog-intro" id="catalog">
+    <p class="use-case-toc-act">Act III</p>
+    <h2>Production topologies — how to read the catalog</h2>
+    <p class="page-lead" style="margin-bottom: 0;">
+      Each blueprint below follows the same story beat: <strong>bottleneck</strong> (scale pain at the JSON layer),
+      <strong>topology</strong> (where Nyxis sits in the pipeline), <strong>advantage</strong> (measurable outcome).
+      They are ordered by data flow — ingest first, interactive surfaces second, AI and durable write paths last.
+    </p>
+    <ul class="catalog-pillars">
+      <li><strong>Ingest &amp; edge</strong> Fleet and cluster aggregators shrink payloads before the lake.</li>
+      <li><strong>Browser &amp; ops UI</strong> Gateways, workers, and trace grids read multi-GB files without <code>JSON.parse()</code>.</li>
+      <li><strong>AI platforms</strong> Arrow bridges and MCP tools query binary blocks at agent latency.</li>
+      <li><strong>Write path &amp; storage</strong> WAL streaming, compaction, and crash-safe footers for hot paths.</li>
+    </ul>
+  </section>
+
+  <p class="use-case-group">Ingest &amp; edge</p>
+
+  <article class="use-case" id="k8s-aggregators">
+    <p class="use-case-tier use-case-tier--oss">Open core · MIT <code>nyxis-drivers</code></p>
+    <h2>Distributed Kubernetes container stdout aggregators</h2>
+
+    <h3>The high-scale bottleneck</h3>
+    <p>
+      Thousands of pods emit stdout lines wrapped in repeated JSON keys (<code>kubernetes.pod_name</code>,
+      <code>container_id</code>, <code>namespace</code>). At fleet scale the duplicate strings dominate bandwidth and lake cost.
+    </p>
+
+    <h3>The Nyxis topology</h3>
+    <p>
+      Aggregators embed MIT-licensed <code>nyxis-drivers</code>. Keys intern into a central schema dictionary (stored once).
+      A per-record <strong>presence bitmask</strong> encodes sparse optional fields across heterogeneous application logs.
+      At fleet scale, the proprietary <strong><code>nxs-registryd</code></strong> proxy provides centralized gRPC schema contracts —
+      validating payloads on ingress and resolving runtime drift when pod versions diverge, without taking aggregators offline.
+    </p>
+
+    <h3>The system advantage</h3>
+    <p class="use-case-roi">
+      <strong>60–70% smaller</strong> transit and storage versus JSON lines — without heavy mathematical serialization.
+      Downstream engines filter streams via bitmasks without full text deserialization.
+    </p>
+  </article>
+
+  <article class="use-case" id="iot-edge">
+    <p class="use-case-tier use-case-tier--oss">Open core · C / Go MIT drivers</p>
+    <h2>Battery-preserving edge IoT &amp; fleet telemetry</h2>
+
+    <h3>The high-scale bottleneck</h3>
+    <p>
+      Fleets stream billions of diagnostics per second. JSON saturates bandwidth with repeated keys; traditional binary
+      encoders drain edge CPUs with heavy compression math.
+    </p>
+
+    <h3>The Nyxis topology</h3>
+    <p>
+      Devices embed lightweight C or Go drivers from <code>nyxis-drivers</code>. The
+      <strong>presence bitmask</strong> records which of many possible matrix fields are populated — raw aligned integers follow.
+    </p>
+
+    <h3>The system advantage</h3>
+    <p class="use-case-roi">
+      <strong>60–70% smaller</strong> payloads than JSON with negligible encode CPU. Extended battery life, clearer transit lanes,
+      and cloud ingest of pre-aligned assets without structural preprocessing.
+    </p>
+    <p class="use-case-cta">
+      <a class="btn btn-secondary" href="https://github.com/nyxis-io/nyxis-drivers" rel="noopener">MIT SDKs</a>
+    </p>
+  </article>
+
+  <p class="use-case-group">Browser &amp; operations UI</p>
 
   <article class="use-case" id="access-logs">
     <p class="use-case-tier use-case-tier--oss">Open core · MIT drivers · <a href="/demo/explorer.html">log explorer demo</a></p>
@@ -218,10 +290,8 @@
 
     <h3>The high-scale bottleneck</h3>
     <p>
-      Cloud-native reverse proxies and edge gateways stream hundreds of millions of structured access entries daily.
-      When operators troubleshoot a localized traffic spike or run an instant security audit, running
-      <code>JSON.parse()</code> over a 2–5&nbsp;GB raw text dump inflates browser heaps (V8 object allocation and AST tracking)
-      and routinely freezes the UI.
+      Reverse proxies and API gateways emit hundreds of millions of access rows daily. Incident response means opening
+      multi-gigabyte dumps in the browser — exactly where <a href="#v8-limits">Act I</a> limits bite hardest.
     </p>
 
     <h3>The Nyxis topology</h3>
@@ -241,29 +311,29 @@
     </p>
   </article>
 
-  <article class="use-case" id="k8s-aggregators">
-    <p class="use-case-tier use-case-tier--oss">Open core · MIT <code>nyxis-drivers</code></p>
-    <h2>Distributed Kubernetes container stdout aggregators</h2>
+  <article class="use-case" id="web-workers">
+    <p class="use-case-tier use-case-tier--oss">Open core · <a href="/demo/workers.html">workers demo</a></p>
+    <h2>Zero-copy Web Worker handoffs (<code>SharedArrayBuffer</code>)</h2>
 
     <h3>The high-scale bottleneck</h3>
     <p>
-      Thousands of pods stream unstructured text to <code>stdout</code>. Sidecars (Fluentd, Logstash, Vector) wrap lines in
-      repeated telemetry maps (<code>kubernetes.pod_name</code>, <code>container_id</code>, <code>namespace</code>),
-      saturating bandwidth and lakes with duplicate key strings.
+      Dashboards offload grids to Web Workers, but <code>postMessage</code> structured-clone copies entire buffers — the
+      complement to heap inflation in Act I, showing up as main-thread jank during live telemetry.
     </p>
 
     <h3>The Nyxis topology</h3>
     <p>
-      Aggregators embed MIT-licensed <code>nyxis-drivers</code>. Keys intern into a central schema dictionary (stored once).
-      A per-record <strong>presence bitmask</strong> encodes sparse optional fields across heterogeneous application logs.
-      At fleet scale, the proprietary <strong><code>nxs-registryd</code></strong> proxy provides centralized gRPC schema contracts —
-      validating payloads on ingress and resolving runtime drift when pod versions diverge, without taking aggregators offline.
+      Strict 8-byte alignment lets the JavaScript driver map <code>.nxb</code> assets into a
+      <code>SharedArrayBuffer</code> (with COOP/COEP for cross-origin isolation). Workers and the main thread read the same bytes.
     </p>
 
     <h3>The system advantage</h3>
     <p class="use-case-roi">
-      <strong>60–70% smaller</strong> transit and storage versus JSON lines — without heavy mathematical serialization.
-      Downstream engines filter streams via bitmasks without full text deserialization.
+      True parallel zero-copy multithreading: workers cast pointers into the same mapping concurrently.
+      Cross-thread handoff latency drops to <strong>absolute zero</strong> versus structured clone.
+    </p>
+    <p class="use-case-cta">
+      <a class="btn btn-secondary" href="/demo/workers.html">Workers demo</a>
     </p>
   </article>
 
@@ -273,8 +343,8 @@
 
     <h3>The high-scale bottleneck</h3>
     <p>
-      APM tools map microservice graphs with deep span trees (parent-child links, timing deltas, resource metadata).
-      Loading timelines via JSON forces massive object graphs in the browser just to locate one slow node.
+      APM waterfalls map deep span trees (parent links, timing deltas, resource metadata). JSON timelines materialize
+      enormous object graphs before an engineer can isolate one slow service boundary.
     </p>
 
     <h3>The Nyxis topology</h3>
@@ -292,7 +362,7 @@
     </p>
   </article>
 
-  <p class="use-case-group">AI engineering &amp; in-browser compute</p>
+  <p class="use-case-group">AI platforms</p>
 
   <article class="use-case" id="llm-tracing">
     <p class="use-case-tier use-case-tier--enterprise">Enterprise · <code>nyxis-arrow-bridge</code> · <code>nyxis-simd-guard</code></p>
@@ -322,33 +392,29 @@
     </p>
   </article>
 
-  <article class="use-case" id="web-workers">
-    <p class="use-case-tier use-case-tier--oss">Open core · <a href="/demo/workers.html">workers demo</a></p>
-    <h2>Zero-copy Web Worker handoffs (<code>SharedArrayBuffer</code>)</h2>
+  <article class="use-case" id="mcp">
+    <p class="use-case-tier use-case-tier--oss">Open core · MCP server in <a href="https://github.com/nyxis-io/nyxis" rel="noopener">nyxis</a></p>
+    <h2>Intelligent AI agent tools &amp; Model Context Protocol (MCP) servers</h2>
 
     <h3>The high-scale bottleneck</h3>
     <p>
-      Dashboards offload telemetry and grids to Web Workers, but <code>postMessage</code> uses the structured-clone algorithm —
-      duplicating large buffers and causing main-thread micro-stutter and dropped frames.
+      MCP tool layers scan repositories and logs for coding agents. Go/Python servers spend cycles re-parsing JSON,
+      inflating latency and filling context windows with repeated structural strings.
     </p>
 
     <h3>The Nyxis topology</h3>
     <p>
-      Strict 8-byte alignment lets the JavaScript driver map <code>.nxb</code> assets into a
-      <code>SharedArrayBuffer</code> (with COOP/COEP for cross-origin isolation).
+      Layouts use bimodal <code>.nxs</code> (version control, audit) compiled to <code>.nxb</code> for production.
+      A Go-based Nyxis MCP server sits over binary blocks and reads the <code>O(1)</code> tail-index for field extraction.
     </p>
 
     <h3>The system advantage</h3>
     <p class="use-case-roi">
-      True parallel zero-copy multithreading: workers cast pointers into the same mapping concurrently.
-      Cross-thread handoff latency drops to <strong>absolute zero</strong> versus structured clone.
-    </p>
-    <p class="use-case-cta">
-      <a class="btn btn-secondary" href="/demo/workers.html">Workers demo</a>
+      Sub-millisecond agent queries; interned keys keep prompt context free of repetitive schema noise.
     </p>
   </article>
 
-  <p class="use-case-group">Low-latency state &amp; agent infrastructure</p>
+  <p class="use-case-group">Write path &amp; durability</p>
 
   <article class="use-case" id="hft-wal">
     <p class="use-case-tier use-case-tier--oss">Open core writes</p>
@@ -382,56 +448,6 @@
     </p>
   </article>
 
-  <article class="use-case" id="mcp">
-    <p class="use-case-tier use-case-tier--oss">Open core · MCP server in <a href="https://github.com/nyxis-io/nyxis" rel="noopener">nyxis</a></p>
-    <h2>Intelligent AI agent tools &amp; Model Context Protocol (MCP) servers</h2>
-
-    <h3>The high-scale bottleneck</h3>
-    <p>
-      MCP tool layers scan repositories and logs for coding agents. Go/Python servers spend cycles re-parsing JSON,
-      inflating latency and filling context windows with repeated structural strings.
-    </p>
-
-    <h3>The Nyxis topology</h3>
-    <p>
-      Layouts use bimodal <code>.nxs</code> (version control, audit) compiled to <code>.nxb</code> for production.
-      A Go-based Nyxis MCP server sits over binary blocks and reads the <code>O(1)</code> tail-index for field extraction.
-    </p>
-
-    <h3>The system advantage</h3>
-    <p class="use-case-roi">
-      Sub-millisecond agent queries; interned keys keep prompt context free of repetitive schema noise.
-    </p>
-  </article>
-
-  <p class="use-case-group">Edge &amp; storage foundations</p>
-
-  <article class="use-case" id="iot-edge">
-    <p class="use-case-tier use-case-tier--oss">Open core · C / Go MIT drivers</p>
-    <h2>Battery-preserving edge IoT &amp; fleet telemetry</h2>
-
-    <h3>The high-scale bottleneck</h3>
-    <p>
-      Fleets stream billions of diagnostics per second. JSON saturates bandwidth with repeated keys; traditional binary
-      encoders drain edge CPUs with heavy compression math.
-    </p>
-
-    <h3>The Nyxis topology</h3>
-    <p>
-      Devices embed lightweight C or Go drivers from <code>nyxis-drivers</code>. The
-      <strong>presence bitmask</strong> records which of many possible matrix fields are populated — raw aligned integers follow.
-    </p>
-
-    <h3>The system advantage</h3>
-    <p class="use-case-roi">
-      <strong>60–70% smaller</strong> payloads than JSON with negligible encode CPU. Extended battery life, clearer transit lanes,
-      and cloud ingest of pre-aligned assets without structural preprocessing.
-    </p>
-    <p class="use-case-cta">
-      <a class="btn btn-secondary" href="https://github.com/nyxis-io/nyxis-drivers" rel="noopener">MIT SDKs</a>
-    </p>
-  </article>
-
   <article class="use-case" id="crash-wal">
     <p class="use-case-tier use-case-tier--oss">Open core · streamable WAL · v1.1</p>
     <h2>Crash-resilient database ledgers &amp; append-only transcripts</h2>
@@ -460,11 +476,10 @@
   </article>
 
   <section class="landing-section" style="padding-bottom: 64px;">
-    <h2>Commercial funnel</h2>
+    <h2>Where to go next</h2>
     <p class="page-lead" style="margin-bottom: 20px;">
-      Startups and platform teams typically begin with MIT drivers and BSL-licensed compiler tooling (ingestion, WAL, MCP, IoT).
-      Enterprise architects running Arrow, Snowflake, or multi-terabyte analytical bridges should evaluate
-      <code>nyxis-extensions</code> and the Principal tier.
+      You have the constraint (Act I), the protocol (Act II), and eight production patterns (Act III). Most teams start with
+      MIT drivers and BSL-licensed compiler tooling; Arrow, registry, and compaction extensions unlock enterprise scale.
     </p>
     <ul class="license-list">
       <li>

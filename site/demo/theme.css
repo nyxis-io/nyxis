@@ -1091,16 +1091,78 @@ pre,
   text-transform: uppercase;
   letter-spacing: 0.1em;
   color: var(--muted);
-  margin: 0 0 14px;
+  margin: 0 0 16px;
   border: none;
   padding: 0;
 }
 
+.use-case-toc-act {
+  margin: 0 0 8px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+.use-case-toc-act:not(:first-of-type) {
+  margin-top: 16px;
+}
+
 .use-case-toc ol {
-  margin: 0;
+  margin: 0 0 4px;
   padding-left: 1.25rem;
   font-size: 14px;
   line-height: 1.75;
+}
+
+.use-case-catalog-intro {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 24px 28px;
+  margin-bottom: 8px;
+  box-shadow: var(--shadow);
+}
+
+.use-case-catalog-intro h2 {
+  margin-top: 0;
+}
+
+.use-case-catalog-intro .catalog-pillars {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px 20px;
+  margin: 16px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+@media (max-width: 640px) {
+  .use-case-catalog-intro .catalog-pillars {
+    grid-template-columns: 1fr;
+  }
+}
+
+.use-case-catalog-intro .catalog-pillars li {
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--text);
+}
+
+.use-case-catalog-intro .catalog-pillars strong {
+  display: block;
+  color: var(--text);
+  margin-bottom: 4px;
+}
+
+.story-bridge {
+  font-size: 14px;
+  color: var(--muted);
+  border-left: 3px solid var(--accent);
+  padding-left: 14px;
+  margin: 0 0 20px;
+  line-height: 1.6;
 }
 
 .use-case-toc a {
