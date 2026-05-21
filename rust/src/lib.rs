@@ -18,6 +18,7 @@ pub mod convert;
 pub mod decoder;
 pub mod error;
 pub mod layout;
+pub mod pax_stream;
 pub mod lexer;
 pub mod parser;
 pub mod query;
@@ -25,6 +26,8 @@ pub mod segment_reader;
 pub mod stream_reader;
 pub mod wal;
 pub mod writer;
+
+pub use pax_stream::{complete_page_end, PaxPageMeta, PaxPageView, PaxStreamReader, PaxStreamWriter};
 
 #[cfg(all(target_arch = "wasm32", feature = "wasm"))]
 mod wasm_api;
