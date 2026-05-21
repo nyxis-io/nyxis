@@ -155,15 +155,35 @@
   .viewer {
     flex: 1;
     position: relative;
+    display: flex;
+    flex-direction: column;
     background: var(--panel);
     border: 1px solid var(--border);
     border-radius: 8px;
     overflow: hidden;
     min-height: 0;
   }
+  .col-header {
+    flex-shrink: 0;
+    height: var(--row-height);
+    padding: 0 14px;
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    white-space: nowrap;
+    overflow: hidden;
+    font-family: "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    color: var(--muted);
+    background: var(--panel-2);
+    border-bottom: 1px solid var(--border);
+  }
+  .col-header.hide { display: none; }
   .scroll {
-    position: absolute;
-    top: 0; left: 0; right: 0; bottom: 0;
+    flex: 1;
+    min-height: 0;
     overflow-y: auto;
     overflow-x: hidden;
     font-family: "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
@@ -196,44 +216,23 @@
   .row:hover { background: var(--row-hover-accent); }
   .row.match { background: var(--row-match-bg); }
   .row.current-match { background: var(--row-current-match-bg); }
-  .row .lineno {
-    color: var(--muted);
-    width: 10ch;
-    text-align: right;
-    font-variant-numeric: tabular-nums;
-    flex-shrink: 0;
-  }
-  .row .ts {
-    color: var(--accent);
-    width: 24ch;
-    flex-shrink: 0;
-  }
-  .row .component {
-    color: var(--good);
-    width: 20ch;
-    flex-shrink: 0;
+  .row .col-cell,
+  .col-header .col-cell {
+    flex: 1 1 10ch;
+    min-width: 6ch;
     overflow: hidden;
     text-overflow: ellipsis;
+    flex-shrink: 1;
   }
-  .row .msg {
-    color: var(--text);
-    flex: 1;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-  .row .score {
-    color: var(--warn);
-    width: 10ch;
+  .row .col-cell:first-child,
+  .col-header .col-cell:first-child {
+    flex: 0 0 10ch;
     text-align: right;
     font-variant-numeric: tabular-nums;
-    flex-shrink: 0;
-  }
-  .row .flag {
-    width: 3ch;
     color: var(--muted);
-    flex-shrink: 0;
   }
-  .row .flag.on { color: var(--good); }
+  .row .col-cell.bool { width: 3ch; flex: 0 0 3ch; text-align: center; color: var(--muted); }
+  .row .col-cell.bool.on { color: var(--good); }
 
   /* Overlay shown before a file is loaded. */
   .overlay {
@@ -308,7 +307,7 @@
 
   <div class="toolbar">
     <div class="search-wrap">
-      <input type="text" id="search" placeholder="Search username substring…  (Ctrl/Cmd+F)" autocomplete="off" spellcheck="false">
+      <input type="text" id="search" placeholder="Search…  (Ctrl/Cmd+F)" autocomplete="off" spellcheck="false">
       <span class="badge" id="search-badge"></span>
     </div>
     <div class="nav-btns">
@@ -323,6 +322,7 @@
   </div>
 
   <div class="viewer">
+    <div class="col-header hide" id="col-header" aria-hidden="true"></div>
     <div class="scroll" id="scroll" tabindex="0">
       <div class="spacer" id="spacer"></div>
     </div>
@@ -344,7 +344,7 @@
 </main>
 
 <script type="module">
-import { NxsReader, NxsStreamReader, NxsObject } from "/sdk/nxs.js";
+import { NxsReader, NxsStreamReader, NxsObject, WIRE_SIGILS } from "/sdk/nxs.js";
 
 // ── Constants ──────────────────────────────────────────────────────────────
 const ROW_HEIGHT = 22;
@@ -361,6 +361,7 @@ const DEFAULT_FIXTURE = "../bench/fixtures/records_1000000.nxb";
 const $ = s => document.querySelector(s);
 const scrollEl = $("#scroll");
 const spacerEl = $("#spacer");
+const colHeaderEl = $("#col-header");
 const overlayEl = $("#overlay");
 const searchEl = $("#search");
 const searchBadge = $("#search-badge");
@@ -383,8 +384,11 @@ let reader = null;          // NxsReader (binary mode, after stream finishes)
 let streamReader = null;    // NxsStreamReader while bytes are still arriving
 let recordOffsets = null;   // per-record NYXO offsets during streaming (Uint32Array)
 let cursor = null;          // reusable cursor for render
-let slots = null;           // { id, username, email, created_at, score, active }
-let jsonRecords = null;     // null = .nxb mode; else Array<{id,username,email,tsDay,score,active}>
+/** @type {{ key: string, slot?: number, sigil?: number, json?: boolean }[]} */
+let columns = [];
+/** @type {{ key: string, slot?: number, sigil?: number, json?: boolean } | null} */
+let searchColumn = null;
+let jsonRecords = null;     // null = .nxb mode; else array of parsed JSON objects
 let recordCount = 0;
 let rawBuffer = null;       // underlying ArrayBuffer (to send to worker)
 let _lastLoadedUrl = null;  // set when loading from a known URL; null for drag-and-drop
@@ -394,8 +398,7 @@ let virtualHeight = 0;      // actual CSS height of spacer
 let scrollScale = 1;        // recordCount / (virtualHeight / ROW_HEIGHT) when capped
 let totalRowsVirtual = 0;   // virtualHeight / ROW_HEIGHT
 
-// Render pool: ~60 DOM rows reused on every scroll. Each is an object with
-// { el, lineno, ts, component, msg, score, flag, renderedIndex }.
+// Render pool: ~60 DOM rows reused on every scroll. Each is { el, cells[], renderedIndex }.
 const rowPool = [];
 
 let currentMatches = null;  // Int32Array of matched record indices
@@ -413,59 +416,48 @@ function teardownExplorerWorker() {
   }
 }
 
-function jsonCreatedAtToDay(obj) {
-  const v =
-    obj.created_at ??
-    obj.createdAt ??
-    obj.date ??
-    obj.timestamp ??
-    obj.time;
-  if (v === undefined || v === null) return "";
-  if (typeof v === "number") {
-    const ms = v > 1e14 ? Math.round(v / 1_000_000) : v < 1e11 ? v * 1000 : v;
-    const d = new Date(ms);
-    return Number.isFinite(d.getTime()) ? d.toISOString().slice(0, 10) : "";
+/** Discover column keys from the first records in a JSON array. */
+function jsonDiscoverColumns(arr) {
+  const keys = [];
+  const seen = new Set();
+  const sample = Math.min(arr.length, 200);
+  for (let i = 0; i < sample; i++) {
+    const o = arr[i];
+    if (!o || typeof o !== "object") continue;
+    for (const k of Object.keys(o)) {
+      if (!seen.has(k)) {
+        seen.add(k);
+        keys.push(k);
+      }
+    }
   }
-  const s = String(v);
-  if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
-  const t = Date.parse(s);
-  return Number.isFinite(t) ? new Date(t).toISOString().slice(0, 10) : "";
+  return keys.map(key => ({ key, json: true }));
 }
 
-/** Accepts gen_fixtures-style rows or any array of objects with overlapping keys. */
-function jsonToExplorerRows(parsed) {
+/** Accepts gen_fixtures-style rows or any array of objects. */
+function jsonPrepare(parsed) {
   let arr;
   if (Array.isArray(parsed)) arr = parsed;
   else if (parsed && typeof parsed === "object" && Array.isArray(parsed.records)) arr = parsed.records;
   else {
     throw new Error("JSON must be an array of objects or { \"records\": [...] }");
   }
-  const out = new Array(arr.length);
+  const records = new Array(arr.length);
   for (let idx = 0; idx < arr.length; idx++) {
     const o = arr[idx];
-    const obj = o && typeof o === "object" ? o : {};
-    let id = obj.id ?? obj.ID;
-    if (typeof id !== "number" && typeof id !== "bigint") id = idx;
-    if (typeof id === "bigint") id = Number(id);
-    const username = String(obj.username ?? obj.user ?? obj.name ?? "");
-    const email = String(obj.email ?? obj.mail ?? "");
-    let score = obj.score;
-    if (typeof score !== "number" || Number.isNaN(score)) score = parseFloat(score);
-    if (Number.isNaN(score)) score = undefined;
-    const active =
-      typeof obj.active === "boolean"
-        ? obj.active
-        : obj.active === 1 || obj.active === "true" || String(obj.active).toLowerCase() === "1";
-    out[idx] = {
-      id,
-      username,
-      email,
-      tsDay: jsonCreatedAtToDay(obj),
-      score,
-      active,
-    };
+    records[idx] = o && typeof o === "object" ? o : {};
   }
-  return out;
+  return { records, columns: jsonDiscoverColumns(records) };
+}
+
+function formatJsonValue(v) {
+  if (v === null || v === undefined) return "";
+  if (typeof v === "boolean") return v ? "●" : "○";
+  if (typeof v === "number") {
+    return Number.isInteger(v) ? String(v) : v.toFixed(2);
+  }
+  if (typeof v === "object") return JSON.stringify(v);
+  return String(v);
 }
 
 function updateViewportMetrics(resetScroll) {
@@ -514,15 +506,71 @@ function applyStreamingProgress(name, receivedBytes, totalBytes) {
   scheduleRender();
 }
 
-function resolveSlotsFromReader(r) {
-  return {
-    id: r.slot("id"),
-    username: r.slot("username"),
-    email: r.slot("email"),
-    created_at: r.slot("created_at"),
-    score: r.slot("score"),
-    active: r.slot("active"),
-  };
+function buildColumnsFromReader(r) {
+  return r.keys.map((key, slot) => ({
+    key,
+    slot,
+    sigil: r.keySigils[slot],
+  }));
+}
+
+function pickSearchColumn(cols) {
+  const username = cols.find(c => c.key === "username");
+  if (username && (!username.sigil || username.sigil === WIRE_SIGILS.str)) return username;
+  return cols.find(c => c.sigil === WIRE_SIGILS.str) ?? cols[0] ?? null;
+}
+
+function applyColumns(cols) {
+  columns = cols;
+  searchColumn = pickSearchColumn(cols);
+  colHeaderEl.replaceChildren();
+  for (const col of cols) {
+    const span = document.createElement("span");
+    span.className = "col-cell";
+    span.textContent = col.key;
+    colHeaderEl.appendChild(span);
+  }
+  colHeaderEl.classList.remove("hide");
+  colHeaderEl.setAttribute("aria-hidden", "false");
+  const sk = searchColumn?.key ?? "field";
+  searchEl.placeholder = `Search ${sk} substring…  (Ctrl/Cmd+F)`;
+  for (const row of rowPool) row.el.remove();
+  rowPool.length = 0;
+  lastFirstVr = -1;
+  ensureRowPool();
+}
+
+function clearColumns() {
+  columns = [];
+  searchColumn = null;
+  colHeaderEl.replaceChildren();
+  colHeaderEl.classList.add("hide");
+  colHeaderEl.setAttribute("aria-hidden", "true");
+  searchEl.placeholder = "Search…  (Ctrl/Cmd+F)";
+}
+
+function formatNxbValue(accessor, col) {
+  const { slot, sigil } = col;
+  switch (sigil) {
+    case WIRE_SIGILS.str:
+      return accessor.getStrBySlot(slot) ?? "";
+    case WIRE_SIGILS.float: {
+      const v = accessor.getF64BySlot(slot);
+      return v !== undefined ? v.toFixed(2) : "";
+    }
+    case WIRE_SIGILS.bool:
+      return accessor.getBoolBySlot(slot) ? "●" : "○";
+    case WIRE_SIGILS.time: {
+      const v = accessor.getI64BySlot(slot);
+      return v !== undefined
+        ? new Date(Math.round(v / 1_000_000)).toISOString().slice(0, 10)
+        : "";
+    }
+    default: {
+      const v = accessor.getI64BySlot(slot);
+      return v !== undefined ? String(v) : "";
+    }
+  }
 }
 
 // ── Virtual scroller ─────────────────────────────────────────────────────
@@ -541,20 +589,19 @@ function computePoolSize() {
 
 function ensureRowPool() {
   const target = computePoolSize();
+  const colCount = Math.max(columns.length, 1);
   while (rowPool.length < target) {
     const el = document.createElement("div");
     el.className = "row";
-    // Each field gets its own span so textContent updates don't blow away
-    // sibling formatting. lineno / ts / component / msg / score / flag.
-    const lineno = document.createElement("span"); lineno.className = "lineno";
-    const ts = document.createElement("span"); ts.className = "ts";
-    const component = document.createElement("span"); component.className = "component";
-    const msg = document.createElement("span"); msg.className = "msg";
-    const score = document.createElement("span"); score.className = "score";
-    const flag = document.createElement("span"); flag.className = "flag";
-    el.append(lineno, ts, component, msg, score, flag);
+    const cells = [];
+    for (let c = 0; c < colCount; c++) {
+      const span = document.createElement("span");
+      span.className = "col-cell";
+      cells.push(span);
+    }
+    el.append(...cells);
     spacerEl.appendChild(el);
-    rowPool.push({ el, lineno, ts, component, msg, score, flag, renderedIndex: -1 });
+    rowPool.push({ el, cells, renderedIndex: -1 });
   }
   // If pool is larger than needed after a resize, hide the surplus.
   for (let i = target; i < rowPool.length; i++) {
@@ -589,6 +636,7 @@ function scheduleRender() {
 function render() {
   rafPending = false;
   if (!reader && !streamReader && jsonRecords === null) return;
+  if (columns.length === 0) return;
 
   const t0 = performance.now();
   const scrollTop = scrollEl.scrollTop;
@@ -632,48 +680,36 @@ function render() {
 }
 
 function renderRow(row, idx) {
+  const ncols = columns.length;
   if (jsonRecords !== null) {
-    const r = jsonRecords[idx];
-    row.lineno.textContent = String(r.id ?? idx + 1).padStart(9, " ");
-    row.ts.textContent = r.tsDay || "";
-    row.component.textContent = r.username || "";
-    row.msg.textContent = r.email || "";
-    row.score.textContent = r.score !== undefined ? r.score.toFixed(2) : "";
-    row.flag.textContent = r.active ? "●" : "○";
-    row.flag.className = r.active ? "flag on" : "flag";
-  } else if (streamReader && recordOffsets) {
-    const obj = new NxsObject(streamReader, recordOffsets[idx]);
-    const id = obj.getI64BySlot(slots.id);
-    row.lineno.textContent = (id !== undefined ? id : idx + 1).toString().padStart(9, " ");
-    const tsNs = obj.getI64BySlot(slots.created_at);
-    row.ts.textContent = tsNs !== undefined
-      ? new Date(Math.round(tsNs / 1_000_000)).toISOString().slice(0, 10)
-      : "";
-    row.component.textContent = obj.getStrBySlot(slots.username) || "";
-    row.msg.textContent = obj.getStrBySlot(slots.email) || "";
-    const score = obj.getF64BySlot(slots.score);
-    row.score.textContent = score !== undefined ? score.toFixed(2) : "";
-    const active = obj.getBoolBySlot(slots.active);
-    row.flag.textContent = active ? "●" : "○";
-    row.flag.className = active ? "flag on" : "flag";
+    const rec = jsonRecords[idx] ?? {};
+    for (let c = 0; c < ncols; c++) {
+      const col = columns[c];
+      const cell = row.cells[c];
+      const v = rec[col.key];
+      cell.textContent = formatJsonValue(v);
+      if (typeof v === "boolean") {
+        cell.className = v ? "col-cell bool on" : "col-cell bool";
+      } else {
+        cell.className = "col-cell";
+      }
+    }
   } else {
-    // Reuse cursor — zero allocation per record.
-    cursor.seek(idx);
-    const id = cursor.getI64BySlot(slots.id);
-    row.lineno.textContent = (id !== undefined ? id : idx + 1).toString().padStart(9, " ");
-    const tsNs = cursor.getI64BySlot(slots.created_at);
-    row.ts.textContent = tsNs !== undefined
-      ? new Date(Math.round(tsNs / 1_000_000)).toISOString().slice(0, 10)
-      : "";
-    const uname = cursor.getStrBySlot(slots.username);
-    row.component.textContent = uname || "";
-    const mail = cursor.getStrBySlot(slots.email);
-    row.msg.textContent = mail || "";
-    const score = cursor.getF64BySlot(slots.score);
-    row.score.textContent = score !== undefined ? score.toFixed(2) : "";
-    const active = cursor.getBoolBySlot(slots.active);
-    row.flag.textContent = active ? "●" : "○";
-    row.flag.className = active ? "flag on" : "flag";
+    let accessor;
+    if (streamReader && recordOffsets) {
+      accessor = new NxsObject(streamReader, recordOffsets[idx]);
+    } else {
+      cursor.seek(idx);
+      accessor = cursor;
+    }
+    for (let c = 0; c < ncols; c++) {
+      const col = columns[c];
+      const cell = row.cells[c];
+      cell.textContent = formatNxbValue(accessor, col);
+      cell.className = col.sigil === WIRE_SIGILS.bool
+        ? (accessor.getBoolBySlot(col.slot) ? "col-cell bool on" : "col-cell bool")
+        : "col-cell";
+    }
   }
 
   // Match highlighting
@@ -701,12 +737,13 @@ function updateStatus(scrollTop) {
 // ── Loading ──────────────────────────────────────────────────────────────
 function attachWorkerForNxb() {
   ensureWorker();
-  if (!worker) return;
+  if (!worker || !searchColumn) return;
+  const searchKey = searchColumn.key;
   if (_lastLoadedUrl) {
-    worker.postMessage({ type: "load-url", url: _lastLoadedUrl });
+    worker.postMessage({ type: "load-url", url: _lastLoadedUrl, searchKey });
   } else if (rawBuffer) {
     const copy = rawBuffer.slice(0);
-    worker.postMessage({ type: "load", buffer: copy }, [copy]);
+    worker.postMessage({ type: "load", buffer: copy, searchKey }, [copy]);
   }
 }
 
@@ -717,10 +754,10 @@ async function loadFromReadableStream(body, name, sizeBytes) {
   cursor = null;
   streamReader = null;
   recordOffsets = null;
-  slots = null;
   rawBuffer = null;
   recordCount = 0;
   virtualHeight = 0;
+  clearColumns();
   teardownExplorerWorker();
 
   overlayEl.classList.remove("hide");
@@ -731,7 +768,8 @@ async function loadFromReadableStream(body, name, sizeBytes) {
     sr = new NxsStreamReader({
       onSchema() {
         if (gen !== loadGeneration) return;
-        slots = resolveSlotsFromReader(sr);
+        applyColumns(buildColumnsFromReader(sr));
+        if (_lastLoadedUrl) attachWorkerForNxb();
       },
       onRecord(obj, idx) {
         if (gen !== loadGeneration) return;
@@ -753,8 +791,6 @@ async function loadFromReadableStream(body, name, sizeBytes) {
       },
     });
     streamReader = sr;
-
-    if (_lastLoadedUrl) attachWorkerForNxb();
 
     const webReader = body.getReader();
     let received = 0;
@@ -780,7 +816,7 @@ async function loadFromReadableStream(body, name, sizeBytes) {
     recordOffsets = null;
     recordCount = reader.recordCount;
     cursor = reader.cursor();
-    slots = resolveSlotsFromReader(reader);
+    applyColumns(buildColumnsFromReader(reader));
     const view = reader.bytes;
     rawBuffer = view.buffer.slice(view.byteOffset, view.byteOffset + view.byteLength);
     attachWorkerForNxb();
@@ -797,6 +833,7 @@ async function loadBuffer(buffer, name, sizeBytes) {
   streamReader = null;
   recordOffsets = null;
   virtualHeight = 0;
+  clearColumns();
   // Validate magic.
   const dv = new DataView(buffer);
   if (dv.byteLength < 4 || dv.getUint32(0, true) !== NXS_MAGIC) {
@@ -815,7 +852,7 @@ async function loadBuffer(buffer, name, sizeBytes) {
   rawBuffer = buffer;
   recordCount = reader.recordCount;
   cursor = reader.cursor();
-  slots = resolveSlotsFromReader(reader);
+  applyColumns(buildColumnsFromReader(reader));
   attachWorkerForNxb();
   applyViewportLayout(name, sizeBytes);
 }
@@ -830,9 +867,9 @@ async function loadJsonString(text, name, sizeBytes) {
     return;
   }
 
-  let rows;
+  let prepared;
   try {
-    rows = jsonToExplorerRows(parsed);
+    prepared = jsonPrepare(parsed);
   } catch (e) {
     showError(`${name}: ${e.message}`);
     return;
@@ -843,12 +880,12 @@ async function loadJsonString(text, name, sizeBytes) {
   streamReader = null;
   recordOffsets = null;
   cursor = null;
-  slots = null;
   rawBuffer = null;
   virtualHeight = 0;
-  jsonRecords = rows;
+  jsonRecords = prepared.records;
   recordCount = jsonRecords.length;
   _lastLoadedUrl = null;
+  applyColumns(prepared.columns);
   applyViewportLayout(name, sizeBytes, "JSON");
 }
 
@@ -925,14 +962,16 @@ function searchMainThread(query) {
     if (token !== searchToken) return;
     const needle = query.toLowerCase();
     const results = [];
+    if (!searchColumn) return;
     if (jsonRecords !== null) {
+      const key = searchColumn.key;
       for (let i = 0; i < recordCount; i++) {
-        const u = jsonRecords[i].username;
-        if (u && String(u).toLowerCase().indexOf(needle) !== -1) results.push(i);
+        const u = jsonRecords[i][key];
+        if (u != null && String(u).toLowerCase().indexOf(needle) !== -1) results.push(i);
       }
-    } else {
+    } else if (searchColumn.sigil === WIRE_SIGILS.str) {
       const cur = reader.cursor();
-      const uSlot = slots.username;
+      const uSlot = searchColumn.slot;
       for (let i = 0; i < recordCount; i++) {
         cur.seek(i);
         const u = cur.getStrBySlot(uSlot);

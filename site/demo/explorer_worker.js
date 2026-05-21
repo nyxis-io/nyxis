@@ -8,8 +8,7 @@
 import { NxsReader, NxsStreamReader } from "/sdk/nxs.js";
 
 let reader = null;
-let usernameSlot = -1;
-let emailSlot = -1;
+let searchSlot = -1;
 let loadGeneration = 0;
 /** @type {{ query: string, token: number } | null} */
 let pendingSearch = null;
@@ -18,13 +17,18 @@ let pendingSearch = null;
 // starting a new one. Only the most-recent token's results are emitted.
 let activeToken = 0;
 
-function bindSlots() {
-  usernameSlot = reader.slot("username");
-  try { emailSlot = reader.slot("email"); } catch { emailSlot = -1; }
+function bindSearchSlot(searchKey) {
+  const key = searchKey || "username";
+  try {
+    searchSlot = reader.slot(key);
+  } catch {
+    const idx = reader.keySigils.indexOf(0x22); // first string column
+    searchSlot = idx >= 0 ? idx : 0;
+  }
 }
 
-function finishLoad() {
-  bindSlots();
+function finishLoad(searchKey) {
+  bindSearchSlot(searchKey);
   self.postMessage({ type: "loaded", recordCount: reader.recordCount });
   if (pendingSearch !== null) {
     const pending = pendingSearch;
@@ -33,7 +37,7 @@ function finishLoad() {
   }
 }
 
-async function loadFromFetch(url, gen) {
+async function loadFromFetch(url, gen, searchKey) {
   const res = await fetch(url);
   if (gen !== loadGeneration) return;
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -42,7 +46,7 @@ async function loadFromFetch(url, gen) {
     const buf = await res.arrayBuffer();
     if (gen !== loadGeneration) return;
     reader = new NxsReader(new Uint8Array(buf));
-    finishLoad();
+    finishLoad(searchKey);
     return;
   }
 
@@ -73,7 +77,7 @@ async function loadFromFetch(url, gen) {
   }
   if (gen !== loadGeneration) return;
   reader = sr.finish();
-  finishLoad();
+  finishLoad(searchKey);
 }
 
 function runSearch(query, replyToken) {
@@ -100,7 +104,7 @@ function runSearch(query, replyToken) {
 
   for (let i = 0; i < n; i++) {
     cur.seek(i);
-    const u = cur.getStrBySlot(usernameSlot);
+    const u = cur.getStrBySlot(searchSlot);
     if (u && u.toLowerCase().indexOf(needle) !== -1) {
       if (matchCount >= results.length) {
         const grown = new Int32Array(results.length * 2);
@@ -140,7 +144,7 @@ self.addEventListener("message", async (ev) => {
     reader = null;
     pendingSearch = null;
     try {
-      await loadFromFetch(msg.url, gen);
+      await loadFromFetch(msg.url, gen, msg.searchKey);
     } catch (e) {
       if (gen !== loadGeneration) return;
       self.postMessage({ type: "load-error", message: e.message });
@@ -151,7 +155,7 @@ self.addEventListener("message", async (ev) => {
   if (msg.type === "load") {
     loadGeneration++;
     reader = new NxsReader(new Uint8Array(msg.buffer));
-    finishLoad();
+    finishLoad(msg.searchKey);
     return;
   }
 
