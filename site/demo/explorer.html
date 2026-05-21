@@ -867,6 +867,12 @@ function onWorkerMessage(ev) {
   const msg = ev.data;
   if (msg.type === "loaded") {
     // Worker has its own reader now; searches will use it.
+  } else if (msg.type === "load-progress") {
+    if (!searchEl.value.trim()) {
+      statusMatches.textContent = `indexing ${fmtInt(msg.parsed)} records for search…`;
+    }
+  } else if (msg.type === "load-error") {
+    console.warn("Explorer worker load failed:", msg.message);
   } else if (msg.type === "search-progress") {
     if (msg.token !== searchToken) return;
     const pct = ((msg.scanned / msg.total) * 100).toFixed(0);
@@ -980,7 +986,7 @@ function startSearch(query) {
     searchToken++;
     searchBadge.textContent = "scanning…";
     searchBadge.className = "badge searching";
-    worker.postMessage({ type: "search", query });
+    worker.postMessage({ type: "search", query, token: searchToken });
   } else {
     searchMainThread(query);
   }
