@@ -511,8 +511,20 @@ function isNxsObject(v) {
   return v && typeof v === "object" && typeof v.get === "function" && typeof v.toObject === "function";
 }
 
+/** Columns from embedded schema (streaming, before records are parsed). */
+function buildColumnsFromSchema(keys, keySigils) {
+  return keys.map((key, slot) => ({
+    key,
+    slot,
+    sigil: keySigils[slot],
+  }));
+}
+
 /** Columns from fields present in record 0 (not the full schema dict). */
 function buildColumnsFromReader(r) {
+  if (typeof r.record !== "function") {
+    return buildColumnsFromSchema(r.keys, r.keySigils);
+  }
   if (r.recordCount === 0) return [];
   const present = r.record(0).toObject();
   const topKeys = Object.keys(present);
@@ -812,9 +824,9 @@ async function loadFromReadableStream(body, name, sizeBytes) {
   let sr;
   try {
     sr = new NxsStreamReader({
-      onSchema() {
+      onSchema(keys, keySigils) {
         if (gen !== loadGeneration) return;
-        applyColumns(buildColumnsFromReader(sr));
+        applyColumns(buildColumnsFromSchema(keys, keySigils));
         if (_lastLoadedUrl) attachWorkerForNxb();
       },
       onRecord(obj, idx) {
