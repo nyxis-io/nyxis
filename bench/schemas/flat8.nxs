@@ -1,0 +1,11 @@
+# Workload B — flat 8-field record (matches site/bench fixtures / BENCHMARK.md)
+schema {
+    id: Int64
+    username: String
+    email: String
+    age: Int64
+    balance: Float64
+    active: Bool
+    score: Float64
+    created_at: Time
+}

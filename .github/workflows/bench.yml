@@ -1,0 +1,40 @@
+# Cross-format benchmark smoke — 1k records, Python matrix + NXS C/Rust/Go checks.
+name: bench
+
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - "bench/**"
+      - "rust/**"
+      - ".github/workflows/bench.yml"
+  pull_request:
+    paths:
+      - "bench/**"
+      - "rust/**"
+      - ".github/workflows/bench.yml"
+  workflow_dispatch:
+
+jobs:
+  bench-ci:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+      - name: Install codegen tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq protobuf-compiler flatbuffers-compiler capnproto
+      - name: Bench venv + CI smoke
+        run: |
+          bash bench/scripts/setup_venv.sh
+          test -x .venv-bench/bin/python
+          make -C bench ci BENCH_RECORDS=1000

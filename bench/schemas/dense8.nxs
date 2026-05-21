@@ -1,0 +1,11 @@
+# Workload C — dense 8-field analytical record (all fields populated in generator)
+schema {
+    id: Int64
+    bucket: Int64
+    quantity: Int64
+    amount: Float64
+    rate: Float64
+    score: Float64
+    category: Int64
+    active: Bool
+}

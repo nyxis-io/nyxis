@@ -488,7 +488,7 @@ impl<P: Predicate> Predicate for Not<P> {
 
 // ── Schema parser ─────────────────────────────────────────────────────────────
 
-fn parse_schema(data: &[u8], offset: usize) -> Result<(Vec<String>, Vec<u8>, usize)> {
+pub(crate) fn parse_schema(data: &[u8], offset: usize) -> Result<(Vec<String>, Vec<u8>, usize)> {
     if offset + 2 > data.len() {
         return Err(NxsError::OutOfBounds);
     }
@@ -532,7 +532,7 @@ fn parse_schema(data: &[u8], offset: usize) -> Result<(Vec<String>, Vec<u8>, usi
 
 /// Stateless LEB128 bitmask walker — returns the absolute byte offset of
 /// the value at `slot` within the NYXO object at `obj_offset`, or `None`.
-fn resolve_slot(data: &[u8], obj_offset: usize, slot: usize) -> Option<usize> {
+pub(crate) fn resolve_slot(data: &[u8], obj_offset: usize, slot: usize) -> Option<usize> {
     let mut p = obj_offset + 8; // skip NYXO magic (4) + length (4)
     let mut cur: usize = 0;
     let mut table_idx: usize = 0;

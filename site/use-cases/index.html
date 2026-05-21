@@ -215,9 +215,15 @@
 
       <h3>Architectural Comparison: FlatBuffers &amp; Cap'n Proto</h3>
       <p>
-        We are currently compiling a standardized, open-source benchmarking suite to measure head-to-head throughput
-        limits against Google FlatBuffers and Cap'n Proto. Until those verified datasets are published, our structural
-        differentiators are bounded strictly by verified architectural layout mechanics:
+        Head-to-head benchmarks against Protobuf, FlatBuffers, Cap'n Proto, and Apache Arrow IPC live in
+        <a href="../BENCHMARK.md#workload-comparison-suite">BENCHMARK.md</a> (harness under
+        <code>bench/</code>). A preliminary 10k-record dev run (<code>bench/results/2026-05-21_mmalta/</code>)
+        shows (1&nbsp;NXS win, 14&nbsp;losses at 10k): Workload&nbsp;B warm access is the sole NXS win; cold-open
+        loses to capnp/fb; Workload&nbsp;C columnar <code>sum</code> and <code>count_distinct</code> are won by Arrow
+        (~75&nbsp;µs vs ~8.5&nbsp;ms NXS scan); Workload&nbsp;A sparse file size is smallest with Protobuf at every
+        population rate, while Cap'n Proto leads selective-read latency (~3.7&nbsp;µs vs ~64&nbsp;µs NXS). Those numbers are draft — not publication-grade until Linux bare-metal
+        1M+ reruns and third-party review. On dense columnar reducers the Arrow bridge is the intended path. Structural
+        differentiators below remain bounded by layout mechanics:
       </p>
       <ul>
         <li><strong>Sparse Field Efficiency (vs. FlatBuffers):</strong> FlatBuffers tracks field presence via per-table
@@ -257,6 +263,14 @@
         Batch <code>mmap</code> is the read path; streaming and append-only WALs are how live systems <em>produce</em>
         those
         files without rebuilding indexes on every write — the bridge from protocol theory to the topologies in Act III.
+      </p>
+      <p class="page-lead" style="margin-top: 0;">
+        NXS v1.1 files stream records to readers before the file is sealed, with time-to-first-record under 115&nbsp;µs
+        at P50 on commodity hardware (dev macOS, 10k-row flat-8 benchmark). After sealing, the same file supports
+        O(1) random access via the tail-index — no second pass, no re-indexing. Protobuf&rsquo;s length-delimited format
+        offers similar streaming latency but requires a full sequential scan to locate record&nbsp;N after the stream
+        closes. FlatBuffers requires a complete buffer before any record is accessible at the file level.
+        <a href="../BENCHMARK.md">Workload&nbsp;D results</a>.
       </p>
       <div class="bimodal-grid">
         <div class="bimodal-col">

@@ -1,0 +1,13 @@
+{
+  "description": "Workload C Arrow IPC schema — 8 dense numeric columns",
+  "fields": [
+    {"name": "id", "type": "int64"},
+    {"name": "bucket", "type": "int64"},
+    {"name": "quantity", "type": "int64"},
+    {"name": "amount", "type": "float64"},
+    {"name": "rate", "type": "float64"},
+    {"name": "score", "type": "float64"},
+    {"name": "category", "type": "int64"},
+    {"name": "active", "type": "bool"}
+  ]
+}

@@ -1,0 +1,18 @@
+namespace nyxis.bench;
+
+table Flat8Record {
+  id:long;
+  username:string;
+  email:string;
+  age:long;
+  balance:double;
+  active:bool;
+  score:double;
+  created_at:long;
+}
+
+table Flat8File {
+  records:[Flat8Record];
+}
+
+root_type Flat8File;

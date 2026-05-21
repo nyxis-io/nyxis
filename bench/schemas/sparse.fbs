@@ -1,0 +1,36 @@
+namespace nyxis.bench;
+
+table SparseGrandchild {
+  gc_i64:long;
+  gc_str:string;
+}
+
+table SparseChild {
+  grandchild:SparseGrandchild;
+  child_f64:double;
+}
+
+table SparseMeta {
+  child:SparseChild;
+  meta_flag:bool;
+}
+
+table SparseRecord {
+  i01:long; i02:long; i03:long; i04:long; i05:long;
+  i06:long; i07:long; i08:long; i09:long; i10:long;
+  i11:long; i12:long; i13:long; i14:long; i15:long;
+  i16:long; i17:long; i18:long; i19:long; i20:long;
+  s21:string; s22:string; s23:string; s24:string; s25:string;
+  s26:string; s27:string; s28:string; s29:string; s30:string;
+  s31:string; s32:string; s33:string; s34:string; s35:string;
+  f36:double; f37:double; f38:double; f39:double; f40:double;
+  f41:double; f42:double; f43:double; f44:double; f45:double;
+  b46:bool; b47:bool; b48:bool; b49:bool; b50:bool;
+  meta:SparseMeta;
+}
+
+table SparseFile {
+  records:[SparseRecord];
+}
+
+root_type SparseFile;

@@ -1,0 +1,18 @@
+syntax = "proto3";
+package nyxis.bench;
+
+// Workload C — 8 fields, all required (dense analytical reducer).
+message Dense8Record {
+  int64  id         = 1;
+  int64  bucket     = 2;
+  int64  quantity   = 3;
+  double amount     = 4;
+  double rate       = 5;
+  double score      = 6;
+  int64  category   = 7;
+  bool   active     = 8;
+}
+
+message Dense8File {
+  repeated Dense8Record records = 1;
+}

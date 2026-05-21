@@ -19,6 +19,7 @@ pub mod error;
 pub mod lexer;
 pub mod parser;
 pub mod query;
+pub mod stream_reader;
 pub mod segment_reader;
 pub mod wal;
 pub mod writer;

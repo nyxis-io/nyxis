@@ -81,5 +81,11 @@ index-*.png
 bench-*.png
 ticker-*.png
 
+# Benchmark suite venv (make -C bench setup-venv)
+.venv-bench/
+
+# Stray nested driver tree (multi-repo workspace layout; not part of nyxis core)
+nyxis-drivers/
+
 # Para-Programmatic Context
 .para-worktrees/

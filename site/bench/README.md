@@ -2,6 +2,8 @@
 
 Cross-language benchmark fixtures and browser/Node harnesses live here. The MIT drivers in `nyxis-drivers/` run against `site/bench/fixtures/`.
 
+**Not this folder:** the head-to-head Protobuf / FlatBuffers / Cap'n Proto / Arrow suite is under [`bench/`](../../bench/) (see [BENCHMARK_SUITE.md](../../../BENCHMARK_SUITE.md)).
+
 ## Fixtures
 
 ```bash
