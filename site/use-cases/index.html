@@ -18,14 +18,15 @@
     <h1 class="page-title">High-throughput system topologies</h1>
     <p class="page-lead">
       Nyxis is a wire-format and compiler stack for systems engineers — the same category as Protocol Buffers, FlatBuffers,
-      and Cap'n Proto — not a customer-support or ticketing platform. Below: how the bimodal standard maps to production,
-      then nine reference architectures.
+      and Cap'n Proto — not a customer-support or ticketing platform. Start with why <code>JSON.parse()</code> hits hard V8
+      walls, then how the bimodal standard and nine production topologies bypass them.
     </p>
   </header>
 
   <nav class="use-case-toc" aria-label="Catalog contents">
     <h2>On this page</h2>
     <ol>
+      <li><a href="#v8-limits">V8 allocation limits vs Nyxis</a></li>
       <li><a href="#bimodal">Bimodal standard (<code>.nxs</code> / <code>.nxb</code>)</a></li>
       <li><a href="#streaming">Streamable ingest &amp; WAL sealing (v1.1)</a></li>
       <li><a href="#access-logs">NGINX, Envoy &amp; API gateway access log viewers</a></li>
@@ -39,6 +40,103 @@
       <li><a href="#crash-wal">Crash-resilient append-only ledgers</a></li>
     </ol>
   </nav>
+
+  <section class="landing-section" id="v8-limits">
+    <h2>Defeating the core allocation limits of the browser engine</h2>
+    <p class="page-lead" style="margin-bottom: 16px;">
+      This is the single most powerful structural advantage of Nyxis over JSON. Because <code>JSON.parse()</code> crashes,
+      slows down, or silently corrupts data at native JavaScript memory and precision walls, Nyxis was architected to bypass
+      all three — not patch them after the fact.
+    </p>
+
+    <h3>The hidden walls of V8</h3>
+    <ul>
+      <li>
+        <strong>512&nbsp;MB string cap.</strong> V8 cannot instantiate a single flat string much beyond ~512&nbsp;MB–1&nbsp;GB.
+        A 3&nbsp;GB log or catalog never reaches <code>JSON.parse()</code> — the engine throws <code>RangeError</code> first.
+      </li>
+      <li>
+        <strong>AST memory inflation.</strong> Parser metadata can balloon a 100&nbsp;MB JSON file into 500&nbsp;MB+ of live
+        objects on the heap, triggering GC pauses that lock the UI thread.
+      </li>
+      <li>
+        <strong>Silent integer truncation.</strong> JSON numbers become IEEE-754 doubles. IDs and balances above
+        <code>Number.MAX_SAFE_INTEGER</code> lose bits with no error — only wrong analytics downstream.
+      </li>
+    </ul>
+
+    <h3>How Nyxis turns those failures into a performance win</h3>
+    <div class="v8-limit-grid">
+      <div class="bimodal-col">
+        <h3>1. Zero-copy <code>mmap</code></h3>
+        <p>
+          <code>.nxb</code> is not one giant string. Opening a 5&nbsp;GB file reads only the preamble and the
+          <em>O(1)</em> tail-index footer — typically <strong>&lt;2&nbsp;µs</strong> — with no allocation against V8’s
+          string length cap.
+        </p>
+      </div>
+      <div class="bimodal-col">
+        <h3>2. Flat heap under virtual scroll</h3>
+        <p>
+          Records sit in 8-byte-aligned wire cells. The <a href="/demo/explorer.html">log explorer</a> decodes only the
+          rows in the active viewport via tail-index jumps, then recycles — no million-object materialization graph.
+        </p>
+      </div>
+      <div class="bimodal-col">
+        <h3>3. Typed 64-bit segments</h3>
+        <p>
+          Integer sigils in <code>.nxs</code> compile to true <code>i64</code> on disk. Drivers read with
+          <code>BigInt</code> / native <code>i64</code> — no silent float coercion on primary keys or ledger balances.
+        </p>
+      </div>
+    </div>
+
+    <h3>Nyxis bi-modal performance parity matrix</h3>
+    <div style="overflow-x: auto;">
+      <table class="parity-matrix">
+        <thead>
+          <tr>
+            <th scope="col">Data operation</th>
+            <th scope="col">Traditional <code>JSON.parse()</code></th>
+            <th scope="col">Nyxis <code>.nxb</code> pointer reading</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Opening a 2&nbsp;GB dataset</td>
+            <td class="col-bad">Crashes instantly (<code>RangeError</code>)</td>
+            <td class="col-good">Succeeds in &lt;2&nbsp;µs via <code>mmap</code></td>
+          </tr>
+          <tr>
+            <td>RAM footprint (1&nbsp;GB file)</td>
+            <td class="col-bad">3–5&nbsp;GB volatile heap (AST + objects)</td>
+            <td class="col-good">Near 0&nbsp;MB — only active viewport rows</td>
+          </tr>
+          <tr>
+            <td>Large integer accuracy</td>
+            <td class="col-bad">Silent corruption (bits truncated)</td>
+            <td class="col-good">100% via <code>BigInt</code> / <code>i64</code> casting</td>
+          </tr>
+          <tr>
+            <td>UI virtual scrolling</td>
+            <td class="col-bad">Heavy stutter from allocation loops</td>
+            <td class="col-good">60&nbsp;FPS — constant-time offset jumps</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p class="bimodal-compare page-lead" style="margin: 20px 0 0; font-size: 14px;">
+      Once this baseline is clear, the production blueprints below — NGINX access viewers, Kubernetes aggregators,
+      LLM trace tables, and WAL-backed pipelines — are architectures that are <strong>physically impractical</strong> with
+      browser-scale <code>JSON.parse()</code> alone. Continue with the bimodal wire format, streamable v1.1 sealing, then
+      the topology catalog.
+    </p>
+    <div class="landing-actions" style="justify-content: flex-start; margin-top: 16px;">
+      <a class="btn btn-secondary" href="/demo/explorer.html">Log explorer demo</a>
+      <a class="btn btn-secondary" href="/bench/">NXS vs JSON benchmarks</a>
+    </div>
+  </section>
 
   <section class="landing-section bimodal-standard" id="bimodal">
     <h2>The bimodal standard: <code>.nxs</code> ↔ <code>.nxb</code></h2>

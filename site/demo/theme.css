@@ -1112,6 +1112,75 @@ pre,
   text-decoration: underline;
 }
 
+.parity-matrix {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+  margin: 20px 0 8px;
+}
+
+.parity-matrix th,
+.parity-matrix td {
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  text-align: left;
+  vertical-align: top;
+}
+
+.parity-matrix thead th {
+  background: var(--panel-2);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+
+.parity-matrix tbody tr:nth-child(even) td {
+  background: var(--panel);
+}
+
+.parity-matrix .col-bad {
+  color: var(--bad);
+  font-weight: 600;
+}
+
+.parity-matrix .col-good {
+  color: var(--good);
+  font-weight: 600;
+}
+
+.v8-limit-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 14px;
+  margin: 20px 0 8px;
+}
+
+@media (max-width: 800px) {
+  .v8-limit-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.v8-limit-grid .bimodal-col h3 {
+  margin-top: 0;
+}
+
+.hero-v8-link {
+  margin: 14px 0 0;
+  font-size: 13px;
+}
+
+.hero-v8-link a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.hero-v8-link a:hover {
+  text-decoration: underline;
+}
+
 .use-case-group {
   font-size: 11px;
   font-weight: 700;

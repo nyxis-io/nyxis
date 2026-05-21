@@ -108,6 +108,11 @@
           <strong>100&nbsp;GB</strong> of <code>.nxb</code> payloads across your network lanes in a single calendar month,
           your standard BSL&nbsp;1.1 allowance expires. You must step into a paid commercial agreement.
         </p>
+        <p>
+          Because Nyxis relies on constant-time pointer casting instead of full-file heap parsing, scaling past
+          100&nbsp;GB/month does not inflate browser or worker memory the way repeated <code>JSON.parse()</code> pipelines do.
+          See the <a href="/use-cases/#v8-limits">V8 allocation parity matrix</a> on the use-cases page for the technical breakdown.
+        </p>
       </div>
     </details>
 
