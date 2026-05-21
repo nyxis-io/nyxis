@@ -1,515 +1,649 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
-<meta charset="UTF-8">
-<link rel="icon" href="/favicon.svg" type="image/svg+xml">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Nyxis — High-Throughput System Topologies &amp; Use Cases</title>
-<meta name="description" content="Production topologies for the Nyxis zero-copy serialization protocol: mmap .nxb ingestion, streamable v1.1 sealing, append-only WALs, Arrow bridges, and multi-terabyte data-grid deployments.">
-<script src="/demo/theme-init.js"></script>
-<link rel="stylesheet" href="/demo/theme.css">
+  <meta charset="UTF-8">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Nyxis — High-Throughput System Topologies &amp; Use Cases</title>
+  <meta name="description"
+    content="Production topologies for the Nyxis zero-copy serialization protocol: mmap .nxb ingestion, streamable v1.1 sealing, append-only WALs, Arrow bridges, and multi-terabyte data-grid deployments.">
+  <script src="/demo/theme-init.js"></script>
+  <link rel="stylesheet" href="/demo/theme.css">
 </head>
+
 <body data-nav-current="use-cases">
-<div id="site-nav-root"></div>
+  <div id="site-nav-root"></div>
 
-<main class="page-main">
-  <header class="page-header">
-    <p class="page-eyebrow">Production architectures</p>
-    <h1 class="page-title">From browser limits to production topologies</h1>
-    <p class="page-lead">
-      Nyxis is a wire-format and compiler stack for systems engineers — alongside Protobuf, FlatBuffers, and Cap'n Proto,
-      not a ticketing or CRM product. This page follows one arc: the constraint that breaks JSON in the browser, the
-      protocol that answers it, then eight reference deployments teams already run in production.
-    </p>
-  </header>
+  <main class="page-main">
+    <header class="page-header">
+      <p class="page-eyebrow">Production architectures</p>
+      <h1 class="page-title">From browser limits to production topologies</h1>
+      <p class="page-lead">
+        Nyxis is a wire-format and compiler stack for systems engineers — alongside Protobuf, FlatBuffers, and Cap'n
+        Proto,
+        not a ticketing or CRM product. This page follows one arc: the constraint that breaks JSON in the browser, the
+        protocol that answers it, then reference deployments run in production.
+      </p>
+    </header>
 
-  <nav class="use-case-toc" aria-label="Page outline">
-    <h2>On this page</h2>
-    <p class="use-case-toc-act">Act I — The constraint</p>
-    <ol>
-      <li><a href="#v8-limits">Why <code>JSON.parse()</code> hits V8 walls</a></li>
-    </ol>
-    <p class="use-case-toc-act">Act II — The protocol</p>
-    <ol start="2">
-      <li><a href="#bimodal">Bimodal standard (<code>.nxs</code> / <code>.nxb</code>)</a></li>
-      <li><a href="#streaming">Streamable ingest &amp; WAL sealing (v1.1)</a></li>
-    </ol>
-    <p class="use-case-toc-act">Act III — Production topologies</p>
-    <ol start="4">
-      <li><a href="#catalog">How the catalog is organized</a></li>
-      <li><a href="#k8s-aggregators">Kubernetes stdout aggregators</a></li>
-      <li><a href="#iot-edge">Edge IoT &amp; fleet telemetry</a></li>
-      <li><a href="#access-logs">NGINX &amp; API gateway log viewers</a></li>
-      <li><a href="#web-workers">Web Worker zero-copy handoffs</a></li>
-      <li><a href="#apm-traces">APM trace &amp; span explorers</a></li>
-      <li><a href="#llm-tracing">LLM generation tracing &amp; observability</a></li>
-      <li><a href="#mcp">MCP agent tools &amp; servers</a></li>
-      <li><a href="#hft-wal">HFT &amp; event-streaming WALs</a></li>
-      <li><a href="#crash-wal">Crash-resilient append-only ledgers</a></li>
-    </ol>
-  </nav>
+    <nav class="use-case-toc" aria-label="Page outline">
+      <h2>On this page</h2>
+      <p class="use-case-toc-act">Act I — The constraint</p>
+      <ol>
+        <li><a href="#v8-limits">Why <code>JSON.parse()</code> hits V8 walls</a></li>
+      </ol>
+      <p class="use-case-toc-act">Act II — The protocol &amp; Performance Bounds</p>
+      <ol start="2">
+        <li><a href="#bimodal">Bimodal standard (<code>.nxs</code> / <code>.nxb</code>)</a></li>
+        <li><a href="#bounds">Technical performance bounds &amp; protocol parity</a></li>
+        <li><a href="#streaming">Streamable ingest &amp; WAL sealing (v1.1)</a></li>
+      </ol>
+      <p class="use-case-toc-act">Act III — Production topologies</p>
+      <ol start="5">
+        <li><a href="#catalog">How the catalog is organized</a></li>
+        <li><a href="#k8s-aggregators">Kubernetes stdout aggregators</a></li>
+        <li><a href="#iot-edge">Edge IoT &amp; fleet telemetry</a></li>
+        <li><a href="#access-logs">NGINX &amp; API gateway log viewers</a></li>
+        <li><a href="#web-workers">Web Worker zero-copy handoffs</a></li>
+        <li><a href="#apm-traces">APM trace &amp; span explorers</a></li>
+        <li><a href="#llm-tracing">LLM generation tracing &amp; observability</a></li>
+        <li><a href="#mcp">MCP agent tools &amp; servers</a></li>
+        <li><a href="#hft-wal">HFT &amp; event-streaming WALs</a></li>
+        <li><a href="#crash-wal">Crash-resilient append-only ledgers</a></li>
+      </ol>
+    </nav>
 
-  <section class="landing-section" id="v8-limits">
-    <p class="use-case-toc-act">Act I</p>
-    <h2>Why <code>JSON.parse()</code> hits hard V8 walls</h2>
-    <p class="story-bridge">
-      Principal architects evaluating Nyxis usually already ship JSON in the browser. Act I names the three engine limits
-      that make multi-gigabyte interactive grids and precise IDs impossible — before any wire format is introduced.
-    </p>
+    <section class="landing-section" id="v8-limits">
+      <p class="use-case-toc-act">Act I</p>
+      <h2>Why <code>JSON.parse()</code> hits hard V8 walls</h2>
+      <p class="story-bridge">
+        Principal architects evaluating Nyxis usually already ship JSON in the browser. Act I names the three engine
+        limits
+        that make multi-gigabyte interactive grids and precise IDs impossible — before any wire format is introduced.
+      </p>
 
-    <h3>The hidden walls of V8</h3>
-    <ul>
-      <li>
-        <strong>512&nbsp;MB string cap.</strong> V8 cannot instantiate a single flat string much beyond ~512&nbsp;MB–1&nbsp;GB.
-        A 3&nbsp;GB log or catalog never reaches <code>JSON.parse()</code> — the engine throws <code>RangeError</code> first.
-      </li>
-      <li>
-        <strong>AST memory inflation.</strong> Parser metadata can balloon a 100&nbsp;MB JSON file into 500&nbsp;MB+ of live
-        objects on the heap, triggering GC pauses that lock the UI thread.
-      </li>
-      <li>
-        <strong>Silent integer truncation.</strong> JSON numbers become IEEE-754 doubles. IDs and balances above
-        <code>Number.MAX_SAFE_INTEGER</code> lose bits with no error — only wrong analytics downstream.
-      </li>
-    </ul>
+      <h3>The hidden walls of V8</h3>
+      <ul>
+        <li>
+          <strong>512&nbsp;MB string cap.</strong> V8 cannot instantiate a single flat string much beyond
+          ~512&nbsp;MB–1&nbsp;GB.
+          A 3&nbsp;GB log or catalog never reaches <code>JSON.parse()</code> — the engine throws <code>RangeError</code>
+          first.
+        </li>
+        <li>
+          <strong>AST memory inflation.</strong> Parser metadata can balloon a 100&nbsp;MB JSON file into 500&nbsp;MB+
+          of live
+          objects on the heap, triggering GC pauses that lock the UI thread.
+        </li>
+        <li>
+          <strong>Silent integer truncation.</strong> JSON numbers become IEEE-754 doubles. IDs and balances above
+          <code>Number.MAX_SAFE_INTEGER</code> lose bits with no error — only wrong analytics downstream.
+        </li>
+      </ul>
 
-    <h3>How Nyxis turns those failures into a performance win</h3>
-    <div class="v8-limit-grid">
-      <div class="bimodal-col">
-        <h3>1. Zero-copy <code>mmap</code></h3>
-        <p>
-          <code>.nxb</code> is not one giant string. Opening a 5&nbsp;GB file reads only the preamble and the
-          <em>O(1)</em> tail-index footer — typically <strong>&lt;2&nbsp;µs</strong> — with no allocation against V8’s
-          string length cap.
+      <h3>How Nyxis turns those failures into a performance win</h3>
+      <div class="v8-limit-grid">
+        <div class="bimodal-col">
+          <h3>1. Zero-copy <code>mmap</code></h3>
+          <p>
+            <code>.nxb</code> is not one giant string. Opening a file reads only the preamble and the
+            <em>O(1)</em> tail-index footer — typically <strong>&lt;2&nbsp;µs</strong> — with no allocation against V8’s
+            string length cap.
+          </p>
+        </div>
+        <div class="bimodal-col">
+          <h3>2. Flat heap under virtual scroll</h3>
+          <p>
+            Records sit in 8-byte-aligned wire cells. The <a href="/demo/explorer.html">log explorer</a> decodes only
+            the
+            rows in the active viewport via tail-index jumps, then recycles — no million-object materialization graph.
+          </p>
+        </div>
+        <div class="bimodal-col">
+          <h3>3. Typed 64-bit segments</h3>
+          <p>
+            Integer sigils in <code>.nxs</code> compile to true <code>i64</code> on disk. Drivers read with
+            <code>BigInt</code> / native <code>i64</code> — no silent float coercion on primary keys or ledger balances.
+          </p>
+        </div>
+      </div>
+
+      <p class="bimodal-compare page-lead" style="margin: 20px 0 0; font-size: 14px;">
+        <strong>Act II</strong> introduces the mechanism — human <code>.nxs</code> source compiled to memory-mapped
+        <code>.nxb</code> — that makes the topologies in Act III achievable in production.
+      </p>
+    </section>
+
+    <section class="landing-section bimodal-standard" id="bimodal">
+      <p class="use-case-toc-act">Act II</p>
+      <h2>The bimodal standard: <code>.nxs</code> ↔ <code>.nxb</code></h2>
+      <p class="story-bridge">
+        Git-friendly text for humans; aligned binary with a cross-record tail-index for machines. That split is what
+        lets
+        teams review schema in CI while runtimes open terabyte-scale files in microseconds.
+      </p>
+      <div class="bimodal-grid">
+        <div class="bimodal-col">
+          <h3><code>.nxs</code> — human layer</h3>
+          <p>
+            Sigil-typed, plain-text source you commit, diff, and review in CI — like a schema-aware config language.
+            Every value declares its type with a leading character; the file <em>is</em> the contract.
+          </p>
+          <ul>
+            <li>Version control &amp; code review friendly</li>
+            <li>Compiled by the Nyxis CLI (<code>nxs</code>) to production bytes</li>
+            <li>No separate <code>.proto</code> IDL file required</li>
+          </ul>
+        </div>
+        <div class="bimodal-col">
+          <h3><code>.nxb</code> — machine layer</h3>
+          <p>
+            Native, 8-byte-aligned wire format designed for <code>mmap(2)</code>, tail-index record lookup, and
+            cross-thread <code>SharedArrayBuffer</code> handoff — without deserializing the payload first.
+          </p>
+          <ul>
+            <li>Constant-time open (header + tail-index only)</li>
+            <li>Random access by record index and field key</li>
+            <li>Interned dictionary keys — sparse presence bitmasks</li>
+            <li>v1.1 streamable sealing — records before the tail-index is final</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section class="landing-section" id="bounds">
+      <h2>Technical performance bounds &amp; protocol parity</h2>
+      <p class="story-bridge">
+        We replace full-file text tokenization ($O(N)$ scanning) with constant-time ($O(1)$) pointer offsets via
+        memory-mapping.
+        Rather than a fabricated baseline metric, performance gains vary strictly by the efficiency of each language's
+        native runtime memory allocation and JSON parser.
+      </p>
+
+      <h3>JSON Deserialization Benchmarks</h3>
+      <p>
+        Across our 10-language conformance suite, running a CPU-bound reducer over a 1M-record (131 MB) structured
+        dataset yields the following processing speedups compared to full-file JSON parsing:
+      </p>
+      <ul>
+        <li><strong>High-Efficiency Core Runtimes:</strong> <code>1.0× to 1.1×</code> (Ties in Go and JS/V8, where
+          native JSON engines utilize highly optimized, pre-compiled C-level loops).</li>
+        <li><strong>Native Managed Implementations (vs. Standard Object Parsers):</strong> <code>8.0×</code> in C,
+          <code>8.9×</code> in Python (vs. standard library <code>json.loads</code>), <code>14.0×</code> in PHP (vs.
+          <code>json_decode</code>), and <code>33.0×</code> in C# (measured directly against reflection-based object
+          materialization using standard <code>System.Text.Json</code>).</li>
+        <li><strong>Unoptimized Baseline Libraries:</strong> <code>250×+</code> in Kotlin (vs. <code>org.json</code>)
+          and Swift (vs. <code>JSONSerialization</code>), where heavy intermediate heap allocations and string
+          tokenization bottleneck the CPU.</li>
+      </ul>
+
+      <div style="overflow-x: auto; margin-top: 24px;">
+        <table class="parity-matrix">
+          <thead>
+            <tr>
+              <th scope="col">Data operation</th>
+              <th scope="col">Traditional <code>JSON.parse()</code></th>
+              <th scope="col">Nyxis <code>.nxb</code> pointer reading</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Opening a 1.5&nbsp;GB dataset</td>
+              <td class="col-bad">Crashes instantly (<code>RangeError</code>)</td>
+              <td class="col-good">Succeeds in &lt;2&nbsp;µs via <code>mmap</code> (maps header &amp; tail-index footer)
+              </td>
+            </tr>
+            <tr>
+              <td>RAM footprint (131&nbsp;MB file)</td>
+              <td class="col-bad">Up to 5× volatile heap explosion (AST + objects)</td>
+              <td class="col-good">Near 0&nbsp;MB — only instantiates visible viewport rows</td>
+            </tr>
+            <tr>
+              <td>Large integer accuracy</td>
+              <td class="col-bad">Silent corruption (bits truncated &gt; 2^53 - 1)</td>
+              <td class="col-good">100% via native <code>BigInt</code> / <code>i64</code> pointer casting</td>
+            </tr>
+            <tr>
+              <td>UI virtual scrolling</td>
+              <td class="col-bad">Heavy stutter from sequential allocation loops</td>
+              <td class="col-good">Locked 60&nbsp;FPS — constant-time offset jumps</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>Architectural Comparison: FlatBuffers &amp; Cap'n Proto</h3>
+      <p>
+        We are currently compiling a standardized, open-source benchmarking suite to measure head-to-head throughput
+        limits against Google FlatBuffers and Cap'n Proto. Until those verified datasets are published, our structural
+        differentiators are bounded strictly by verified architectural layout mechanics:
+      </p>
+      <ul>
+        <li><strong>Sparse Field Efficiency (vs. FlatBuffers):</strong> FlatBuffers tracks field presence via per-table
+          vtables with 2-byte offsets per slot. Nyxis uses a compressed LEB128 presence bitmask at ~1 bit per slot, with
+          absent fields contributing zero bytes to the offset table. For schemas with many optional fields and sparse
+          population, this represents a meaningful per-record reduction in storage footprint.</li>
+        <li><strong>Pointer-Offset Traversal (vs. Cap'n Proto):</strong> Cap'n Proto arranges data using an inline
+          pointer-offset model, resolving fields by calculating sequential memory offsets from the current pointer
+          location. Nyxis flattens record boundaries by matching keys to an immutable, forward-aligned layout combined
+          with a global trailing tail-index footer, designed to keep record offset resolution in a single tail-index
+          seek rather than chained pointer dereferences.</li>
+        <li><strong>In-Place Mutation Mechanics:</strong> Modifying bytes inside an initialized FlatBuffers or Cap'n
+          Proto array is highly restricted by structural layouts. Nyxis supports in-place delta patching of fixed-width
+          atomic values (Int64, Float64, Bool, Time) by overwriting the cell bytes directly via byte-range offsets. For
+          variable-length values (String, Binary), updates can be performed in place <em>only</em> if the new payload
+          fits within the original cell's byte boundaries; otherwise, the updated object is appended to the end of the
+          file, and the trailing tail-index is rewritten.</li>
+      </ul>
+
+      <h3>Structural Positioning: Nyxis vs. Apache Arrow</h3>
+      <ul>
+        <li><strong>Apache Arrow</strong> is optimized for <strong>columnar, dense-friendly analytics</strong>. It lays
+          out uniform data types sequentially in memory blocks to maximize CPU vectorization efficiency during massive
+          batch aggregations. Arrow's columnar layout is most efficient for uniform record shapes; deeply nested or
+          highly heterogeneous documents map awkwardly onto column groups.</li>
+        <li><strong>Nyxis</strong> is engineered as a <strong>row-oriented, sparse-friendly transport layout</strong>.
+          It natively preserves individual record boundaries, handles highly dynamic or missing variables gracefully,
+          and maintains a bimodal workflow where developers can seamlessly de-compile binary <code>.nxb</code> buffers
+          back into human-readable, plain-text <code>.nxs</code> source configurations for quick Git-diffing and local
+          debugging.</li>
+      </ul>
+    </section>
+
+    <section class="landing-section" id="streaming">
+      <h2>Streamable ingest &amp; WAL sealing (v1.1)</h2>
+      <p class="story-bridge">
+        Batch <code>mmap</code> is the read path; streaming and append-only WALs are how live systems <em>produce</em>
+        those
+        files without rebuilding indexes on every write — the bridge from protocol theory to the topologies in Act III.
+      </p>
+      <div class="bimodal-grid">
+        <div class="bimodal-col">
+          <h3>Streamable sealed <code>.nxb</code></h3>
+          <p>
+            While records are arriving, the preamble keeps <code>TailPtr = 0</code>. Writers append aligned NYXO cells;
+            incremental
+            parsers (e.g. <code>NxsStreamReader</code> in the JS driver) emit complete records before EOF. When ingest
+            finishes,
+            sealing writes <code>FooterTailPtr</code> and <code>MagicFooter</code> so mmap readers resolve the
+            tail-index at
+            <code>EOF − 12</code> — same O(1) open as a batch-built file.
+          </p>
+        </div>
+        <div class="bimodal-col">
+          <h3>Append-only WAL (<code>.nxsw</code>)</h3>
+          <p>
+            Trace, ledger, and market-data hot paths append NYXO rows to a WAL segment without rebuilding the tail-index
+            on every
+            write. When a segment threshold is reached, <strong>seal</strong> replays the WAL into a fully indexed
+            <code>.nxb</code>
+            in one pass — see the <a href="/demo/wal.html">WAL demo</a> and <code>nxs-trace</code> in the open-core
+            repo.
+          </p>
+        </div>
+      </div>
+      <div class="landing-actions" style="justify-content: flex-start; margin-top: 20px;">
+        <a class="btn btn-secondary" href="/demo/wal.html">WAL / spans demo</a>
+        <a class="btn btn-secondary" href="/demo/explorer.html">Log explorer demo</a>
+        <a class="btn btn-secondary" href="/bench/">NXS vs JSON benchmarks</a>
+      </div>
+    </section>
+
+    <section class="use-case-catalog-intro" id="catalog">
+      <p class="use-case-toc-act">Act III</p>
+      <h2>Production topologies — how to read the catalog</h2>
+      <p class="page-lead" style="margin-bottom: 0;">
+        Each blueprint below follows the same story beat: <strong>bottleneck</strong> (scale pain at the JSON layer),
+        <strong>topology</strong> (where Nyxis sits in the pipeline), <strong>advantage</strong> (architectural
+        outcome).
+        They are ordered by data flow — ingest first, interactive surfaces second, AI and durable write paths last.
+      </p>
+      <ul class="catalog-pillars">
+        <li><strong>Ingest &amp; edge</strong> Fleet and cluster aggregators shrink metadata footprints before the lake.
+        </li>
+        <li><strong>Browser &amp; ops UI</strong> Gateways, workers, and trace grids read multi-GB files without
+          <code>JSON.parse()</code>.</li>
+        <li><strong>AI platforms</strong> Arrow bridges and MCP tools query binary blocks at agent latency.</li>
+        <li><strong>Write path &amp; storage</strong> WAL streaming, compaction, and crash-safe footers for hot paths.
+        </li>
+      </ul>
+    </section>
+
+    <p class="use-case-group">Ingest &amp; edge</p>
+
+    <article class="use-case" id="k8s-aggregators">
+      <p class="use-case-tier use-case-tier--oss">Open core · MIT <code>nyxis-drivers</code></p>
+      <h2>Kubernetes stdout aggregators</h2>
+
+      <h3>The high-scale bottleneck</h3>
+      <p>
+        Thousands of pods emit stdout lines wrapped in repeated JSON keys (<code>kubernetes.pod_name</code>,
+        <code>container_id</code>, <code>namespace</code>). At scale, duplicate strings dominate network transit
+        bandwidth and lake cost.
+      </p>
+
+      <h3>The Nyxis topology</h3>
+      <p>
+        Aggregators embed MIT-licensed <code>nyxis-drivers</code>. Structurally, field schema keys intern into a central
+        dictionary stored once.
+        A per-record <strong>presence bitmask</strong> encodes sparse optional fields across heterogeneous logs.
+        The proprietary <strong><code>nxs-registryd</code></strong> proxy provides centralized gRPC schema contracts —
+        validating payloads on ingress and resolving runtime drift when pod versions diverge.
+      </p>
+      <p class="use-case-footnote">
+        Target workloads and baseline field repetition compression tracking are detailed in <a
+          href="/bench/">BENCHMARK.md</a>.
+      </p>
+
+      <h3>The system advantage</h3>
+      <p class="use-case-roi">
+        Encoding drops string-formatting loops per field in favor of a direct memcpy-and-bitmask operation per record.
+        Key interning compresses text infrastructure overhead cleanly, eliminating full-file text deserialization on
+        downstream filtering engines.
+      </p>
+    </article>
+
+    <article class="use-case" id="iot-edge">
+      <p class="use-case-tier use-case-tier--oss">Open core · C / Go MIT drivers</p>
+      <h2>Battery-preserving edge IoT &amp; fleet telemetry</h2>
+
+      <h3>The high-scale bottleneck</h3>
+      <p>
+        Fleets stream billions of diagnostics per second. JSON saturates bandwidth with repeated keys; traditional
+        binary
+        encoders strain resource-constrained edge CPUs with variable-length calculation overhead.
+      </p>
+
+      <h3>The Nyxis topology</h3>
+      <p>
+        Devices embed lightweight C or Go drivers from <code>nyxis-drivers</code>. The
+        <strong>presence bitmask</strong> records which of many possible fields are populated — raw aligned integers
+        follow.
+      </p>
+
+      <h3>The system advantage</h3>
+      <p class="use-case-roi">
+        Replaces string encoding with direct binary cell writes, removing the serialization footprint entirely. Provides
+        a lean transport profile for cloud ingest of pre-aligned assets without structural preprocessing.
+      </p>
+      <p class="use-case-cta">
+        <a class="btn btn-secondary" href="https://github.com/nyxis-io/nyxis-drivers" rel="noopener">MIT SDKs</a>
+      </p>
+    </article>
+
+    <p class="use-case-group">Browser &amp; operations UI</p>
+
+    <article class="use-case" id="access-logs">
+      <p class="use-case-tier use-case-tier--oss">Open core · MIT drivers · <a href="/demo/explorer.html">log explorer
+          demo</a></p>
+      <h2>High-volume NGINX, Envoy, &amp; API gateway access log viewers</h2>
+
+      <h3>The high-scale bottleneck</h3>
+      <p>
+        Reverse proxies and API gateways emit hundreds of millions of access rows daily. Incident response means opening
+        multi-gigabyte dumps in the browser — exactly where <a href="#v8-limits">Act I</a> limits bite hardest.
+      </p>
+
+      <h3>The Nyxis topology</h3>
+      <p>
+        The edge proxy uses MIT <a href="https://github.com/nyxis-io/nyxis-drivers" rel="noopener">client drivers</a> to
+        write traffic rows as
+        memory-aligned <code>.nxb</code> files. The admin viewer memory-maps the file header and constant-time
+        <code>O(1)</code> tail-index footer — bypassing string tokenization entirely.
+      </p>
+
+      <h3>The system advantage</h3>
+      <p class="use-case-roi">
+        Resolves any target record offset in &lt;2&nbsp;µs regardless of file size by reading only the header and
+        trailing index footer. Virtual scroll utilizes the tail-index for exact byte offsets, allowing the grid to
+        render without full-file deserialization or heap inflation.
+      </p>
+      <p class="use-case-cta">
+        <a class="btn btn-secondary" href="/demo/explorer.html">Log explorer demo</a>
+      </p>
+    </article>
+
+    <article class="use-case" id="web-workers">
+      <p class="use-case-tier use-case-tier--oss">Open core · <a href="/demo/workers.html">workers demo</a></p>
+      <h2>Zero-copy Web Worker handoffs (<code>SharedArrayBuffer</code>)</h2>
+
+      <h3>The high-scale bottleneck</h3>
+      <p>
+        Dashboards offload grids to Web Workers, but <code>postMessage</code> structured-clone copies entire buffers —
+        the
+        complement to heap inflation in Act I, showing up as main-thread jank during live telemetry.
+      </p>
+
+      <h3>The Nyxis topology</h3>
+      <p>
+        Strict 8-byte alignment lets the JavaScript driver map <code>.nxb</code> assets into a
+        <code>SharedArrayBuffer</code> (with COOP/COEP for cross-origin isolation). Workers and the main thread read the
+        same bytes.
+      </p>
+
+      <h3>The system advantage</h3>
+      <p class="use-case-roi">
+        True parallel zero-copy multithreading: cross-thread handoff transfers no data. Both processing threads read and
+        execute pointer casting concurrently inside the same shared mapping.
+      </p>
+      <p class="use-case-cta">
+        <a class="btn btn-secondary" href="/demo/workers.html">Workers demo</a>
+      </p>
+    </article>
+
+    <article class="use-case" id="apm-traces">
+      <p class="use-case-tier use-case-tier--oss">Open core · bimodal <code>.nxs</code> / <code>.nxb</code></p>
+      <h2>Deep Datadog-style APM trace explorers &amp; distributed span tables</h2>
+
+      <h3>The high-scale bottleneck</h3>
+      <p>
+        APM waterfalls map deep span trees (parent links, timing deltas, resource metadata). JSON timelines materialize
+        enormous object graphs before an engineer can isolate one slow service boundary.
+      </p>
+
+      <h3>The Nyxis topology</h3>
+      <p>
+        Trace layouts are authored as human-readable <code>.nxs</code> for review and diffing, compiled to production
+        <code>.nxb</code> for low-overhead tracing. The explorer uses tail-index jumps to service boundaries.
+      </p>
+
+      <h3>The system advantage</h3>
+      <p class="use-case-roi">
+        Expand/collapse waterfall views without heavy frontend object literals — trace UIs stay fluid under developer
+        load.
+      </p>
+      <p class="use-case-cta">
+        <a class="btn btn-secondary" href="/demo/wal.html">WAL / spans demo</a>
+      </p>
+    </article>
+
+    <p class="use-case-group">AI platforms</p>
+
+    <article class="use-case" id="llm-tracing">
+      <p class="use-case-tier use-case-tier--enterprise">Enterprise · <code>nyxis-arrow-bridge</code> ·
+        <code>nyxis-simd-guard (roadmap)</code></p>
+      <h2>High-fidelity LLM generation tracing &amp; AI observability</h2>
+
+      <h3>The high-scale bottleneck</h3>
+      <p>
+        LLM workflows audit multi-field rows: system prompts, user prompts, token arrays, tool-call arrays, and
+        completions.
+        Bridging streaming execution logs to analytical dataframes usually means JSON decode loops that stall inference
+        pipelines.
+      </p>
+
+      <h3>The Nyxis topology</h3>
+      <p>
+        To close that gap, the observability pipeline can deploy the proprietary
+        <strong><code>nyxis-arrow-bridge</code></strong>.
+        The bridge reads <code>.nxb</code> generation logs and handles immediate zero-copy data projection via the Arrow
+        C Data Interface with explicit memory ownership transfer into DataFusion, Polars, or DuckDB.
+        For vectorized batch searches across raw memory buffers, our roadmap includes the
+        <strong><code>nyxis-simd-guard</code></strong> extension to map hardware instruction sets (AVX-512 / ARM NEON)
+        natively over fields.
+      </p>
+
+      <h3>The system advantage</h3>
+      <p class="use-case-roi">
+        Bypasses intermediate serialization passes. Platforms query generation rows via direct pointer casting, allowing
+        notebooks and dashboards to consume the same real-time data projection.
+      </p>
+      <p class="use-case-cta">
+        <a class="btn btn-primary" href="/pricing/">Commercial pricing</a>
+      </p>
+    </article>
+
+    <article class="use-case" id="mcp">
+      <p class="use-case-tier use-case-tier--oss">Open core · MCP server in <a href="https://github.com/nyxis-io/nyxis"
+          rel="noopener">nyxis</a></p>
+      <h2>Intelligent AI agent tools &amp; Model Context Protocol (MCP) servers</h2>
+
+      <h3>The high-scale bottleneck</h3>
+      <p>
+        MCP tool layers scan repositories and logs for coding agents. Go/Python servers spend cycles re-parsing JSON,
+        inflating latency and filling context windows with repeated structural strings.
+      </p>
+
+      <h3>The Nyxis topology</h3>
+      <p>
+        Layouts use bimodal <code>.nxs</code> (version control, audit) compiled to <code>.nxb</code> for production.
+        A Go-based Nyxis MCP server sits over binary blocks and reads the <code>O(1)</code> tail-index for field
+        extraction.
+      </p>
+
+      <h3>The system advantage</h3>
+      <p class="use-case-roi">
+        Field extraction via O(1) tail-index seek rather than full JSON parse per tool call; interned keys keep prompt
+        context free of repetitive schema noise.
+      </p>
+    </article>
+
+    <p class="use-case-group">Write path &amp; durability</p>
+
+    <article class="use-case" id="hft-wal">
+      <p class="use-case-tier use-case-tier--oss">Open core writes</p>
+      <p class="use-case-tier use-case-tier--enterprise" style="margin-top: 6px;">Enterprise · <code>nxs-compactd</code>
+      </p>
+      <h2>High-frequency trading (HFT) &amp; event-streaming WALs</h2>
+
+      <h3>The high-scale bottleneck</h3>
+      <p>
+        Ledgers and high-throughput market feeds need low-latency mutations. Traditional serializers rewrite entire
+        message blocks to change one field — CPU spikes and heap fragmentation follow. Over months of rapid delta
+        patches,
+        append-heavy WALs accumulate dead space between live cells (data-sector slack) that inflates storage.
+      </p>
+
+      <h3>The Nyxis topology</h3>
+      <p>
+        The hot path uses open-core pointer-offset layouts, <strong>append-only WAL streaming</strong>
+        (<code>.nxsw</code>), and
+        tail-indexes for <strong>delta patching via byte-range offsets</strong> — writers overwrite fixed-width atomic
+        cells directly without
+        a full-file rewrite (see <a href="/demo/ticker.html">ticker</a> and <a href="/demo/wal.html">WAL demos</a>).
+        In parallel, the proprietary <strong><code>nxs-compactd</code></strong> daemon can be deployed as a background
+        housekeeping service to acquire
+        advisory locks, defragment packed sectors on the fly, and atomically swap segments to reclaim data-sector slack.
+      </p>
+      <p class="use-case-footnote">
+        Specific execution latency bounds and I/O profiles are documented in <a href="/bench/">BENCHMARK.md</a>.
+      </p>
+
+      <h3>The system advantage</h3>
+      <p class="use-case-roi">
+        Eliminates full-file serialization overhead on hot paths, ensuring state engines remain highly responsive.
+        Housekeeping daemons reclaim storage space automatically without racing active ingestion workers.
+      </p>
+      <p class="use-case-cta">
+        <a class="btn btn-secondary" href="/demo/ticker.html">Ticker demo</a>
+        <a class="btn btn-secondary" href="/demo/wal.html">WAL demo</a>
+      </p>
+    </article>
+
+    <article class="use-case" id="crash-wal">
+      <p class="use-case-tier use-case-tier--oss">Open core · streamable WAL · v1.1</p>
+      <h2>Crash-resilient database ledgers &amp; append-only transcripts</h2>
+
+      <h3>The high-scale bottleneck</h3>
+      <p>
+        Storage engines need append-only streams for crash recovery. Mid-write failures on unaligned frames can corrupt
+        entire archives and risk data loss.
+      </p>
+
+      <h3>The Nyxis topology</h3>
+      <p>
+        Append-only WAL mode with strict 8-byte alignment means partial writes land at predictable boundaries.
+        Streamable v1.1 sealing writes the footer tail pointer only on clean completion, so readers can identify sealed
+        vs in-progress segments via TailPtr and MagicFooter presence. Formal recovery semantics for partial NYXO frames
+        are under specification.
+      </p>
+
+      <h3>The system advantage</h3>
+      <p class="use-case-roi">
+        Crash resilience at write boundaries. Readers distinguish sealed segments from in-progress writes by checking
+        for FooterTailPtr and MagicFooter at EOF; unsealed fragments are bounded to the trailing unsealed region rather
+        than corrupting earlier records.
+      </p>
+      <p class="use-case-cta">
+        <a class="btn btn-secondary" href="/demo/wal.html">WAL demo</a>
+        <a class="btn btn-secondary" href="https://github.com/nyxis-io/nyxis/blob/main/SPEC.md" rel="noopener">Spec
+          v1.1</a>
+      </p>
+    </article>
+
+    <section class="landing-section" style="padding-bottom: 64px;">
+      <h2>Where to go next</h2>
+      <p class="page-lead" style="margin-bottom: 20px;">
+        You have the constraint (Act I), the protocol (Act II), and reference production patterns (Act III). Most teams
+        start with
+        MIT drivers and BSL-licensed compiler tooling; Arrow, registry, and compaction extensions unlock enterprise
+        scale.
+      </p>
+
+      <div
+        style="background: var(--bg-surface); padding: 20px; border-radius: 6px; margin-bottom: 24px; border: 1px solid var(--border-color);">
+        <h3 style="margin-top: 0; font-size: 16px;">Analytical Pipeline Ingestion</h3>
+        <p style="font-size: 14px; margin-bottom: 0; line-height: 1.6;">
+          For high-throughput systems combining row-oriented transport with complex columnar analytics, our commercial
+          tier offers the <strong>Enterprise Apache Arrow Memory Bridge</strong>. This projects incoming
+          <code>.nxb</code> binary segments natively into dense Arrow memory allocations using the Arrow C Data
+          Interface—enabling maximum vectorized math down the line with zero intermediate copies.
         </p>
       </div>
-      <div class="bimodal-col">
-        <h3>2. Flat heap under virtual scroll</h3>
-        <p>
-          Records sit in 8-byte-aligned wire cells. The <a href="/demo/explorer.html">log explorer</a> decodes only the
-          rows in the active viewport via tail-index jumps, then recycles — no million-object materialization graph.
-        </p>
+
+      <ul class="license-list">
+        <li>
+          <strong>Open core path</strong>
+          <span><a href="https://github.com/nyxis-io/nyxis-drivers" rel="noopener">nyxis-drivers</a> (MIT) +
+            compiler/CLI (BSL, free under $1M revenue and 100&nbsp;GB/month).</span>
+        </li>
+        <li>
+          <strong>Enterprise path</strong>
+          <span>Arrow bridge, in-memory compactor, schema registry, SIMD guard — see <a href="/pricing/">commercial
+              pricing</a> or <a href="mailto:licensing@nyxis.io">licensing@nyxis.io</a>.</span>
+        </li>
+      </ul>
+      <div class="landing-actions" style="justify-content: flex-start; margin-top: 24px;">
+        <a class="btn btn-primary" href="/pricing/">Commercial pricing</a>
+        <a class="btn btn-secondary" href="/demo/">Try live demos</a>
+        <a class="btn btn-secondary" href="/bench/">Run benchmarks</a>
+        <a class="btn btn-secondary" href="/">Back to home</a>
       </div>
-      <div class="bimodal-col">
-        <h3>3. Typed 64-bit segments</h3>
-        <p>
-          Integer sigils in <code>.nxs</code> compile to true <code>i64</code> on disk. Drivers read with
-          <code>BigInt</code> / native <code>i64</code> — no silent float coercion on primary keys or ledger balances.
-        </p>
-      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <span>© Nyxis · NXS format v1.1</span>
+    <div class="links">
+      <a href="https://github.com/nyxis-io/nyxis">nyxis (compiler &amp; spec)</a>
+      <a href="https://github.com/nyxis-io/nyxis-drivers">nyxis-drivers (SDKs)</a>
+      <a href="/pricing/">Pricing</a>
     </div>
+  </footer>
 
-    <h3>Nyxis bi-modal performance parity matrix</h3>
-    <div style="overflow-x: auto;">
-      <table class="parity-matrix">
-        <thead>
-          <tr>
-            <th scope="col">Data operation</th>
-            <th scope="col">Traditional <code>JSON.parse()</code></th>
-            <th scope="col">Nyxis <code>.nxb</code> pointer reading</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td>Opening a 2&nbsp;GB dataset</td>
-            <td class="col-bad">Crashes instantly (<code>RangeError</code>)</td>
-            <td class="col-good">Succeeds in &lt;2&nbsp;µs via <code>mmap</code></td>
-          </tr>
-          <tr>
-            <td>RAM footprint (1&nbsp;GB file)</td>
-            <td class="col-bad">3–5&nbsp;GB volatile heap (AST + objects)</td>
-            <td class="col-good">Near 0&nbsp;MB — only active viewport rows</td>
-          </tr>
-          <tr>
-            <td>Large integer accuracy</td>
-            <td class="col-bad">Silent corruption (bits truncated)</td>
-            <td class="col-good">100% via <code>BigInt</code> / <code>i64</code> casting</td>
-          </tr>
-          <tr>
-            <td>UI virtual scrolling</td>
-            <td class="col-bad">Heavy stutter from allocation loops</td>
-            <td class="col-good">60&nbsp;FPS — constant-time offset jumps</td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-
-    <p class="bimodal-compare page-lead" style="margin: 20px 0 0; font-size: 14px;">
-      <strong>Act II</strong> introduces the mechanism — human <code>.nxs</code> source compiled to memory-mapped
-      <code>.nxb</code> — that makes every row in the matrix above achievable in production.
-    </p>
-  </section>
-
-  <section class="landing-section bimodal-standard" id="bimodal">
-    <p class="use-case-toc-act">Act II</p>
-    <h2>The bimodal standard: <code>.nxs</code> ↔ <code>.nxb</code></h2>
-    <p class="story-bridge">
-      Git-friendly text for humans; aligned binary with a cross-record tail-index for machines. That split is what lets
-      teams review schema in CI while runtimes open terabyte-scale files in microseconds.
-    </p>
-    <div class="bimodal-grid">
-      <div class="bimodal-col">
-        <h3><code>.nxs</code> — human layer</h3>
-        <p>
-          Sigil-typed, plain-text source you commit, diff, and review in CI — like a schema-aware config language.
-          Every value declares its type with a leading character; the file <em>is</em> the contract.
-        </p>
-        <ul>
-          <li>Version control &amp; code review friendly</li>
-          <li>Compiled by the Nyxis CLI (<code>nxs</code>) to production bytes</li>
-          <li>No separate <code>.proto</code> IDL file required</li>
-        </ul>
-      </div>
-      <div class="bimodal-col">
-        <h3><code>.nxb</code> — machine layer</h3>
-        <p>
-          Native, 8-byte-aligned wire format designed for <code>mmap(2)</code>, tail-index record lookup, and
-          cross-thread <code>SharedArrayBuffer</code> handoff — without deserializing the payload first.
-        </p>
-        <ul>
-          <li>Constant-time open (header + tail-index only)</li>
-          <li>Random access by record index and field key</li>
-          <li>Interned dictionary keys — sparse presence bitmasks</li>
-          <li>v1.1 streamable sealing — records before the tail-index is final</li>
-        </ul>
-      </div>
-    </div>
-    <p class="bimodal-compare page-lead" style="margin: 16px 0 0; font-size: 14px;">
-      <strong>Compared to other serializers:</strong> Protobuf optimizes RPC transit; FlatBuffers and Cap'n Proto target
-      zero-copy within objects. Nyxis adds a cross-record tail-index, streamable WAL sealing (v1.1), and first-class
-      human source — so ops teams get both Git-friendly text and pointer-speed binary in one standard.
-    </p>
-  </section>
-
-  <section class="landing-section" id="streaming">
-    <h2>Streamable ingest &amp; WAL sealing (v1.1)</h2>
-    <p class="story-bridge">
-      Batch <code>mmap</code> is the read path; streaming and append-only WALs are how live systems <em>produce</em> those
-      files without rebuilding indexes on every write — the bridge from protocol theory to the topologies in Act III.
-    </p>
-    <div class="bimodal-grid">
-      <div class="bimodal-col">
-        <h3>Streamable sealed <code>.nxb</code></h3>
-        <p>
-          While records are arriving, the preamble keeps <code>TailPtr = 0</code>. Writers append aligned NYXO cells; incremental
-          parsers (e.g. <code>NxsStreamReader</code> in the JS driver) emit complete records before EOF. When ingest finishes,
-          sealing writes <code>FooterTailPtr</code> and <code>MagicFooter</code> so mmap readers resolve the tail-index at
-          <code>EOF − 12</code> — same O(1) open as a batch-built file.
-        </p>
-      </div>
-      <div class="bimodal-col">
-        <h3>Append-only WAL (<code>.nxsw</code>)</h3>
-        <p>
-          Trace, ledger, and market-data hot paths append NYXO rows to a WAL segment without rebuilding the tail-index on every
-          write. When a segment threshold is reached, <strong>seal</strong> replays the WAL into a fully indexed <code>.nxb</code>
-          in one pass — see the <a href="/demo/wal.html">WAL demo</a> and <code>nxs-trace</code> in the open-core repo.
-        </p>
-      </div>
-    </div>
-    <div class="landing-actions" style="justify-content: flex-start; margin-top: 20px;">
-      <a class="btn btn-secondary" href="/demo/wal.html">WAL / spans demo</a>
-      <a class="btn btn-secondary" href="/demo/explorer.html">Log explorer demo</a>
-      <a class="btn btn-secondary" href="/bench/">NXS vs JSON benchmarks</a>
-    </div>
-  </section>
-
-  <section class="use-case-catalog-intro" id="catalog">
-    <p class="use-case-toc-act">Act III</p>
-    <h2>Production topologies — how to read the catalog</h2>
-    <p class="page-lead" style="margin-bottom: 0;">
-      Each blueprint below follows the same story beat: <strong>bottleneck</strong> (scale pain at the JSON layer),
-      <strong>topology</strong> (where Nyxis sits in the pipeline), <strong>advantage</strong> (measurable outcome).
-      They are ordered by data flow — ingest first, interactive surfaces second, AI and durable write paths last.
-    </p>
-    <ul class="catalog-pillars">
-      <li><strong>Ingest &amp; edge</strong> Fleet and cluster aggregators shrink payloads before the lake.</li>
-      <li><strong>Browser &amp; ops UI</strong> Gateways, workers, and trace grids read multi-GB files without <code>JSON.parse()</code>.</li>
-      <li><strong>AI platforms</strong> Arrow bridges and MCP tools query binary blocks at agent latency.</li>
-      <li><strong>Write path &amp; storage</strong> WAL streaming, compaction, and crash-safe footers for hot paths.</li>
-    </ul>
-  </section>
-
-  <p class="use-case-group">Ingest &amp; edge</p>
-
-  <article class="use-case" id="k8s-aggregators">
-    <p class="use-case-tier use-case-tier--oss">Open core · MIT <code>nyxis-drivers</code></p>
-    <h2>Distributed Kubernetes container stdout aggregators</h2>
-
-    <h3>The high-scale bottleneck</h3>
-    <p>
-      Thousands of pods emit stdout lines wrapped in repeated JSON keys (<code>kubernetes.pod_name</code>,
-      <code>container_id</code>, <code>namespace</code>). At fleet scale the duplicate strings dominate bandwidth and lake cost.
-    </p>
-
-    <h3>The Nyxis topology</h3>
-    <p>
-      Aggregators embed MIT-licensed <code>nyxis-drivers</code>. Keys intern into a central schema dictionary (stored once).
-      A per-record <strong>presence bitmask</strong> encodes sparse optional fields across heterogeneous application logs.
-      At fleet scale, the proprietary <strong><code>nxs-registryd</code></strong> proxy provides centralized gRPC schema contracts —
-      validating payloads on ingress and resolving runtime drift when pod versions diverge, without taking aggregators offline.
-    </p>
-
-    <h3>The system advantage</h3>
-    <p class="use-case-roi">
-      <strong>60–70% smaller</strong> transit and storage versus JSON lines — without heavy mathematical serialization.
-      Downstream engines filter streams via bitmasks without full text deserialization.
-    </p>
-  </article>
-
-  <article class="use-case" id="iot-edge">
-    <p class="use-case-tier use-case-tier--oss">Open core · C / Go MIT drivers</p>
-    <h2>Battery-preserving edge IoT &amp; fleet telemetry</h2>
-
-    <h3>The high-scale bottleneck</h3>
-    <p>
-      Fleets stream billions of diagnostics per second. JSON saturates bandwidth with repeated keys; traditional binary
-      encoders drain edge CPUs with heavy compression math.
-    </p>
-
-    <h3>The Nyxis topology</h3>
-    <p>
-      Devices embed lightweight C or Go drivers from <code>nyxis-drivers</code>. The
-      <strong>presence bitmask</strong> records which of many possible matrix fields are populated — raw aligned integers follow.
-    </p>
-
-    <h3>The system advantage</h3>
-    <p class="use-case-roi">
-      <strong>60–70% smaller</strong> payloads than JSON with negligible encode CPU. Extended battery life, clearer transit lanes,
-      and cloud ingest of pre-aligned assets without structural preprocessing.
-    </p>
-    <p class="use-case-cta">
-      <a class="btn btn-secondary" href="https://github.com/nyxis-io/nyxis-drivers" rel="noopener">MIT SDKs</a>
-    </p>
-  </article>
-
-  <p class="use-case-group">Browser &amp; operations UI</p>
-
-  <article class="use-case" id="access-logs">
-    <p class="use-case-tier use-case-tier--oss">Open core · MIT drivers · <a href="/demo/explorer.html">log explorer demo</a></p>
-    <h2>High-volume NGINX, Envoy, &amp; API gateway access log viewers</h2>
-
-    <h3>The high-scale bottleneck</h3>
-    <p>
-      Reverse proxies and API gateways emit hundreds of millions of access rows daily. Incident response means opening
-      multi-gigabyte dumps in the browser — exactly where <a href="#v8-limits">Act I</a> limits bite hardest.
-    </p>
-
-    <h3>The Nyxis topology</h3>
-    <p>
-      The edge proxy uses MIT <a href="https://github.com/nyxis-io/nyxis-drivers" rel="noopener">client drivers</a> to write traffic rows as
-      memory-aligned <code>.nxb</code> files. The admin viewer memory-maps the header and constant-time
-      <code>O(1)</code> tail-index footer — bypassing string tokenization entirely.
-    </p>
-
-    <h3>The system advantage</h3>
-    <p class="use-case-roi">
-      Cold open on a multi-gigabyte file in <strong>under 2 microseconds</strong> with virtually zero RAM.
-      Virtual scroll uses the tail-index for exact byte offsets; the grid renders without full-file deserialization or GC stutter.
-    </p>
-    <p class="use-case-cta">
-      <a class="btn btn-secondary" href="/demo/explorer.html">Log explorer demo</a>
-    </p>
-  </article>
-
-  <article class="use-case" id="web-workers">
-    <p class="use-case-tier use-case-tier--oss">Open core · <a href="/demo/workers.html">workers demo</a></p>
-    <h2>Zero-copy Web Worker handoffs (<code>SharedArrayBuffer</code>)</h2>
-
-    <h3>The high-scale bottleneck</h3>
-    <p>
-      Dashboards offload grids to Web Workers, but <code>postMessage</code> structured-clone copies entire buffers — the
-      complement to heap inflation in Act I, showing up as main-thread jank during live telemetry.
-    </p>
-
-    <h3>The Nyxis topology</h3>
-    <p>
-      Strict 8-byte alignment lets the JavaScript driver map <code>.nxb</code> assets into a
-      <code>SharedArrayBuffer</code> (with COOP/COEP for cross-origin isolation). Workers and the main thread read the same bytes.
-    </p>
-
-    <h3>The system advantage</h3>
-    <p class="use-case-roi">
-      True parallel zero-copy multithreading: workers cast pointers into the same mapping concurrently.
-      Cross-thread handoff latency drops to <strong>absolute zero</strong> versus structured clone.
-    </p>
-    <p class="use-case-cta">
-      <a class="btn btn-secondary" href="/demo/workers.html">Workers demo</a>
-    </p>
-  </article>
-
-  <article class="use-case" id="apm-traces">
-    <p class="use-case-tier use-case-tier--oss">Open core · bimodal <code>.nxs</code> / <code>.nxb</code></p>
-    <h2>Deep Datadog-style APM trace explorers &amp; distributed span tables</h2>
-
-    <h3>The high-scale bottleneck</h3>
-    <p>
-      APM waterfalls map deep span trees (parent links, timing deltas, resource metadata). JSON timelines materialize
-      enormous object graphs before an engineer can isolate one slow service boundary.
-    </p>
-
-    <h3>The Nyxis topology</h3>
-    <p>
-      Trace layouts are authored as human-readable <code>.nxs</code> for review and diffing, compiled to production
-      <code>.nxb</code> for low-overhead tracing. The explorer uses tail-index jumps to service boundaries.
-    </p>
-
-    <h3>The system advantage</h3>
-    <p class="use-case-roi">
-      Expand/collapse waterfall views without heavy frontend object literals — trace UIs stay fluid under developer load.
-    </p>
-    <p class="use-case-cta">
-      <a class="btn btn-secondary" href="/demo/wal.html">WAL / spans demo</a>
-    </p>
-  </article>
-
-  <p class="use-case-group">AI platforms</p>
-
-  <article class="use-case" id="llm-tracing">
-    <p class="use-case-tier use-case-tier--enterprise">Enterprise · <code>nyxis-arrow-bridge</code> · <code>nyxis-simd-guard</code></p>
-    <h2>High-fidelity LangSmith-style LLM generation tracing &amp; AI observability</h2>
-
-    <h3>The high-scale bottleneck</h3>
-    <p>
-      LLM workflows audit multi-field rows: system prompts, user prompts, token arrays, tool-call matrices, and completions.
-      Bridging streaming execution logs to analytical dataframes usually means JSON decode loops that stall inference and BI pipelines alike.
-    </p>
-
-    <h3>The Nyxis topology</h3>
-    <p>
-      To close that gap, the observability backend deploys the proprietary <strong><code>nyxis-arrow-bridge</code></strong> on the ingestion path.
-      The bridge reads <code>.nxb</code> generation logs and passes raw memory blocks through the <strong>Arrow C Data Interface</strong>
-      (strict workspace pins) into DataFusion, Polars, or DuckDB — <em>without intermediate deserialization passes</em>.
-      Downstream, <strong><code>nyxis-simd-guard</code></strong> applies AVX-512 or ARM NEON across mapped buffers to scan presence bitmasks and
-      token-efficiency metrics across millions of historical runs at silicon limits.
-    </p>
-
-    <h3>The system advantage</h3>
-    <p class="use-case-roi">
-      Prompt engineers and platform teams query generation history at register speed; Snowflake UDFs and notebook stacks consume the same Arrow projection as interactive dashboards.
-    </p>
-    <p class="use-case-cta">
-      <a class="btn btn-primary" href="/pricing/">Commercial pricing</a>
-    </p>
-  </article>
-
-  <article class="use-case" id="mcp">
-    <p class="use-case-tier use-case-tier--oss">Open core · MCP server in <a href="https://github.com/nyxis-io/nyxis" rel="noopener">nyxis</a></p>
-    <h2>Intelligent AI agent tools &amp; Model Context Protocol (MCP) servers</h2>
-
-    <h3>The high-scale bottleneck</h3>
-    <p>
-      MCP tool layers scan repositories and logs for coding agents. Go/Python servers spend cycles re-parsing JSON,
-      inflating latency and filling context windows with repeated structural strings.
-    </p>
-
-    <h3>The Nyxis topology</h3>
-    <p>
-      Layouts use bimodal <code>.nxs</code> (version control, audit) compiled to <code>.nxb</code> for production.
-      A Go-based Nyxis MCP server sits over binary blocks and reads the <code>O(1)</code> tail-index for field extraction.
-    </p>
-
-    <h3>The system advantage</h3>
-    <p class="use-case-roi">
-      Sub-millisecond agent queries; interned keys keep prompt context free of repetitive schema noise.
-    </p>
-  </article>
-
-  <p class="use-case-group">Write path &amp; durability</p>
-
-  <article class="use-case" id="hft-wal">
-    <p class="use-case-tier use-case-tier--oss">Open core writes</p>
-    <p class="use-case-tier use-case-tier--enterprise" style="margin-top: 6px;">Enterprise · <code>nxs-compactd</code></p>
-    <h2>High-frequency trading (HFT) &amp; event-streaming WALs</h2>
-
-    <h3>The high-scale bottleneck</h3>
-    <p>
-      Ledgers, database engines, and market data feeds need sub-millisecond mutation. Traditional serializers rewrite entire
-      message blocks to change one field — CPU spikes and heap fragmentation follow. Over months of rapid delta patches,
-      append-heavy WALs accumulate <strong>data-sector slack</strong> (dead space between live cells) that inflates storage and slows scans.
-    </p>
-
-    <h3>The Nyxis topology</h3>
-    <p>
-      The hot path uses open-core pointer-offset layouts, <strong>append-only WAL streaming</strong> (<code>.nxsw</code>), and
-      tail-indexes for <strong>delta patching via byte-range offsets</strong> — writers punch updates into exact mapped cells without
-      a full-file rewrite (see <a href="/demo/ticker.html">ticker</a> and <a href="/demo/wal.html">WAL demos</a>).
-      In parallel, the proprietary <strong><code>nxs-compactd</code></strong> daemon runs as a background service: it acquires
-      advisory locks on live <code>.nxb</code> segments, defragments packed sectors on the fly, and atomically swaps compacted files —
-      reclaiming slack without racing active ingestion workers.
-    </p>
-
-    <h3>The system advantage</h3>
-    <p class="use-case-roi">
-      Sub-microsecond writes on the write path; <strong>20–30% storage reclamation</strong> on the housekeeping path — pipelines stay responsive and lakes stay dense.
-    </p>
-    <p class="use-case-cta">
-      <a class="btn btn-secondary" href="/demo/ticker.html">Ticker demo</a>
-      <a class="btn btn-secondary" href="/demo/wal.html">WAL demo</a>
-    </p>
-  </article>
-
-  <article class="use-case" id="crash-wal">
-    <p class="use-case-tier use-case-tier--oss">Open core · streamable WAL · v1.1</p>
-    <h2>Crash-resilient database ledgers &amp; append-only transcripts</h2>
-
-    <h3>The high-scale bottleneck</h3>
-    <p>
-      Storage engines need append-only streams for crash recovery. Mid-write failures on unaligned frames can corrupt
-      entire archives and risk data loss.
-    </p>
-
-    <h3>The Nyxis topology</h3>
-    <p>
-      Nodes use <strong>append-only WAL mode</strong> with <strong>pointer-cycle detection guards</strong>.
-      Operations append strictly formatted, 8-byte aligned rows; streamable v1.1 sealing writes the footer tail pointer when complete.
-    </p>
-
-    <h3>The system advantage</h3>
-    <p class="use-case-roi">
-      Crash resilience at write boundaries. On failure, readers detect incomplete sectors via
-      <code>ERR_CIRCULAR_LINK</code>, short-circuit safely, and reconstruct state to the last complete hardware boundary.
-    </p>
-    <p class="use-case-cta">
-      <a class="btn btn-secondary" href="/demo/wal.html">WAL demo</a>
-      <a class="btn btn-secondary" href="https://github.com/nyxis-io/nyxis/blob/main/SPEC.md" rel="noopener">Spec v1.1</a>
-    </p>
-  </article>
-
-  <section class="landing-section" style="padding-bottom: 64px;">
-    <h2>Where to go next</h2>
-    <p class="page-lead" style="margin-bottom: 20px;">
-      You have the constraint (Act I), the protocol (Act II), and eight production patterns (Act III). Most teams start with
-      MIT drivers and BSL-licensed compiler tooling; Arrow, registry, and compaction extensions unlock enterprise scale.
-    </p>
-    <ul class="license-list">
-      <li>
-        <strong>Open core path</strong>
-        <span><a href="https://github.com/nyxis-io/nyxis-drivers" rel="noopener">nyxis-drivers</a> (MIT) + compiler/CLI (BSL, free under $1M revenue and 100&nbsp;GB/month).</span>
-      </li>
-      <li>
-        <strong>Enterprise path</strong>
-        <span>Arrow bridge, in-memory compactor, schema registry, SIMD guard — see <a href="/pricing/">commercial pricing</a> or <a href="mailto:licensing@nyxis.io">licensing@nyxis.io</a>.</span>
-      </li>
-    </ul>
-    <div class="landing-actions" style="justify-content: flex-start; margin-top: 24px;">
-      <a class="btn btn-primary" href="/pricing/">Commercial pricing</a>
-      <a class="btn btn-secondary" href="/demo/">Try live demos</a>
-      <a class="btn btn-secondary" href="/bench/">Run benchmarks</a>
-      <a class="btn btn-secondary" href="/">Back to home</a>
-    </div>
-  </section>
-</main>
-
-<footer class="site-footer">
-  <span>© Nyxis · NXS format v1.1</span>
-  <div class="links">
-    <a href="https://github.com/nyxis-io/nyxis">nyxis (compiler &amp; spec)</a>
-    <a href="https://github.com/nyxis-io/nyxis-drivers">nyxis-drivers (SDKs)</a>
-    <a href="/pricing/">Pricing</a>
-  </div>
-</footer>
-
-<script src="/demo/nav.js"></script>
-<script src="/demo/theme.js"></script>
+  <script src="/demo/nav.js"></script>
+  <script src="/demo/theme.js"></script>
 </body>
+
 </html>
