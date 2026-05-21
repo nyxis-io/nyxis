@@ -519,7 +519,7 @@ ruby ruby/bench_c.rb "$FIX"
 php -d extension=php/nxs_ext/modules/nxs.so -d memory_limit=2G php/bench_c.php "$FIX"
 cd swift && swift run -c release nxs-bench "$FIX"
 cd kotlin && ./gradlew bench    # default FIX=../../nyxis/site/bench/fixtures
-cd csharp && dotnet run -c Release -- "$FIX" --bench   # needs records_1000.* or symlink for smoke tests
+cd csharp && dotnet run -c Release -- "$FIX" --bench   # needs records_1000.* (make fixtures FIXTURE_COUNT=1000)
 ```
 
 **WAL span ingestion (encode throughput, in-memory unless noted):**

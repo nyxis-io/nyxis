@@ -1,7 +1,10 @@
 # NXS WASM Reducers
 
-The `nxs_reducers.wasm` binary provides fast-path column scan reducers compiled from
-`nxs_reducers.c` using Clang targeting WebAssembly.
+The `nxs_reducers.wasm` binary provides fast-path column scan reducers and field-index
+helpers compiled from `nxs_reducers.c` using Clang targeting WebAssembly.
+
+Exports: `sum_f64`, `sum_i64`, `min_f64`, `max_f64`, `min_max_has_result`,
+`build_field_index`, `batch_resolve_offsets`, `batch_get_f64`, `encode_span`.
 
 ## Building locally
 

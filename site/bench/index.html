@@ -170,7 +170,7 @@
 
   <section class="what-tested" aria-label="What this page tests">
     <strong>What this page tests</strong>
-    Five bar-chart workloads on the same record count, comparing JSON, CSV, and NXS side by side. (1) <strong>Open</strong> — <code>JSON.parse</code> / full CSV parse vs <code>new NxsReader</code> (header + tail-index only). (2) <strong>Warm random access</strong> — read <code>username</code> for a random record index. (3) <strong>Multi-field access</strong> — four fields per random record. (4) <strong>Cold pipeline</strong> — <code>fetch</code> + open + first field read. (5) <strong>Aggregate</strong> — sum <code>score</code> over all rows (including NXS WASM reducer when loaded). Use size presets or upload matching <code>.nxb</code> / <code>.json</code> / <code>.csv</code> files to substitute fixtures.
+    Seventeen browser workloads plus WAL reference charts. JSON/CSV bars marked <em>pre-parsed</em> use an in-memory object graph; NXS decodes lazily from <code>.nxb</code> bytes (cursor, <code>buildFieldIndex</code>, WASM index build when loaded). Covers open, full traversal, warm vs cold access, scattered reads, filters, aggregates, streaming first record, heap growth (Chrome), and worker parallel sum. Use size presets or upload matching fixtures.
   </section>
 
   <div class="controls">
@@ -207,31 +207,104 @@
   </section>
 
   <section class="card">
-    <h2>2. Random-access read — one field from record k</h2>
-    <p class="desc">Once data is in memory, read <code>record[k].username</code>. Measures warm property access.</p>
+    <h2>2. Open + iterate all records</h2>
+    <p class="desc">End-to-end: open the format, then walk every record and read <code>username</code> once. JSON/CSV must parse the full file first; NXS opens cheaply then decodes each row on the pass.</p>
+    <div class="chart" id="chart-iterate-all"></div>
+  </section>
+
+  <section class="card">
+    <h2>3. Iterate only — warm structures</h2>
+    <p class="desc">Data already parsed/opened; walk every record and read <code>username</code>. Shows steady-state traversal without open cost.</p>
+    <div class="chart" id="chart-iterate-warm"></div>
+  </section>
+
+  <section class="card">
+    <h2>4. Random-access read — one field from record k</h2>
+    <p class="desc">JSON/CSV: property access on a <strong>pre-parsed</strong> array (baseline). NXS: decode from <code>.nxb</code> bytes — compare <code>record</code> vs zero-alloc <code>cursor</code> vs one-time <code>buildFieldIndex</code> (optional WASM build).</p>
     <div class="chart" id="chart-random"></div>
   </section>
 
   <section class="card">
-    <h2>3. Random-access read — multiple fields from record k</h2>
-    <p class="desc">Read 4 fields per random record (<code>username</code>, <code>age</code>, <code>balance</code>, <code>active</code>). NXS amortises header parsing after the first field.</p>
+    <h2>5. Random-access read — multiple fields from record k</h2>
+    <p class="desc">Four fields per random record. NXS <code>cursor.seekWarm(k)</code> builds the rank cache once per record instead of on the second field.</p>
     <div class="chart" id="chart-random-multi"></div>
   </section>
 
   <section class="card">
-    <h2>4. Cold pipeline — fetch + parse + one field</h2>
-    <p class="desc">The realistic browser scenario: user hits page, data fetched, first field read.</p>
-    <div class="chart" id="chart-cold"></div>
+    <h2>6. Scattered access — strided indices</h2>
+    <p class="desc">~500 reads at evenly spaced record indices (simulates non-sequential UI paging).</p>
+    <div class="chart" id="chart-scattered"></div>
   </section>
 
   <section class="card">
-    <h2>5. Aggregate — sum of 'score' across all records</h2>
-    <p class="desc">Uses format-specific optimisations: <code>JSON.parse</code> + loop, raw CSV column scan, NXS bulk reducer (WASM if loaded).</p>
+    <h2>7. Full scan — four fields per record</h2>
+    <p class="desc">Open + linear pass reading username, age, balance, active on every row.</p>
+    <div class="chart" id="chart-multi-scan"></div>
+  </section>
+
+  <section class="card">
+    <h2>8. Filter — count where score &gt; 80</h2>
+    <p class="desc">Predicate over all records: JSON loop vs NXS <code>where(gt("score", 80))</code>.</p>
+    <div class="chart" id="chart-filter"></div>
+  </section>
+
+  <section class="card">
+    <h2>9. Cold first field — bytes already in memory</h2>
+    <p class="desc">Parse/open then read one field at record <code>n/2</code> (no network; isolates decode cost).</p>
+    <div class="chart" id="chart-cold-mem"></div>
+  </section>
+
+  <section class="card">
+    <h2>10. Cold pipeline — fetch + parse + one field</h2>
+    <p class="desc">Same as §9 but models the full page-load path after <code>fetch()</code>.</p>
+    <div class="chart" id="chart-cold-fetch"></div>
+  </section>
+
+  <section class="card">
+    <h2>11. Aggregate — sum of 'score' (warm)</h2>
+    <p class="desc">Pre-parsed JSON loop, raw CSV column scan, NXS <code>sumF64</code> (WASM reducer when loaded).</p>
     <div class="chart" id="chart-reduce"></div>
   </section>
 
+  <section class="card">
+    <h2>12. Indexed sum vs column reducer</h2>
+    <p class="desc"><code>buildFieldIndex("score")</code> + loop vs built-in <code>sumF64</code> (and WASM index build).</p>
+    <div class="chart" id="chart-indexed-sum"></div>
+  </section>
+
+  <section class="card">
+    <h2>13. Cold pipeline — open + sum score</h2>
+    <p class="desc">No pre-parsed state: parse entire file then reduce (realistic analytics cold start).</p>
+    <div class="chart" id="chart-cold-reduce"></div>
+  </section>
+
+  <section class="card">
+    <h2>14. JSON raw scan vs parse + loop</h2>
+    <p class="desc">Substring scan for <code>"username":</code> lengths without <code>JSON.parse</code> vs full parse + loop vs NXS scan.</p>
+    <div class="chart" id="chart-json-scan"></div>
+  </section>
+
+  <section class="card">
+    <h2>15. Stream — time to first record</h2>
+    <p class="desc">Chunked <code>NxsStreamReader</code> vs <code>JSON.parse</code> until first row is usable.</p>
+    <div class="chart" id="chart-stream"></div>
+  </section>
+
+  <section class="card">
+    <h2>16. Memory — heap growth (Chrome)</h2>
+    <p class="desc">Indicative <code>performance.memory</code> delta after parse vs <code>NxsReader</code> (not file size on disk).</p>
+    <div class="sizes-info" id="memory-info"></div>
+    <div class="chart" id="chart-memory"></div>
+  </section>
+
+  <section class="card">
+    <h2>17. Workers — parallel sum score</h2>
+    <p class="desc">Main-thread <code>sumF64</code> vs four module workers each summing a chunk (buffer copy per worker).</p>
+    <div class="chart" id="chart-worker"></div>
+  </section>
+
   <section class="card" id="wal-section">
-    <h2>6. WAL span ingestion — append · recover · seal · roundtrip</h2>
+    <h2>18. WAL span ingestion — append · recover · seal · roundtrip</h2>
     <p class="desc">Rust <code>cargo run --release --bin bench</code> on Apple M-series (tmpfs I/O for append). Reference charts below; values match <a href="https://github.com/nyxis-io/nyxis/blob/main/BENCHMARK.md">BENCHMARK.md</a>. Append is amortised <strong>append-batch</strong> (encode + write all spans per run).</p>
 
     <div style="margin-bottom:14px">
@@ -258,7 +331,7 @@
   </section>
 
   <section class="card" id="wal-lang-section">
-    <h2>7. WAL encoder — cross-language comparison</h2>
+    <h2>19. WAL encoder — cross-language comparison</h2>
     <p class="desc">Per-span append throughput across all ten implementations, measured at 10,000 spans on Apple M-series (arm64). NXS encodes directly to the binary format; JSON baseline uses each language's standard library serialiser. JS numbers are from the live benchmark above.</p>
 
     <div id="chart-wal-lang-nxs" class="chart" style="margin-bottom:20px"></div>
@@ -270,6 +343,7 @@
 <script type="module">
 import { NxsReader } from "/sdk/nxs.js";
 import { loadWasm } from "/sdk/wasm.js";
+import { runBenchmarks } from "./bench-run.js";
 
 // ── Utilities ─────────────────────────────────────────────────────────────
 
@@ -278,108 +352,11 @@ const fmtBytes = n =>
   n < 1024        ? `${n} B` :
   n < 1048576     ? `${(n/1024).toFixed(1)} KB` :
                     `${(n/1048576).toFixed(2)} MB`;
-const fmtTime = ms =>
-  ms < 0.001      ? `${(ms*1e6).toFixed(0)} ns` :
-  ms < 1          ? `${(ms*1e3).toFixed(1)} µs` :
-  ms < 1000       ? `${ms.toFixed(2)} ms` :
-                    `${(ms/1000).toFixed(2)} s`;
 
 function setStatus(msg, cls = "") {
   const el = $("#status");
   el.textContent = msg;
   el.className = `status ${cls}`;
-}
-
-function bench(iters, fn) {
-  const warmup = Math.max(3, iters / 10 | 0);
-  for (let i = 0; i < warmup; i++) fn();
-  const t0 = performance.now();
-  for (let i = 0; i < iters; i++) fn();
-  return (performance.now() - t0) / iters;
-}
-
-// Draw a horizontal bar chart. `rows` is [{label, ms, klass, failed, failText}].
-// A `failed` row draws a full-width red-striped bar with custom text.
-function drawChart(containerId, rows) {
-  const el = $(containerId);
-  el.innerHTML = "";
-  const timed = rows.filter(r => !r.failed && typeof r.ms === "number");
-  const maxMs = timed.length ? Math.max(...timed.map(r => r.ms)) : 1;
-  for (const r of rows) {
-    const label = document.createElement("div");
-    label.className = "label";
-    label.textContent = r.label;
-
-    const track = document.createElement("div");
-    track.className = "bar-track";
-    const bar = document.createElement("div");
-    if (r.failed) {
-      bar.className = "bar failed";
-      bar.style.width = "100%";
-    } else {
-      bar.className = `bar ${r.klass ?? ""}`;
-      bar.style.width = `${Math.max(1, (r.ms / maxMs) * 100)}%`;
-    }
-    track.appendChild(bar);
-
-    const value = document.createElement("div");
-    if (r.failed) {
-      value.className = "value failed";
-      value.textContent = r.failText || "failed";
-    } else {
-      value.className = "value";
-      value.textContent = fmtTime(r.ms);
-    }
-
-    el.append(label, track, value);
-  }
-}
-
-// ── CSV parser (minimal; matches Node bench) ──────────────────────────────
-
-function parseCsv(str) {
-  const lines = str.split("\n");
-  const headers = lines[0].split(",");
-  const nCols = headers.length;
-  const out = new Array(lines.length - 2);
-  for (let i = 1; i < lines.length; i++) {
-    const line = lines[i];
-    if (line.length === 0) continue;
-    const row = {};
-    let start = 0, col = 0;
-    for (let j = 0; j <= line.length && col < nCols; j++) {
-      if (j === line.length || line.charCodeAt(j) === 44) {
-        row[headers[col]] = line.slice(start, j);
-        col++;
-        start = j + 1;
-      }
-    }
-    out[i-1] = row;
-  }
-  return out;
-}
-
-function sumCsvScore(str) {
-  let p = str.indexOf("\n") + 1;
-  let sum = 0;
-  const len = str.length;
-  while (p < len) {
-    let commas = 0, scoreStart = p;
-    while (p < len) {
-      const c = str.charCodeAt(p);
-      if (c === 44) {
-        commas++;
-        if (commas === 6) scoreStart = p + 1;
-        else if (commas === 7) {
-          sum += +str.slice(scoreStart, p);
-          while (p < len && str.charCodeAt(p) !== 10) p++;
-          p++; break;
-        }
-      }
-      p++;
-    }
-  }
-  return sum;
 }
 
 // ── Main ──────────────────────────────────────────────────────────────────
@@ -738,13 +715,6 @@ $("#clear-upload").addEventListener("click", () => {
   restoreSizeButtonActive();
 });
 
-// Helper: run a scenario with a failure guard. If `failed` is true, emit a
-// failed row directly; otherwise invoke `run()` which returns ms.
-function scenario(label, klass, failed, failText, run) {
-  if (failed) return { label, klass, failed: true, failText };
-  return { label, klass, ms: run() };
-}
-
 $("#run").addEventListener("click", async () => {
   $("#run").disabled = true;
 
@@ -768,128 +738,23 @@ $("#run").addEventListener("click", async () => {
       <span class="tag">.csv ${csvBytes ? fmtBytes(csvLen) : csvErr} ${csvBytes ? `(${csvPct}% of JSON)` : ""}</span>
     `;
 
-    // Iteration counts scaled to each op's cost
-    const iters = {
-      parse: n >= 1e7 ? 3 : n >= 1e6 ? 5 : n >= 1e5 ? 20 : 200,
-      random: n >= 1e7 ? 20000 : n >= 1e6 ? 50000 : 100000,
-      cold: n >= 1e7 ? 2 : n >= 1e6 ? 3 : n >= 1e5 ? 20 : 200,
-      scan: n >= 1e7 ? 2 : n >= 1e6 ? 3 : n >= 1e5 ? 20 : 500,
-    };
-
     setStatus(`Running (n=${n.toLocaleString()})…`, "running");
-    await new Promise(r => setTimeout(r, 20)); // let the status paint
+    await new Promise(r => setTimeout(r, 20));
 
-    // NXS is always usable regardless of JSON/CSV string-length failures.
-    const reader = new NxsReader(nxbBuf);
-    let wasmReader = null;
-    if (wasm) {
-      wasmReader = new NxsReader(nxbBuf);
-      wasmReader.useWasm(wasm);
-    }
+    const jsonFailText = jsonErr ?? null;
+    const csvFailText = csvErr ?? null;
+    const recordCount = await runBenchmarks({
+      $,
+      nxbBuf,
+      jsonStr,
+      csvStr,
+      jsonFailText,
+      csvFailText,
+      wasm,
+      selectedN: n,
+    });
 
-    // Pre-parse what we can. JSON/CSV may be unavailable for giant fixtures.
-    let parsedJson, parsedCsv, jsonParseErr, csvParseErr;
-    if (jsonStr !== undefined) {
-      try { parsedJson = JSON.parse(jsonStr); }
-      catch (e) { jsonParseErr = e.message; }
-    }
-    if (csvStr !== undefined) {
-      try { parsedCsv = parseCsv(csvStr); }
-      catch (e) { csvParseErr = e.message; }
-    }
-    if (parsedJson && parsedJson.length !== n) {
-      jsonParseErr = `${parsedJson.length} JSON rows ≠ NXS recordCount ${n}`;
-      parsedJson = undefined;
-    }
-
-    const jsonFailText = jsonErr ? jsonErr : jsonParseErr ? `JSON: ${jsonParseErr}` : null;
-    const csvFailText = csvErr ? csvErr : csvParseErr ? `CSV: ${csvParseErr}` : null;
-
-    // Precompute indices & slots used by multiple scenarios
-    const idxs = new Array(iters.random);
-    for (let i = 0; i < iters.random; i++) idxs[i] = Math.floor(Math.random() * n);
-    const uSlot = reader.slot("username");
-    const sUser = uSlot;
-    const sAge  = reader.slot("age");
-    const sBal  = reader.slot("balance");
-    const sAct  = reader.slot("active");
-    let ii;
-
-    // ── 1. Open ────────────────────────────────────────────────────────
-    drawChart("#chart-open", [
-      scenario("JSON.parse",    "json", !!jsonFailText, jsonFailText, () => bench(iters.parse, () => JSON.parse(jsonStr))),
-      scenario("parseCsv",      "csv",  !!csvFailText,  csvFailText,  () => bench(iters.parse, () => parseCsv(csvStr))),
-      scenario("new NxsReader", "nxs",  false,          null,         () => bench(iters.parse, () => new NxsReader(nxbBuf))),
-    ]);
-
-    // ── 2. Random access ───────────────────────────────────────────────
-    drawChart("#chart-random", [
-      scenario("JSON arr[k].username", "json", !parsedJson, jsonFailText, () => {
-        ii = 0; return bench(iters.random, () => parsedJson[idxs[ii++ % iters.random]].username);
-      }),
-      scenario("CSV arr[k].username", "csv", !parsedCsv, csvFailText, () => {
-        ii = 0; return bench(iters.random, () => parsedCsv[idxs[ii++ % iters.random]].username);
-      }),
-      scenario("NXS getStrBySlot", "nxs", false, null, () => {
-        ii = 0; return bench(iters.random, () => reader.record(idxs[ii++ % iters.random]).getStrBySlot(uSlot));
-      }),
-    ]);
-
-    // ── 3. Random access, multiple fields ─────────────────────────────
-    drawChart("#chart-random-multi", [
-      scenario("JSON 4-field read", "json", !parsedJson, jsonFailText, () => {
-        ii = 0;
-        return bench(iters.random, () => {
-          const r = parsedJson[idxs[ii++ % iters.random]];
-          return r.username.length + r.age + r.balance + (r.active ? 1 : 0);
-        });
-      }),
-      scenario("CSV 4-field read", "csv", !parsedCsv, csvFailText, () => {
-        ii = 0;
-        return bench(iters.random, () => {
-          const r = parsedCsv[idxs[ii++ % iters.random]];
-          return r.username.length + +r.age + +r.balance + (r.active === "true" ? 1 : 0);
-        });
-      }),
-      scenario("NXS 4-field read", "nxs", false, null, () => {
-        ii = 0;
-        return bench(iters.random, () => {
-          const obj = reader.record(idxs[ii++ % iters.random]);
-          return obj.getStrBySlot(sUser).length
-               + obj.getI64BySlot(sAge)
-               + obj.getF64BySlot(sBal)
-               + (obj.getBoolBySlot(sAct) ? 1 : 0);
-        });
-      }),
-    ]);
-
-    // ── 4. Cold pipeline ───────────────────────────────────────────────
-    const k = Math.floor(n / 2);
-    drawChart("#chart-cold", [
-      scenario("JSON parse + arr[k]", "json", !!jsonFailText, jsonFailText, () =>
-        bench(iters.cold, () => JSON.parse(jsonStr)[k].username)),
-      scenario("CSV parse + arr[k]", "csv", !!csvFailText, csvFailText, () =>
-        bench(iters.cold, () => parseCsv(csvStr)[k].username)),
-      scenario("NXS open + record(k)", "nxs", false, null, () =>
-        bench(iters.cold, () => new NxsReader(nxbBuf).record(k).getStrBySlot(uSlot))),
-    ]);
-
-    // ── 5. Aggregate ───────────────────────────────────────────────────
-    const reduceRows = [
-      scenario("JSON: pre-parsed + loop", "json", !parsedJson, jsonFailText, () =>
-        bench(iters.scan, () => { let s = 0; for (const r of parsedJson) s += r.score; })),
-      scenario("CSV: sumCsvScore (raw)", "csv", !csvStr, csvFailText, () =>
-        bench(iters.scan, () => sumCsvScore(csvStr))),
-      scenario("NXS sumF64 (pure JS)", "nxs", false, null, () =>
-        bench(iters.scan, () => reader.sumF64("score"))),
-    ];
-    if (wasmReader) {
-      reduceRows.push(scenario("NXS sumF64 (WASM)", "nxs-wasm", false, null, () =>
-        bench(iters.scan, () => wasmReader.sumF64("score"))));
-    }
-    drawChart("#chart-reduce", reduceRows);
-
-    setStatus(`Done. n=${n.toLocaleString()} — scroll for results.`, "done");
+    setStatus(`Done. n=${recordCount.toLocaleString()} — scroll for results.`, "done");
   } catch (e) {
     setStatus(`Error: ${e.message}`, "error");
     console.error(e);

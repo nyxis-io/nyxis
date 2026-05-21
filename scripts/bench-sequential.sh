@@ -13,6 +13,11 @@ if [[ ! -d "$DRV" ]]; then
   exit 1
 fi
 
+if [[ ! -f "$FIX/records_1000.nxb" || ! -f "$FIX/records_1000.json" ]]; then
+  echo "Generating 1k fixtures in $FIX …"
+  make -C "$ROOT" fixtures FIXTURE_COUNT=1000
+fi
+
 if [[ ! -f "$FIX/records_1000000.nxb" ]]; then
   echo "Generating 1M fixtures in $FIX …"
   make -C "$ROOT" fixtures FIXTURE_COUNT=1000000
@@ -49,11 +54,7 @@ run "6/11 PHP" bash -c "php -d extension='$DRV/php/nxs_ext/modules/nxs.so' -d me
 run "7/11 Swift" bash -c "cd '$DRV/swift' && swift run -c release nxs-bench '$FIX'"
 run "8/11 Kotlin" bash -c "cd '$DRV/kotlin' && ./gradlew bench -q"
 
-# C# smoke tests expect records_1000.*; symlink 1M files for --bench only
-ln -sf records_1000000.nxb "$FIX/records_1000.nxb"
-ln -sf records_1000000.json "$FIX/records_1000.json"
 run "9/11 C#" bash -c "cd '$DRV/csharp' && dotnet run -c Release -- '$FIX' --bench"
-rm -f "$FIX/records_1000.nxb" "$FIX/records_1000.json"
 
 run "10/11 Node.js" bash -c "cd '$ROOT' && node site/bench/bench.js '$FIX'"
 run "11a/11 WAL C" bash -c "cd '$DRV/c' && cc -O2 -std=c99 bench_wal.c nxs_writer.c -o bench_wal && ./bench_wal"

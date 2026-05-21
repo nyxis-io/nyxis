@@ -75,7 +75,6 @@ static int64_t field_offset(const uint8_t *data, uint32_t size,
 
     if (!found) return -1;
 
-    /* Skip any remaining continuation bytes to reach offset-table start */
     while (byte & 0x80) {
         if (p >= size) return -1;
         byte = data[p++];
@@ -88,15 +87,115 @@ static int64_t field_offset(const uint8_t *data, uint32_t size,
 }
 
 /*
- * Sum all f64 values at `slot` across every record.
- *
- * base: absolute WASM-memory offset of the .nxb buffer
- * size: total byte length of that buffer
- * tail_start: absolute offset of the first tail-index record entry
- *             (= tailPtr + 4, i.e. already past EntryCount)
- * record_count: total number of records
- * slot: target field slot index
+ * Uniform-schema layout from record 0 (same as Go computeFastLayout).
  */
+typedef struct {
+    uint32_t bitmask_len;
+    uint32_t table_idx;
+    int32_t  present;
+} fast_layout_t;
+
+static fast_layout_t compute_fast_layout(const uint8_t *data, uint32_t tail_start,
+                                         uint32_t slot) {
+    fast_layout_t L = {0, 0, 0};
+    uint32_t abs = (uint32_t)rd_u64(data + tail_start + 2);
+    uint32_t p = abs + 8;
+    uint32_t bitmask_start = p;
+    uint32_t cur_slot = 0;
+    uint32_t table_idx = 0;
+    int present = 0;
+    for (;;) {
+        uint8_t b = data[p++];
+        uint8_t bits = b & 0x7F;
+        for (int i = 0; i < 7; i++) {
+            if (cur_slot == slot) present = (bits >> i) & 1;
+            else if (cur_slot < slot && ((bits >> i) & 1)) table_idx++;
+            cur_slot++;
+        }
+        if ((b & 0x80) == 0) break;
+    }
+    L.bitmask_len = p - bitmask_start;
+    L.table_idx = table_idx;
+    L.present = present;
+    return L;
+}
+
+static inline void wt_u32_out(uint8_t *p, uint32_t v) {
+    p[0] = v & 0xFF; p[1] = (v >> 8) & 0xFF;
+    p[2] = (v >> 16) & 0xFF; p[3] = (v >> 24) & 0xFF;
+}
+
+/*
+ * build_field_index — one pass, write absolute value offset per record.
+ * Returns 1 on success, 0 if slot absent in record 0.
+ */
+__attribute__((export_name("build_field_index")))
+uint32_t build_field_index(uint32_t base, uint32_t size, uint32_t tail_start,
+                           uint32_t record_count, uint32_t slot, uint32_t out_ptr) {
+    const uint8_t *data = (const uint8_t *)(uintptr_t)base;
+    (void)size;
+    fast_layout_t L = compute_fast_layout(data, tail_start, slot);
+    if (!L.present) return 0;
+    uint32_t offset_table_pos = 8 + L.bitmask_len + L.table_idx * 2;
+    uint8_t *out = (uint8_t *)(uintptr_t)out_ptr;
+    for (uint32_t i = 0; i < record_count; i++) {
+        const uint8_t *entry = data + tail_start + (uint64_t)i * 10;
+        uint32_t abs = (uint32_t)rd_u64(entry + 2);
+        uint16_t rel = rd_u16(data + abs + offset_table_pos);
+        wt_u32_out(out + i * 4, abs + rel);
+    }
+    return 1;
+}
+
+/*
+ * batch_resolve_offsets — for each record index in indices[], write the
+ * absolute value offset (or 0xFFFFFFFF if absent). Uses uniform layout from
+ * record 0 (same as build_field_index). One WASM entry for N lookups.
+ */
+__attribute__((export_name("batch_resolve_offsets")))
+void batch_resolve_offsets(uint32_t base, uint32_t size, uint32_t tail_start,
+                           uint32_t record_count, uint32_t slot,
+                           uint32_t indices_ptr, uint32_t count, uint32_t out_ptr) {
+    const uint8_t *data = (const uint8_t *)(uintptr_t)base;
+    (void)size;
+    (void)record_count;
+    fast_layout_t L = compute_fast_layout(data, tail_start, slot);
+    const uint32_t *indices = (const uint32_t *)(uintptr_t)indices_ptr;
+    uint8_t *out = (uint8_t *)(uintptr_t)out_ptr;
+    if (!L.present) {
+        for (uint32_t j = 0; j < count; j++) wt_u32_out(out + j * 4, 0xFFFFFFFFu);
+        return;
+    }
+    uint32_t offset_table_pos = 8 + L.bitmask_len + L.table_idx * 2;
+    for (uint32_t j = 0; j < count; j++) {
+        uint32_t i = indices[j];
+        const uint8_t *entry = data + tail_start + (uint64_t)i * 10;
+        uint32_t abs = (uint32_t)rd_u64(entry + 2);
+        uint16_t rel = rd_u16(data + abs + offset_table_pos);
+        wt_u32_out(out + j * 4, abs + rel);
+    }
+}
+
+/*
+ * batch_get_f64 — read f64 values at pre-built field index offsets[recordIndex].
+ * indices_ptr: record indices; field_index_ptr: n*4 table from build_field_index.
+ */
+__attribute__((export_name("batch_get_f64")))
+void batch_get_f64(uint32_t base, uint32_t field_index_ptr, uint32_t indices_ptr,
+                   uint32_t count, uint32_t out_ptr) {
+    const uint8_t *data = (const uint8_t *)(uintptr_t)base;
+    const uint32_t *index = (const uint32_t *)(uintptr_t)field_index_ptr;
+    const uint32_t *indices = (const uint32_t *)(uintptr_t)indices_ptr;
+    uint8_t *out = (uint8_t *)(uintptr_t)out_ptr;
+    for (uint32_t j = 0; j < count; j++) {
+        uint32_t off = index[indices[j]];
+        double v = (off == 0xFFFFFFFFu) ? 0.0 : rd_f64(data + off);
+        union { double d; uint64_t u; } bits;
+        bits.d = v;
+        for (int i = 0; i < 8; i++) out[j * 8 + i] = (bits.u >> (i * 8)) & 0xFF;
+    }
+}
+
 __attribute__((export_name("sum_f64")))
 double sum_f64(uint32_t base, uint32_t size, uint32_t tail_start,
                uint32_t record_count, uint32_t slot) {

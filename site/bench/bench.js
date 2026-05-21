@@ -15,7 +15,7 @@ import { performance } from "node:perf_hooks";
 
 const __benchDir = dirname(fileURLToPath(import.meta.url));
 const WASM_PATH = join(__benchDir, "wasm/nxs_reducers.wasm");
-import { NxsReader } from "../../../nyxis-drivers/js/nxs.js";
+import { NxsReader, gt } from "../../../nyxis-drivers/js/nxs.js";
 import { loadWasm } from "../../../nyxis-drivers/js/wasm.js";
 
 // Synchronous zero-copy helper for the benchmark harness.
@@ -123,6 +123,30 @@ function sumCsvScore(str) {
   return sum;
 }
 
+function scanJsonUsernameLengths(str) {
+  const needle = '"username":"';
+  let acc = 0;
+  let p = 0;
+  while (p < str.length) {
+    const i = str.indexOf(needle, p);
+    if (i < 0) break;
+    const start = i + needle.length;
+    const end = str.indexOf('"', start);
+    if (end < 0) break;
+    acc += end - start;
+    p = end + 1;
+  }
+  return acc;
+}
+
+function scatteredIndices(recordCount, max = 500) {
+  const n = Math.min(max, recordCount);
+  const out = new Uint32Array(n);
+  const step = Math.max(1, Math.floor(recordCount / n));
+  for (let i = 0; i < n; i++) out[i] = (i * step) % recordCount;
+  return out;
+}
+
 // ── Benchmark scenarios ─────────────────────────────────────────────────────
 
 async function runScale(fixtureDir, n, wasm) {
@@ -157,24 +181,223 @@ async function runScale(fixtureDir, n, wasm) {
   row("new NxsReader(buffer)",       nxsOpen,  jsonOpen);
   footer();
 
+  // ── 1b. Open + iterate all records ─────────────────────────────────────
+  header("Open + iterate all records (read username on each row)");
+  const usernameSlot = reader.slot("username");
+  const jsonOpenIter = bench(iterateIters, () => {
+    const parsed = JSON.parse(jsonStr);
+    let acc = 0;
+    for (const r of parsed) acc += r.username.length;
+    return acc;
+  });
+  const csvOpenIter = bench(iterateIters, () => {
+    const parsed = parseCsv(csvStr);
+    let acc = 0;
+    for (const r of parsed) acc += r.username.length;
+    return acc;
+  });
+  const nxsOpenIter = bench(iterateIters, () => {
+    const r = new NxsReader(nxbBuf);
+    let acc = 0;
+    for (const rec of r.records()) acc += rec.getStrBySlot(usernameSlot).length;
+    return acc;
+  });
+  const nxsOpenIterScan = bench(iterateIters, () => {
+    const r = new NxsReader(nxbBuf);
+    let acc = 0;
+    r.scan(cur => { acc += cur.getStrBySlot(usernameSlot).length; });
+    return acc;
+  });
+  row("JSON.parse + for-of username",     jsonOpenIter,     jsonOpenIter);
+  row("parseCsv + for-of username",       csvOpenIter,      jsonOpenIter);
+  row("NxsReader + records() loop",        nxsOpenIter,      jsonOpenIter);
+  row("NxsReader + cursor.scan",            nxsOpenIterScan,  jsonOpenIter);
+  const nxsOpenIterIndex = bench(iterateIters, () => {
+    const r = new NxsReader(nxbBuf);
+    const idx = r.buildFieldIndex("username");
+    let acc = 0;
+    for (let i = 0; i < r.recordCount; i++) acc += idx.getStrAt(i).length;
+    return acc;
+  });
+  row("NxsReader + buildFieldIndex loop",   nxsOpenIterIndex, jsonOpenIter);
+  footer();
+
+  // ── 1c. Iterate only (warm) ─────────────────────────────────────────────
+  header("Iterate only — warm structures (username on each row)");
+  const jsonWarmIter = bench(iterateIters, () => {
+    let acc = 0;
+    for (const r of parsedJson) acc += r.username.length;
+    return acc;
+  });
+  const csvWarmIter = bench(iterateIters, () => {
+    let acc = 0;
+    for (const r of parsedCsv) acc += r.username.length;
+    return acc;
+  });
+  const nxsWarmScan = bench(iterateIters, () => {
+    let acc = 0;
+    reader.scan(cur => { acc += cur.getStrBySlot(usernameSlot).length; });
+    return acc;
+  });
+  const usernameIndexWarm = reader.buildFieldIndex("username");
+  const nxsWarmIndex = bench(iterateIters, () => {
+    let acc = 0;
+    for (let i = 0; i < reader.recordCount; i++) acc += usernameIndexWarm.getStrAt(i).length;
+    return acc;
+  });
+  row("JSON for-of (pre-parsed)",              jsonWarmIter,  jsonWarmIter);
+  row("CSV for-of (pre-parsed)",               csvWarmIter,   jsonWarmIter);
+  row("NXS cursor.scan",                       nxsWarmScan,   jsonWarmIter);
+  row("NXS buildFieldIndex + getStrAt",        nxsWarmIndex,  jsonWarmIter);
+  footer();
+
   // ── 2. Warm random access ────────────────────────────────────────────────
   header("Random-access read (1 field from 1 record)");
+  console.log("  │  JSON/CSV: pre-parsed object graph. NXS: lazy decode (see rows).     │");
   const idxs = new Array(randomIters);
   for (let i = 0; i < randomIters; i++) idxs[i] = Math.floor(Math.random() * n);
+  const usernameIndex = reader.buildFieldIndex("username");
+  const randCur = reader.cursor();
   let ii = 0;
   const jsonRand = bench(randomIters, () => parsedJson[idxs[ii++ % randomIters]].username);
   ii = 0;
   const csvRand  = bench(randomIters, () => parsedCsv[idxs[ii++ % randomIters]].username);
   ii = 0;
-  const nxsRand  = bench(randomIters, () => reader.record(idxs[ii++ % randomIters]).getStr("username"));
-  // NXS with precomputed slot handle — skips the per-call Map lookup.
-  const usernameSlot = reader.slot("username");
+  const nxsRand  = bench(randomIters, () => reader.record(idxs[ii++ % randomIters]).getStrBySlot(usernameSlot));
   ii = 0;
-  const nxsRandSlot = bench(randomIters, () => reader.record(idxs[ii++ % randomIters]).getStrBySlot(usernameSlot));
-  row("arr[k].username  (pre-parsed JSON)",    jsonRand,     jsonRand);
-  row("arr[k].username  (pre-parsed CSV)",     csvRand,      jsonRand);
-  row("reader.record(k).getStr('username')",   nxsRand,      jsonRand);
-  row("reader.record(k).getStrBySlot(slot)",   nxsRandSlot,  jsonRand);
+  const nxsRandCursor = bench(randomIters, () => {
+    randCur.seek(idxs[ii++ % randomIters]);
+    return randCur.getStrBySlot(usernameSlot);
+  });
+  ii = 0;
+  const nxsRandIndexed = bench(randomIters, () => usernameIndex.getStrAt(idxs[ii++ % randomIters]));
+  const usernameIndexWasm = wasmReader.buildFieldIndex("username");
+  ii = 0;
+  const nxsRandIndexedWasm = bench(randomIters, () => usernameIndexWasm.getStrAt(idxs[ii++ % randomIters]));
+  row("arr[k].username  (pre-parsed JSON)",           jsonRand,            jsonRand);
+  row("arr[k].username  (pre-parsed CSV)",            csvRand,            jsonRand);
+  row("NXS record(k).getStrBySlot  (alloc/record)",   nxsRand,            jsonRand);
+  row("NXS cursor.seek(k).getStrBySlot",              nxsRandCursor,      jsonRand);
+  row("NXS buildFieldIndex + getStrAt(k)",            nxsRandIndexed,     jsonRand);
+  row("NXS field index (WASM build) + getStrAt(k)",   nxsRandIndexedWasm, jsonRand);
+  footer();
+
+  // ── 2b. Multi-field random access ───────────────────────────────────────
+  header("Random-access read (4 fields from 1 record)");
+  const sUser = usernameSlot;
+  const sAge  = reader.slot("age");
+  const sBal  = reader.slot("balance");
+  const sAct  = reader.slot("active");
+  const multiCur = reader.cursor();
+  ii = 0;
+  const jsonMulti = bench(randomIters, () => {
+    const r = parsedJson[idxs[ii++ % randomIters]];
+    return r.username.length + r.age + r.balance + (r.active ? 1 : 0);
+  });
+  ii = 0;
+  const csvMulti = bench(randomIters, () => {
+    const r = parsedCsv[idxs[ii++ % randomIters]];
+    return r.username.length + +r.age + +r.balance + (r.active === "true" ? 1 : 0);
+  });
+  ii = 0;
+  const nxsMulti = bench(randomIters, () => {
+    const obj = reader.record(idxs[ii++ % randomIters]);
+    return obj.getStrBySlot(sUser).length + obj.getI64BySlot(sAge)
+         + obj.getF64BySlot(sBal) + (obj.getBoolBySlot(sAct) ? 1 : 0);
+  });
+  ii = 0;
+  const nxsMultiCursor = bench(randomIters, () => {
+    multiCur.seekWarm(idxs[ii++ % randomIters]);
+    return multiCur.getStrBySlot(sUser).length + multiCur.getI64BySlot(sAge)
+         + multiCur.getF64BySlot(sBal) + (multiCur.getBoolBySlot(sAct) ? 1 : 0);
+  });
+  row("JSON 4-field (pre-parsed)",              jsonMulti,        jsonMulti);
+  row("CSV 4-field (pre-parsed)",               csvMulti,         jsonMulti);
+  row("NXS 4-field record(k)",                  nxsMulti,         jsonMulti);
+  row("NXS 4-field cursor.seekWarm(k)",         nxsMultiCursor,   jsonMulti);
+  footer();
+
+  // ── 2c. Scattered access ────────────────────────────────────────────────
+  header("Scattered access (~500 strided indices, username)");
+  const scattered = scatteredIndices(n);
+  const scanIters = n >= 1_000_000 ? 20 : n >= 100_000 ? 50 : 200;
+  const jsonScattered = bench(scanIters, () => {
+    let acc = 0;
+    for (let j = 0; j < scattered.length; j++) acc += parsedJson[scattered[j]].username.length;
+    return acc;
+  });
+  const nxsScatteredCursor = bench(scanIters, () => {
+    const cur = reader.cursor();
+    let acc = 0;
+    for (let j = 0; j < scattered.length; j++) {
+      cur.seek(scattered[j]);
+      acc += cur.getStrBySlot(usernameSlot).length;
+    }
+    return acc;
+  });
+  const nxsScatteredIndex = bench(scanIters, () => {
+    let acc = 0;
+    for (let j = 0; j < scattered.length; j++) acc += usernameIndex.getStrAt(scattered[j]).length;
+    return acc;
+  });
+  row("JSON pre-parsed scattered",            jsonScattered,       jsonScattered);
+  row("NXS cursor scattered",                 nxsScatteredCursor,  jsonScattered);
+  row("NXS field index scattered",            nxsScatteredIndex,   jsonScattered);
+  footer();
+
+  // ── 2d. Full scan — four fields per record ───────────────────────────────
+  header("Full scan — four fields per record (open + linear pass)");
+  const jsonFourScan = bench(iterateIters, () => {
+    let acc = 0;
+    for (const r of parsedJson) {
+      acc += r.username.length + r.age + r.balance + (r.active ? 1 : 0);
+    }
+    return acc;
+  });
+  const nxsFourScan = bench(iterateIters, () => {
+    const r = new NxsReader(nxbBuf);
+    const cur = r.cursor();
+    let acc = 0;
+    for (let i = 0; i < r.recordCount; i++) {
+      cur.seekWarm(i);
+      acc += cur.getStrBySlot(sUser).length + cur.getI64BySlot(sAge)
+        + cur.getF64BySlot(sBal) + (cur.getBoolBySlot(sAct) ? 1 : 0);
+    }
+    return acc;
+  });
+  row("JSON for-of 4-field",                  jsonFourScan,  jsonFourScan);
+  row("NXS open + seekWarm 4-field",           nxsFourScan,   jsonFourScan);
+  footer();
+
+  // ── 2e. Filter count (score > 80) ───────────────────────────────────────
+  header("Filter — count records where score > 80");
+  const scoreThreshold = 80;
+  const jsonFilter = bench(scanIters, () => {
+    let c = 0;
+    for (const r of parsedJson) if (r.score > scoreThreshold) c++;
+    return c;
+  });
+  const nxsFilter = bench(scanIters, () => reader.where(gt("score", scoreThreshold)).count());
+  row("JSON filter count",                    jsonFilter,  jsonFilter);
+  row("NXS where(gt score)",                  nxsFilter,   jsonFilter);
+  footer();
+
+  // ── 2f. JSON raw scan vs parse ──────────────────────────────────────────
+  header("JSON raw username scan vs parse + loop");
+  const jsonScanParse = bench(scanIters, () => {
+    let acc = 0;
+    for (const r of JSON.parse(jsonStr)) acc += r.username.length;
+    return acc;
+  });
+  const jsonScanRaw = bench(scanIters, () => scanJsonUsernameLengths(jsonStr));
+  const nxsScanUsername = bench(scanIters, () => {
+    let acc = 0;
+    reader.scan(cur => { acc += cur.getStrBySlot(usernameSlot).length; });
+    return acc;
+  });
+  row("JSON.parse + loop",                    jsonScanParse,    jsonScanParse);
+  row('JSON scan "username" (no parse)',      jsonScanRaw,      jsonScanParse);
+  row("NXS cursor.scan username",             nxsScanUsername,  jsonScanParse);
   footer();
 
   // ── 3. Cold start ────────────────────────────────────────────────────────
@@ -239,6 +462,26 @@ async function runScale(fixtureDir, n, wasm) {
   row("sumCsvScore(raw string) [cold scan]",    csvBulk,      jsonBulk);
   row("reader.sumF64('score')  [in-JS red.]",   nxsBulk,      jsonBulk);
   row("reader.sumF64('score')  [WASM red.]",    nxsBulkWasm,  jsonBulk);
+  footer();
+
+  // ── 5b. Indexed sum vs reducer ───────────────────────────────────────────
+  header("Indexed sum vs column reducer (score)");
+  const scoreIndex = reader.buildFieldIndex("score");
+  const nxsIndexedSum = bench(iterateIters, () => {
+    let s = 0;
+    for (let i = 0; i < scoreIndex.offsets.length; i++) s += scoreIndex.getF64At(i);
+    return s;
+  });
+  const scoreIndexWasm = wasmReader.buildFieldIndex("score");
+  const nxsIndexedSumWasm = bench(iterateIters, () => {
+    let s = 0;
+    for (let i = 0; i < scoreIndexWasm.offsets.length; i++) s += scoreIndexWasm.getF64At(i);
+    return s;
+  });
+  row("JSON pre-parsed sum",                    jsonBulk,          jsonBulk);
+  row("NXS sumF64 reducer",                   nxsBulk,           jsonBulk);
+  row("NXS buildIndex + loop",                nxsIndexedSum,     jsonBulk);
+  row("NXS WASM index + loop",                nxsIndexedSumWasm, jsonBulk);
   footer();
 
   // ── 6. Cold reducer pipeline: read bytes → parse → reduce ────────────────
