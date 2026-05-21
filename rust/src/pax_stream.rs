@@ -5,8 +5,8 @@
 
 use crate::error::{NxsError, Result};
 use crate::layout::{
-    encode_page, sigils_for_keys, FLAG_PAX, FLAG_SCHEMA_EMBEDDED, MAGIC_FILE, MAGIC_FOOTER,
-    MAGIC_PAGE, RecordRow, VERSION,
+    encode_page, sigils_for_keys, RecordRow, FLAG_PAX, FLAG_SCHEMA_EMBEDDED, MAGIC_FILE,
+    MAGIC_FOOTER, MAGIC_PAGE, VERSION,
 };
 use crate::query::parse_schema;
 use crate::writer::{build_schema, murmur3_64};
@@ -87,7 +87,9 @@ impl PaxStreamWriter {
             return Err(NxsError::ParseError("page_size must be > 0".into()));
         }
         if keys.is_empty() {
-            return Err(NxsError::ParseError("PAX stream writer requires schema keys".into()));
+            return Err(NxsError::ParseError(
+                "PAX stream writer requires schema keys".into(),
+            ));
         }
         let schema_bytes = build_schema(&keys, &sigils);
         let dict_hash = murmur3_64(&schema_bytes);
@@ -233,7 +235,8 @@ impl PaxStreamWriter {
             self.page_size,
         );
         let flags = FLAG_SCHEMA_EMBEDDED | FLAG_PAX;
-        let mut out = Vec::with_capacity(32 + self.schema_bytes.len() + self.data.len() + tail.len());
+        let mut out =
+            Vec::with_capacity(32 + self.schema_bytes.len() + self.data.len() + tail.len());
         out.extend_from_slice(&MAGIC_FILE.to_le_bytes());
         out.extend_from_slice(&VERSION.to_le_bytes());
         out.extend_from_slice(&flags.to_le_bytes());
@@ -318,7 +321,12 @@ impl<'a> PaxPageView<'a> {
         ))
     }
 
-    pub fn get_f64(&self, local_record: usize, key: &str, key_index: &HashMap<String, usize>) -> Option<f64> {
+    pub fn get_f64(
+        &self,
+        local_record: usize,
+        key: &str,
+        key_index: &HashMap<String, usize>,
+    ) -> Option<f64> {
         let slot = *key_index.get(key)?;
         let (bm, vals) = self.field_parts(slot).ok()?;
         if !col_bit(bm, local_record) {
@@ -328,7 +336,12 @@ impl<'a> PaxPageView<'a> {
         Some(f64::from_le_bytes(vals.get(off..off + 8)?.try_into().ok()?))
     }
 
-    pub fn get_i64(&self, local_record: usize, key: &str, key_index: &HashMap<String, usize>) -> Option<i64> {
+    pub fn get_i64(
+        &self,
+        local_record: usize,
+        key: &str,
+        key_index: &HashMap<String, usize>,
+    ) -> Option<i64> {
         let slot = *key_index.get(key)?;
         let (bm, vals) = self.field_parts(slot).ok()?;
         if !col_bit(bm, local_record) {
@@ -442,11 +455,8 @@ impl<'a> PaxStreamReader<'a> {
         let mut n = 0usize;
         let mut off = self.data_start;
         while let Some(end) = complete_page_end(self.data, off) {
-            let rc = u32::from_le_bytes(
-                self.data[off + 16..off + 20]
-                    .try_into()
-                    .unwrap_or([0; 4]),
-            ) as usize;
+            let rc = u32::from_le_bytes(self.data[off + 16..off + 20].try_into().unwrap_or([0; 4]))
+                as usize;
             n += rc;
             off = end;
         }
@@ -591,7 +601,10 @@ mod tests {
         let sum = reader.col_sum_f64("score").unwrap();
         let expected: f64 = (0..300).map(|i| i as f64).sum();
         assert!((sum - expected).abs() < 1e-6);
-        assert_eq!(reader.record(299).and_then(|r| r.get_f64("score")), Some(299.0));
+        assert_eq!(
+            reader.record(299).and_then(|r| r.get_f64("score")),
+            Some(299.0)
+        );
     }
 
     #[test]
