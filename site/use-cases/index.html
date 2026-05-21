@@ -88,7 +88,7 @@
           <h3>1. Zero-copy <code>mmap</code></h3>
           <p>
             <code>.nxb</code> is not one giant string. Opening a file reads only the preamble and the
-            <em>O(1)</em> tail-index footer — typically <strong>&lt;2&nbsp;µs</strong> — with no allocation against V8’s
+            <em>O(1)</em> tail-index footer — <strong>sub‑microsecond</strong> in native drivers (~300&nbsp;ns), ~10&nbsp;µs in pure JS — with no allocation against V8’s
             string length cap.
           </p>
         </div>
@@ -191,7 +191,7 @@
             <tr>
               <td>Opening a 1.5&nbsp;GB dataset</td>
               <td class="col-bad">Crashes instantly (<code>RangeError</code>)</td>
-              <td class="col-good">Succeeds in &lt;2&nbsp;µs via <code>mmap</code> (maps header &amp; tail-index footer)
+              <td class="col-good">Succeeds in sub‑µs (native) / ~10&nbsp;µs (JS) via <code>mmap</code> (header &amp; tail-index only)
               </td>
             </tr>
             <tr>
@@ -395,7 +395,7 @@
 
       <h3>The system advantage</h3>
       <p class="use-case-roi">
-        Resolves any target record offset in &lt;2&nbsp;µs regardless of file size by reading only the header and
+        Resolves any target record offset in sub‑µs (native) regardless of file size by reading only the header and
         trailing index footer. Virtual scroll utilizes the tail-index for exact byte offsets, allowing the grid to
         render without full-file deserialization or heap inflation.
       </p>

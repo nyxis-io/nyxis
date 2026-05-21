@@ -376,22 +376,22 @@ Four pipeline stages are measured. The Rust numbers are from `cargo run --releas
 ### Rust — WAL pipeline (release build, Apple M-series)
 
 
-| Spans   | Append ns/span | Recover ns/span | Seal ns/span | Roundtrip ns/span | JSON NDJSON ns/span | WAL size | NXB size | JSON NDJSON |
-| ------- | -------------- | --------------- | ------------ | ----------------- | ------------------- | -------- | -------- | ----------- |
-| 1,000   | 1,640          | 1,213           | 3,541        | 6,087             | 125                 | 113 KB   | 121 KB   | 175 KB      |
-| 10,000  | 742            | 1,039           | 3,090        | 4,527             | 131                 | 1.11 MB  | 1.19 MB  | 1.71 MB     |
-| 100,000 | 644            | 1,050           | 3,422        | 4,589             | 125                 | 11.1 MB  | 12.0 MB  | 17.2 MB     |
+| Spans   | Append-batch ns/span | Recover ns/span | Seal ns/span | Roundtrip ns/span | JSON NDJSON ns/span | WAL size | NXB size | JSON NDJSON |
+| ------- | -------------------- | --------------- | ------------ | ----------------- | ------------------- | -------- | -------- | ----------- |
+| 1,000   | 1,640                | 1,213           | 3,541        | 6,087             | 125                 | 113 KB   | 121 KB   | 175 KB      |
+| 10,000  | 742                  | 1,039           | 3,090        | 4,527             | 131                 | 1.11 MB  | 1.19 MB  | 1.71 MB     |
+| 100,000 | 644                  | 1,050           | 3,422        | 4,589             | 125                 | 11.1 MB  | 12.0 MB  | 17.2 MB     |
 
 
 Stage definitions:
 
-- **append** — encode one span via `NxsWriter` and **write NYXO bytes to a tmpfs file**; no tail-index update. Includes real I/O cost.
+- **append-batch** — encode all spans via `NxsWriter` and **write NYXO bytes to a tmpfs file** (amortised ns/span); no tail-index update. Includes real I/O cost.
 - **recover** — linear scan of the WAL to rebuild the in-memory `(trace_id → Vec<offset>)` index after a crash.
 - **seal** — replay the WAL into a fully-indexed `.nxb` segment (re-encode all spans + emit tail-index).
 - **roundtrip** — append + seal + `SegmentReader::find_by_trace()` end-to-end.
 - **JSON NDJSON** — `serde_json::to_writer` per span into an in-memory `Vec<u8>`, no I/O.
 
-The NXS append (~2,300 ns) is dominated by the tmpfs `write()` syscall, not by encoding. The `serde_json` baseline (128–131 ns) is pure in-memory. An in-memory-only NxsWriter encode (no I/O) runs at approximately the same speed as `serde_json` — both are tight struct-to-bytes loops without allocation. File sizes scale linearly: **110.6 B/span** (WAL), **120.2 B/span** (NXB), **172.0 B/span** (JSON NDJSON).
+The Rust bench reports **append-batch** (amortised encode + `write()` per span). At 100k spans that is ~**640 ns/span** on Apple M-series tmpfs; recover/seal/roundtrip are separate stages. In-memory encode-only (no I/O) is ~**131 ns/span** for both NXS and `serde_json`. File sizes scale linearly: **110.6 B/span** (WAL), **120.2 B/span** (NXB), **172.0 B/span** (JSON NDJSON).
 
 ### JavaScript — WAL encoder comparison (Chrome, Apple M-series)
 
@@ -447,7 +447,7 @@ All numbers are **pure in-memory encode** (no I/O), best-of-3 at n=10,000 spans.
 | **Python (pure)**     | 3,800              | 263           | 1,383               | 723            | 2.7× slower      |
 | **Ruby (pure)**       | ~5,300             | 188           | 383                 | 2,610          | ~14× slower      |
 
-¹ Rust NXS encode-only is estimated from the WAL bench with I/O subtracted; the measured WAL append (2,291 ns) includes a `write()` syscall to tmpfs. `serde_json` at 131 ns/span is the apples-to-apples in-memory baseline.
+¹ Rust in-memory encode matches `serde_json` (~131 ns/span). The WAL pipeline table uses **append-batch** on tmpfs (~640 ns/span at 100k), not the in-memory encoder row above.
 
 Span schema used for all language benches: 14 services (gateway, auth-svc, session-svc, catalogue-svc, …), 20 OTel operation names (http.server, db.index_scan, llm.inference, auth.token_exchange, …), realistic per-op duration distributions (cache.get ~300 µs, db.select ~4 ms, llm.inference ~1.8 s), ~15% of spans carry a JSON payload blob (80–110 bytes). Previously all benches used 5 services, one hardcoded op name, and empty payloads — those numbers were not representative of production trace data.
 

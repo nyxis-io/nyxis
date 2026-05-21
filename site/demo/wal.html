@@ -880,11 +880,11 @@ function renderResults(n, walRes, fastRes, sealRes, wasmRes, jsonRes) {
 }
 
 // ── Cross-language reference data (n=10k spans, Apple M-series, best-of-3) ───
-// Pure in-memory encode — no I/O. Rust WAL append (2291 ns) includes tmpfs write;
-// encode-only is ~131 ns (matches serde_json). See BENCHMARK.md for full details.
+// Pure in-memory encode — no I/O. Rust append-batch @ 100k ≈ 644 ns (tmpfs write).
+// In-memory encode-only ≈ 131 ns (serde_json parity). See BENCHMARK.md.
 const LANG_REF = [
-  { lang: "C",               nxs_ns: 82,   json_ns: 262,  nxs_klass: "nxs-wal", json_klass: "json-nd" },
-  { lang: "Go",              nxs_ns: 138,  json_ns: 289,  nxs_klass: "nxs-wal", json_klass: "json-nd" },
+  { lang: "C",               nxs_ns: 73,   json_ns: 270,  nxs_klass: "nxs-wal", json_klass: "json-nd" },
+  { lang: "Go",              nxs_ns: 131,  json_ns: 301,  nxs_klass: "nxs-wal", json_klass: "json-nd" },
   { lang: "Rust",            nxs_ns: 131,  json_ns: 131,  nxs_klass: "nxs-wal", json_klass: "json-nd" },
   { lang: "Python (C ext)",  nxs_ns: 438,  json_ns: 1383, nxs_klass: "nxs-wal", json_klass: "json-nd" },
   { lang: "Ruby (C ext)",    nxs_ns: 336,  json_ns: 383,  nxs_klass: "nxs-wal", json_klass: "json-nd" },

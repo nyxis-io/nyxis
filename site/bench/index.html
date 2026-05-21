@@ -232,7 +232,7 @@
 
   <section class="card" id="wal-section">
     <h2>6. WAL span ingestion — append · recover · seal · roundtrip</h2>
-    <p class="desc">Simulated in-memory WAL path (no real disk I/O in browser). Encodes span structs into NXS binary objects and measures per-span cost at each pipeline stage. These numbers come from the Rust <code>bench</code> binary run locally — the browser renders the results as a reference chart.</p>
+    <p class="desc">Rust <code>cargo run --release --bin bench</code> on Apple M-series (tmpfs I/O for append). Reference charts below; values match <a href="https://github.com/nyxis-io/nyxis/blob/main/BENCHMARK.md">BENCHMARK.md</a>. Append is amortised <strong>append-batch</strong> (encode + write all spans per run).</p>
 
     <div style="margin-bottom:14px">
       <label style="color:var(--muted);font-size:13px;margin-right:8px">Span count:</label>
@@ -414,33 +414,33 @@ document.querySelectorAll("#sizes button").forEach(btn => {
 const STRING_LIMIT_BYTES = 512 * 1024 * 1024;
 
 // ── WAL reference chart ───────────────────────────────────────────────────────
-// Numbers from `cargo run --release --bin bench` (Apple M-series).
-// Keyed by span count → { append, recover, seal, roundtrip } ns/span + file sizes.
+// `make bench-sequential` → Rust WAL section (BENCHMARK.md, Apple M-series).
+// Keyed by span count → { appendBatch, recover, seal, roundtrip } ns/span + file sizes.
 const WAL_DATA = {
   1000: {
-    timing: { append: 2988, recover: 1220, seal: 3853, roundtrip: 7570 },
-    wal_bytes: 116096, nxb_bytes: 126054, json_bytes: 179507,
+    timing: { appendBatch: 1640, recover: 1213, seal: 3541, roundtrip: 6087 },
+    wal_bytes: 116096, nxb_bytes: 123699, json_bytes: 179507,
   },
   10000: {
-    timing: { append: 2377, recover: 1058, seal: 3586, roundtrip: 6576 },
-    wal_bytes: 1163264, nxb_bytes: 1262054, json_bytes: 1795507,
+    timing: { appendBatch: 742, recover: 1039, seal: 3090, roundtrip: 4527 },
+    wal_bytes: 1163264, nxb_bytes: 1247805, json_bytes: 1795507,
   },
   100000: {
-    timing: { append: 2453, recover: 1057, seal: 3411, roundtrip: 6396 },
+    timing: { appendBatch: 644, recover: 1050, seal: 3422, roundtrip: 4589 },
     wal_bytes: 11060000, nxb_bytes: 12020000, json_bytes: 17200000,
   },
   // Extrapolated from 100k plateau (ns/span stable; bytes scale linearly at
   // 110.6 B/span WAL · 120.2 B/span NXB · 172.0 B/span JSON)
   1000000: {
-    timing: { append: 2453, recover: 1057, seal: 3411, roundtrip: 6396 },
+    timing: { appendBatch: 644, recover: 1050, seal: 3422, roundtrip: 4589 },
     wal_bytes: 110600000, nxb_bytes: 120200000, json_bytes: 172000000,
   },
   10000000: {
-    timing: { append: 2453, recover: 1057, seal: 3411, roundtrip: 6396 },
+    timing: { appendBatch: 644, recover: 1050, seal: 3422, roundtrip: 4589 },
     wal_bytes: 1106000000, nxb_bytes: 1202000000, json_bytes: 1720000000,
   },
   100000000: {
-    timing: { append: 2453, recover: 1057, seal: 3411, roundtrip: 6396 },
+    timing: { appendBatch: 644, recover: 1050, seal: 3422, roundtrip: 4589 },
     wal_bytes: 11060000000, nxb_bytes: 12020000000, json_bytes: 17200000000,
   },
 };
@@ -453,7 +453,7 @@ const fmtNs = ns =>
 function drawWalTimingChart(data) {
   const { timing } = data;
   const rows = [
-    { label: "append",    ns: timing.append,    klass: "nxs"      },
+    { label: "append-batch", ns: timing.appendBatch, klass: "nxs"      },
     { label: "recover",   ns: timing.recover,   klass: "csv"      },
     { label: "seal",      ns: timing.seal,       klass: "nxs-wasm" },
     { label: "roundtrip", ns: timing.roundtrip,  klass: "json"     },
@@ -531,20 +531,19 @@ document.querySelectorAll("#wal-sizes button").forEach(btn => {
 renderWal(selectedWalN);
 
 // ── Cross-language WAL comparison ────────────────────────────────────────────
-// All numbers are pure in-memory encode (no I/O), n=10,000 spans, Apple M-series, best-of-3.
-// Rust WAL append (2291 ns) includes a tmpfs write(); encode-only ~131 ns = serde_json parity.
+// Pure in-memory encode (no I/O), n=10,000 spans — BENCHMARK.md / bench-sequential.
 const WAL_LANG = [
   // lang,               nxs_ns, json_ns
-  ["C",                  62,      259   ],
-  ["Go",                 112,     280   ],
+  ["C",                  73,      270   ],
+  ["Go",                 131,     301   ],
   ["Rust",               131,     131   ],
   ["JS (fast)",          250,     320   ],
   ["JS (WASM)",          375,     320   ],
-  ["Python (C ext)",     405,     1350  ],
-  ["Ruby (C ext)",       415,     350   ],
+  ["Python (C ext)",     438,     1383  ],
+  ["Ruby (C ext)",       336,     383   ],
   ["JS (generic)",       750,     320   ],
-  ["Python (pure)",      3700,    1350  ],
-  ["Ruby (pure)",        5000,    350   ],
+  ["Python (pure)",      3800,    1383  ],
+  ["Ruby (pure)",        5300,    383   ],
 ];
 
 function drawWalLangChart(containerId, key, label, klass) {
