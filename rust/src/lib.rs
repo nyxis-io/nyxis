@@ -22,3 +22,16 @@ pub mod query;
 pub mod segment_reader;
 pub mod wal;
 pub mod writer;
+
+#[cfg(all(target_arch = "wasm32", feature = "wasm"))]
+mod wasm_api;
+
+/// Compile `.nxs` source text to `.nxb` bytes (lex → parse → compile).
+pub fn compile_source(source: &str) -> error::Result<Vec<u8>> {
+    let mut lexer = lexer::Lexer::new(source);
+    let tokens = lexer.tokenize()?;
+    let mut parser = parser::Parser::new(tokens);
+    let fields = parser.parse_file()?;
+    let mut compiler = compiler::Compiler::new();
+    compiler.compile(&fields)
+}

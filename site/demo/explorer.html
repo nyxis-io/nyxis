@@ -292,17 +292,17 @@
         <p class="page-lead">10M-line viewer — virtual scroll, in-place search, zero-copy parsing</p>
       </div>
       <div class="hint" id="drop-hint">
-        Drop <code>.nxb</code> or <code>.json</code> here, <label for="file" class="upload-label">browse</label>, or
+        Drop <code>.nxb</code>, <code>.nxs</code>, or <code>.json</code> here, <label for="file" class="upload-label">browse</label>, or
       </div>
       <button type="button" id="pick">Choose file</button>
-      <input type="file" id="file" accept=".nxb,.NXB,.json,.JSON,application/json,application/octet-stream" hidden>
+      <input type="file" id="file" accept=".nxb,.NXB,.nxs,.NXS,.json,.JSON,text/plain,application/json,application/octet-stream" hidden>
       <div class="file-info" id="file-info"></div>
     </div>
   </header>
 
   <section class="what-tested" aria-label="What this page tests">
     <strong>What this page tests</strong>
-    UI scalability for a <strong>very large</strong> log-shaped dataset (millions of rows): a fixed <strong>row pool</strong> and a tall inner <strong>spacer</strong> with scroll scaling map viewport position to record indices without creating one DOM node per line. With <code>.nxb</code>, loads use <code>NxsStreamReader</code> so schema and records parse while bytes arrive (v1.1 streamable files); after the footer seals, <code>NxsReader</code> tail-index enables <strong>random access</strong> without a full JS object graph. With <code>.json</code>, the file is parsed once into an array, then the same virtual list runs over that in-memory model (useful for comparison). Search, jump-to-line, and the status bar’s <strong>render</strong> timing show whether scrolling stays smooth under load.
+    UI scalability for a <strong>very large</strong> log-shaped dataset (millions of rows): a fixed <strong>row pool</strong> and a tall inner <strong>spacer</strong> with scroll scaling map viewport position to record indices without creating one DOM node per line. With <code>.nxb</code>, loads use <code>NxsStreamReader</code> so schema and records parse while bytes arrive (v1.1 streamable files); after the footer seals, <code>NxsReader</code> tail-index enables <strong>random access</strong> without a full JS object graph. With <code>.nxs</code>, the server returns <code>text/plain</code> (readable in DevTools Network → Response); the page compiles source to <code>.nxb</code> in-browser via WASM, then uses the same zero-copy reader. With <code>.json</code>, the file is parsed once into an array, then the same virtual list runs over that in-memory model (useful for comparison). Search, jump-to-line, and the status bar’s <strong>render</strong> timing show whether scrolling stays smooth under load.
   </section>
 
   <div class="toolbar">
@@ -345,6 +345,7 @@
 
 <script type="module">
 import { NxsReader, NxsStreamReader, NxsObject, WIRE_SIGILS } from "/sdk/nxs.js";
+import { compileNxsText, loadNxsDataset } from "/sdk/nxs_compile.js";
 
 // ── Constants ──────────────────────────────────────────────────────────────
 const ROW_HEIGHT = 22;
@@ -506,11 +507,35 @@ function applyStreamingProgress(name, receivedBytes, totalBytes) {
   scheduleRender();
 }
 
+function isNxsObject(v) {
+  return v && typeof v === "object" && typeof v.get === "function" && typeof v.toObject === "function";
+}
+
+/** Columns from fields present in record 0 (not the full schema dict). */
 function buildColumnsFromReader(r) {
-  return r.keys.map((key, slot) => ({
+  if (r.recordCount === 0) return [];
+  const present = r.record(0).toObject();
+  const topKeys = Object.keys(present);
+
+  // Multi-record bench fixtures: flat fields on each record.
+  if (r.recordCount > 1) {
+    return topKeys.map(key => ({
+      key,
+      slot: r.keyIndex.get(key),
+      sigil: r.keySigils[r.keyIndex.get(key)],
+    }));
+  }
+
+  // Single compiled .nxs document — unwrap one nested root object (e.g. user { … }).
+  if (topKeys.length === 1 && isNxsObject(present[topKeys[0]])) {
+    const parent = topKeys[0];
+    return Object.keys(present[parent].toObject()).map(key => ({ key, nestedIn: parent }));
+  }
+
+  return topKeys.map(key => ({
     key,
-    slot,
-    sigil: r.keySigils[slot],
+    slot: r.keyIndex.get(key),
+    sigil: r.keySigils[r.keyIndex.get(key)],
   }));
 }
 
@@ -549,28 +574,43 @@ function clearColumns() {
   searchEl.placeholder = "Search…  (Ctrl/Cmd+F)";
 }
 
-function formatNxbValue(accessor, col) {
-  const { slot, sigil } = col;
-  switch (sigil) {
-    case WIRE_SIGILS.str:
-      return accessor.getStrBySlot(slot) ?? "";
-    case WIRE_SIGILS.float: {
-      const v = accessor.getF64BySlot(slot);
-      return v !== undefined ? v.toFixed(2) : "";
-    }
-    case WIRE_SIGILS.bool:
-      return accessor.getBoolBySlot(slot) ? "●" : "○";
-    case WIRE_SIGILS.time: {
-      const v = accessor.getI64BySlot(slot);
-      return v !== undefined
-        ? new Date(Math.round(v / 1_000_000)).toISOString().slice(0, 10)
-        : "";
-    }
-    default: {
-      const v = accessor.getI64BySlot(slot);
-      return v !== undefined ? String(v) : "";
-    }
+function formatAnyValue(v) {
+  if (v === null || v === undefined) return "";
+  if (typeof v === "boolean") return v ? "●" : "○";
+  if (typeof v === "number") {
+    return Number.isInteger(v) ? String(v) : v.toFixed(2);
   }
+  if (typeof v === "string") return v;
+  if (typeof v === "bigint") return String(v);
+  if (isNxsObject(v)) {
+    const o = v.toObject();
+    const parts = Object.entries(o).map(([k, val]) => `${k}=${formatAnyValue(val)}`);
+    return parts.length <= 4 ? parts.join(" ") : `{${parts.length} fields}`;
+  }
+  if (Array.isArray(v)) {
+    return v.length <= 3
+      ? `[${v.map(formatAnyValue).join(", ")}]`
+      : `[${v.length} items]`;
+  }
+  return String(v);
+}
+
+function formatNxbValue(accessor, col) {
+  let v;
+  if (col.nestedIn) {
+    const parent = accessor.get(col.nestedIn);
+    v = isNxsObject(parent) ? parent.get(col.key) : undefined;
+  } else if (col.slot !== undefined) {
+    v = accessor.get(col.key);
+  } else {
+    v = accessor.get(col.key);
+  }
+  return formatAnyValue(v);
+}
+
+function nxbCellClass(v) {
+  if (typeof v === "boolean") return v ? "col-cell bool on" : "col-cell bool";
+  return "col-cell";
 }
 
 // ── Virtual scroller ─────────────────────────────────────────────────────
@@ -705,10 +745,15 @@ function renderRow(row, idx) {
     for (let c = 0; c < ncols; c++) {
       const col = columns[c];
       const cell = row.cells[c];
-      cell.textContent = formatNxbValue(accessor, col);
-      cell.className = col.sigil === WIRE_SIGILS.bool
-        ? (accessor.getBoolBySlot(col.slot) ? "col-cell bool on" : "col-cell bool")
-        : "col-cell";
+      let raw;
+      if (col.nestedIn) {
+        const parent = accessor.get(col.nestedIn);
+        raw = isNxsObject(parent) ? parent.get(col.key) : undefined;
+      } else {
+        raw = accessor.get(col.key);
+      }
+      cell.textContent = formatAnyValue(raw);
+      cell.className = nxbCellClass(raw);
     }
   }
 
@@ -739,7 +784,8 @@ function attachWorkerForNxb() {
   ensureWorker();
   if (!worker || !searchColumn) return;
   const searchKey = searchColumn.key;
-  if (_lastLoadedUrl) {
+  // Only re-fetch URL for binary .nxb assets — never for .nxs text (worker needs compiled bytes).
+  if (_lastLoadedUrl && !pathLooksLikeNxs(_lastLoadedUrl)) {
     worker.postMessage({ type: "load-url", url: _lastLoadedUrl, searchKey });
   } else if (rawBuffer) {
     const copy = rawBuffer.slice(0);
@@ -827,7 +873,7 @@ async function loadFromReadableStream(body, name, sizeBytes) {
   }
 }
 
-async function loadBuffer(buffer, name, sizeBytes) {
+async function loadBuffer(buffer, name, sizeBytes, sourceLabel = null) {
   const gen = ++loadGeneration;
   jsonRecords = null;
   streamReader = null;
@@ -854,7 +900,24 @@ async function loadBuffer(buffer, name, sizeBytes) {
   cursor = reader.cursor();
   applyColumns(buildColumnsFromReader(reader));
   attachWorkerForNxb();
-  applyViewportLayout(name, sizeBytes);
+  applyViewportLayout(name, sizeBytes, sourceLabel);
+}
+
+async function loadNxsString(text, name, sourceBytes) {
+  const gen = ++loadGeneration;
+  _lastLoadedUrl = null;
+  overlayEl.classList.remove("hide");
+  overlayEl.textContent = `Compiling ${name}…`;
+  try {
+    const u8 = await compileNxsText(text);
+    if (gen !== loadGeneration) return;
+    const buf = u8.buffer.slice(u8.byteOffset, u8.byteOffset + u8.byteLength);
+    const display = name.replace(/\.nxs$/i, ".nxb");
+    await loadBuffer(buf, display, buf.byteLength, "NXS source");
+  } catch (e) {
+    if (gen !== loadGeneration) return;
+    showError(`Compile failed (${name}): ${e.message}`);
+  }
 }
 
 async function loadJsonString(text, name, sizeBytes) {
@@ -969,13 +1032,18 @@ function searchMainThread(query) {
         const u = jsonRecords[i][key];
         if (u != null && String(u).toLowerCase().indexOf(needle) !== -1) results.push(i);
       }
-    } else if (searchColumn.sigil === WIRE_SIGILS.str) {
+    } else {
       const cur = reader.cursor();
-      const uSlot = searchColumn.slot;
       for (let i = 0; i < recordCount; i++) {
         cur.seek(i);
-        const u = cur.getStrBySlot(uSlot);
-        if (u && u.toLowerCase().indexOf(needle) !== -1) results.push(i);
+        let u;
+        if (searchColumn.nestedIn) {
+          const parent = cur.get(searchColumn.nestedIn);
+          u = isNxsObject(parent) ? parent.get(searchColumn.key) : undefined;
+        } else {
+          u = cur.get(searchColumn.key);
+        }
+        if (u != null && String(u).toLowerCase().indexOf(needle) !== -1) results.push(i);
       }
     }
     if (token !== searchToken) return;
@@ -1154,12 +1222,24 @@ function fileLooksLikeJson(file) {
   return n.endsWith(".json") || t === "application/json" || t === "text/json";
 }
 
+function fileLooksLikeNxs(file) {
+  const n = (file.name || "").toLowerCase();
+  return n.endsWith(".nxs");
+}
+
+function pathLooksLikeNxs(path) {
+  return (path || "").toLowerCase().endsWith(".nxs");
+}
+
 async function loadFile(file) {
   overlayEl.classList.remove("hide");
   overlayEl.textContent = `Loading ${file.name}…`;
   try {
     _lastLoadedUrl = null;  // drag-and-drop: no URL for worker to re-fetch
-    if (fileLooksLikeJson(file)) {
+    if (fileLooksLikeNxs(file)) {
+      const text = await file.text();
+      await loadNxsString(text, file.name, file.size);
+    } else if (fileLooksLikeJson(file)) {
       const text = await file.text();
       await loadJsonString(text, file.name, file.size);
     } else if (typeof file.stream === "function") {
@@ -1194,13 +1274,22 @@ const QUICK_SIZES = [
   { label: "10,000,000 records (~1.3 GB)", path: "../bench/fixtures/records_10000000.nxb" },
 ];
 
+const QUICK_NXS = [
+  { label: "Example: user_profile.nxs (1 doc — compile in browser)", path: "/examples/user_profile.nxs" },
+];
+
 overlayEl.innerHTML = `
   <div style="max-width:480px;text-align:center">
     <p style="margin:0 0 16px;font-size:15px;color:var(--muted)">
-      Drop <code>.nxb</code> / <code>.json</code>, click <strong>Choose file</strong>,<br>
+      Drop <code>.nxb</code> / <code>.nxs</code> / <code>.json</code>, click <strong>Choose file</strong>,<br>
       or load a built-in fixture:
     </p>
     <div style="display:flex;flex-direction:column;gap:8px">
+      ${QUICK_NXS.map(s => `<button
+        class="load-btn load-btn--nxs"
+        style="background:var(--panel-2);border:1px solid var(--accent);color:var(--text);
+               border-radius:6px;padding:8px 16px;cursor:pointer;font-family:inherit;font-size:13px"
+        data-path="${s.path}">${s.label}</button>`).join("")}
       ${QUICK_SIZES.map(s => `<button
         class="load-btn"
         style="background:var(--panel-2);border:1px solid var(--border);color:var(--text);
@@ -1216,15 +1305,34 @@ overlayEl.querySelectorAll(".load-btn").forEach(btn => {
     const name = path.split("/").pop();
     overlayEl.innerHTML = `<div><p>Fetching ${name}…</p></div>`;
     try {
-      const res = await fetch(path);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      _lastLoadedUrl = path;
-      const len = parseInt(res.headers.get("content-length") || "0", 10) || 0;
-      if (res.body) {
-        await loadFromReadableStream(res.body, name, len);
+      if (pathLooksLikeNxs(path)) {
+        const gen = ++loadGeneration;
+        _lastLoadedUrl = null;
+        overlayEl.textContent = `Fetching ${name}…`;
+        const { reader: r, buffer } = await loadNxsDataset(path);
+        if (gen !== loadGeneration) return;
+        jsonRecords = null;
+        streamReader = null;
+        recordOffsets = null;
+        cursor = null;
+        rawBuffer = buffer;
+        reader = r;
+        recordCount = reader.recordCount;
+        cursor = reader.cursor();
+        applyColumns(buildColumnsFromReader(reader));
+        attachWorkerForNxb();
+        applyViewportLayout(name, buffer.byteLength, "NXS source");
       } else {
-        const buf = await res.arrayBuffer();
-        await loadBuffer(buf, name, buf.byteLength);
+        _lastLoadedUrl = path;
+        const res = await fetch(path);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const len = parseInt(res.headers.get("content-length") || "0", 10) || 0;
+        if (res.body) {
+          await loadFromReadableStream(res.body, name, len);
+        } else {
+          const buf = await res.arrayBuffer();
+          await loadBuffer(buf, name, buf.byteLength);
+        }
       }
     } catch (e) {
       overlayEl.innerHTML = `

@@ -104,7 +104,11 @@ $(DRV)/js/nxs.js:
 	  git clone --depth 1 https://github.com/nyxis-io/nyxis-drivers.git "$(DRV)"; \
 	fi
 
-sdk: $(DRV)/js/nxs.js
+sdk: $(DRV)/js/nxs.js $(DRV)/js/nxs_compile_wasm_bg.wasm
+
+$(DRV)/js/nxs_compile_wasm_bg.wasm:
+	@command -v wasm-bindgen >/dev/null 2>&1 || cargo install wasm-bindgen-cli --locked 2>/dev/null || true
+	bash $(DRV)/js/build_compile_wasm.sh
 
 # Best-effort chmod; output path is FIXTURE_OUT (fallback: out/fixtures).
 fixtures: $(DRV)/js/nxs.js
