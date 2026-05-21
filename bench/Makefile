@@ -23,8 +23,8 @@ FORMATS_OTHER := proto capnp
 STREAM_D := $(BENCH)/harness/stream_d/target/release/bench-stream-d
 
 .PHONY: all gen codegen transcode-nxs transcode-formats transcode harness \
-        run run-b run-c run-a run-d run-d-smoke run-d-throughput quick ci matrix bench-cold results results-1m results-1m-fast \
-        setup-venv render-tables render-all verdicts clean
+        run run-b run-c run-a run-d run-d-smoke run-d-ttfr run-d-throughput quick ci matrix bench-cold results results-1m results-1m-fast \
+        setup-venv render-tables render-all freeze-benchmark verdicts clean
 
 all: gen transcode harness
 
@@ -87,7 +87,7 @@ harness-rust: $(HARNESS_RUST)
 
 ifneq ($(HARNESS_C),)
 harness-c: $(HARNESS_C)
-$(HARNESS_C):
+$(HARNESS_C): $(DRV)/c/nxs.c $(DRV)/c/nxs.h $(BENCH)/harness/c/harness.c $(BENCH)/harness/c/stats.c
 	$(MAKE) -C $(BENCH)/harness/c BENCH_CFLAGS="$(BENCH_CFLAGS)"
 else
 harness-c:
@@ -155,6 +155,16 @@ run-d-smoke: $(STREAM_D)
 	  --json $(DATA_JSON)/workload_B_$(BENCH_RECORDS_D).json
 
 # Seal breakdown: tail-index write vs fsync + synthetic sync at 100KB/1MB/10MB tail sizes
+# Publication TTFR + seal (batched flush, n=1000 trials, full-dataset seal)
+run-d-ttfr: BENCH_RECORDS_D ?= 10000
+run-d-ttfr: $(STREAM_D)
+	@test -f $(DATA_JSON)/workload_B_$(BENCH_RECORDS_D).json || \
+	  $(MAKE) gen BENCH_RECORDS=$(BENCH_RECORDS_D)
+	$(STREAM_D) --records $(BENCH_RECORDS_D) --runs 1000 --ttfr-records 1 \
+	  --seal-records $(BENCH_RECORDS_D) --seal-runs 20 --flush-every 100 \
+	  --formats nxs,proto,capnp,fb \
+	  --json $(DATA_JSON)/workload_B_$(BENCH_RECORDS_D).json
+
 # Throughput only (batched flush, 10k rows) — fast complement to full run-d
 run-d-throughput: BENCH_RECORDS_D ?= 10000
 run-d-throughput: $(STREAM_D)
@@ -185,6 +195,7 @@ run-d: $(STREAM_D)
 	  --formats nxs,proto,capnp,fb \
 	  --json $(DATA_JSON)/workload_B_$(BENCH_RECORDS_D).json
 
+# Full A/B/C/D matrix (skip D: BENCH_D=0). Override D size: BENCH_RECORDS_D=1000
 matrix:
 	@bash $(BENCH)/scripts/run_all.sh
 
@@ -217,6 +228,10 @@ render-all:
 	@test -n "$(RESULT_DIR)" || (echo "usage: make -C bench render-all RESULT_DIR=bench/results/2026-05-21_host" >&2; exit 1)
 	@$(MAKE) render-tables RESULT_DIR=$(RESULT_DIR)
 	@$(MAKE) verdicts RESULT_DIR=$(RESULT_DIR)
+
+freeze-benchmark:
+	@test -n "$(RESULT_DIR)" || (echo "usage: make -C bench freeze-benchmark RESULT_DIR=bench/results/2026-05-21_host" >&2; exit 1)
+	$(VENV_PY) $(BENCH)/scripts/freeze_benchmark_md.py --results $(RESULT_ABS) --benchmark $(ROOT)/BENCHMARK.md
 
 setup-venv:
 	bash $(BENCH)/scripts/setup_venv.sh

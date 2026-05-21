@@ -15,13 +15,15 @@
 <section class="landing-hero">
   <div class="hero-inner">
     <p class="page-eyebrow">Zero-copy binary serialization</p>
-    <h1 class="page-title">Open a 1.5&nbsp;GB <code>.nxb</code> in under 2&nbsp;µs</h1>
+    <h1 class="page-title">Resolve any record offset in under 2&nbsp;µs</h1>
     <p class="hero-v8-link">
       <a href="/use-cases/#v8-limits">Learn why <code>JSON.parse()</code> crashes on 512&nbsp;MB datasets →</a>
     </p>
     <p class="page-lead">
       Nyxis is an infrastructure serialization standard — not application software. Human-readable <code>.nxs</code> compiles to
       memory-mapped <code>.nxb</code> you query by tail-index, without <code>JSON.parse()</code> or full-file decode passes.
+      <strong>Header + tail-index mapping</strong> resolves any record offset in under 2&nbsp;µs, independent of file size; warm field access is
+      sub-microsecond on the C driver (see <a href="../BENCHMARK.md#workload-comparison-suite">benchmarks</a>).
       v1.1 adds <strong>streamable sealing</strong>: emit schema and records incrementally, then seal the tail-index in the footer when the segment is complete.
     </p>
     <div class="landing-actions">
@@ -52,18 +54,21 @@
 
 <div class="stat-row">
   <div class="stat">
-    <div class="value">&lt;2&nbsp;µs</div>
-    <div class="label">Cold open on 1.5&nbsp;GB (header + tail-index only)</div>
+    <div class="value">&lt;1&nbsp;µs</div>
+    <div class="label">Warm selective read — C driver, 10k sparse records (<a href="../BENCHMARK.md#workload-a">A</a>)</div>
   </div>
   <div class="stat">
-    <div class="value">3.7M×</div>
-    <div class="label">vs JSON parse — Go, 1M records (open)</div>
+    <div class="value">142&nbsp;µs</div>
+    <div class="label">Streaming TTFR P50 — batched flush, n=1000 (<a href="../BENCHMARK.md#workload-d">D</a>)</div>
   </div>
   <div class="stat">
-    <div class="value">10</div>
-    <div class="label">Language drivers (C, Go, JS, Python, …)</div>
+    <div class="value">~2800×</div>
+    <div class="label">Arrow columnar scan vs NXS — route analytics to Arrow (<a href="../BENCHMARK.md#workload-c">C</a>)</div>
   </div>
 </div>
+<p class="page-lead" style="margin: -8px 0 32px; font-size: 14px; text-align: center; max-width: 52rem; margin-left: auto; margin-right: auto;">
+  macOS dev dataset, 10k records — <a href="../BENCHMARK.md#workload-comparison-suite">full tables &amp; methodology</a> · Linux + inotify pending.
+</p>
 
 <section class="landing-section">
   <h2>Bimodal wire format</h2>
@@ -182,9 +187,15 @@ Tableau / BI ◄── Apache Arrow bridge ◄── Snowflake ingest (pointer-s
       </a>
     </li>
     <li>
+      <a href="../BENCHMARK.md#workload-comparison-suite">
+        <div class="title">Benchmark suite</div>
+        <div class="desc">Workloads A–D vs Protobuf, FlatBuffers, Cap'n Proto, Arrow — frozen macOS dev tables.</div>
+      </a>
+    </li>
+    <li>
       <a href="/bench/">
-        <div class="title">Benchmark</div>
-        <div class="desc">NXS vs JSON vs CSV — open, random access, aggregates at 1k–10M records.</div>
+        <div class="title">Interactive bench</div>
+        <div class="desc">NXS vs JSON vs CSV in the browser — open, random access, aggregates at 1k–10M records.</div>
       </a>
     </li>
     <li>

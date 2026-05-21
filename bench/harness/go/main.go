@@ -21,6 +21,7 @@ type result struct {
 	Format     string  `json:"format"`
 	Records    uint    `json:"records"`
 	Metric     string  `json:"metric"`
+	Driver     string  `json:"driver"`
 	P50Ns      int64   `json:"p50_ns,omitempty"`
 	P99Ns      int64   `json:"p99_ns,omitempty"`
 	IqrNs      int64   `json:"iqr_ns,omitempty"`
@@ -89,7 +90,7 @@ func main() {
 		}
 		out, _ := json.Marshal(result{
 			Workload: *workload, Format: *format, Records: *records,
-			Metric: "size", Bytes: st.Size(), Population: *pop,
+			Metric: "size", Bytes: st.Size(), Population: *pop, Driver: "go",
 		})
 		fmt.Println(string(out))
 		return
@@ -198,7 +199,7 @@ func main() {
 
 func emit(wl string, rec uint, met string, p50, p99, iqr int64, pop float64) {
 	out, _ := json.Marshal(result{
-		Workload: wl, Format: "nxs", Records: rec, Metric: met,
+		Workload: wl, Format: "nxs", Records: rec, Metric: met, Driver: "go",
 		P50Ns: p50, P99Ns: p99, IqrNs: iqr, Samples: samples, Population: pop,
 	})
 	fmt.Println(string(out))

@@ -9,11 +9,18 @@ import sys
 from pathlib import Path
 
 TIE_RATIO = 1.05  # within 5% counts as tie
+PUBLICATION_METRICS = frozenset(
+    {"size", "open", "access", "scan", "selective", "distinct", "ttfr", "seal", "throughput"}
+)
 
 
 def value(row: dict) -> float:
     if "bytes" in row:
         return float(row["bytes"])
+    if "p50_rec_per_s" in row:
+        return float(row["p50_rec_per_s"])
+    if "p50_us" in row:
+        return float(row["p50_us"])
     return float(row["p50_ns"])
 
 
@@ -36,6 +43,8 @@ def verdict(nxs: float, best_other: float, lower_is_better: bool) -> str:
 def build(rows: list[dict]) -> list[dict]:
     groups: dict[tuple, list[dict]] = {}
     for r in rows:
+        if r.get("metric") not in PUBLICATION_METRICS:
+            continue
         if r.get("format") == "arrow" and r.get("workload") != "C":
             continue
         key = (
@@ -54,7 +63,16 @@ def build(rows: list[dict]) -> list[dict]:
             continue
         nxs_row = nxs_rows[0]
         nxs_v = value(nxs_row)
-        lower = met in ("size", "open", "access", "selective", "scan", "distinct")
+        lower = met in (
+            "size",
+            "open",
+            "access",
+            "selective",
+            "scan",
+            "distinct",
+            "ttfr",
+            "seal",
+        )
         best = min(others, key=value)
         best_v = value(best)
         v = verdict(nxs_v, best_v, lower)

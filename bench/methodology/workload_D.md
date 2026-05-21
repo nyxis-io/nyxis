@@ -32,8 +32,10 @@ Read-path cost at P50 maps to decode steps before the first field is accessible:
 
 | Metric | Definition | Units |
 |--------|------------|-------|
-| **TTFR** (primary) | `reader_first_record` − `writer_first_write` | µs; P50, P95, P99 |
-| **Throughput** | Records/s while writer still appending (10 s window) | rec/s; P50 |
+| **TTFR** (primary) | `reader_first_record` − `writer_first_write` | µs; P50, P95, P99; **publication:** `metric=ttfr`, n=1000, flush_every≥100 |
+| **TTFR (smoke)** | 20 trials, flush_every=1 | `metric=ttfr_smoke` — not for publication tables |
+| **Throughput (publication)** | Records/s from first complete record to last while writer still appending; **batched flush** (`flush_every≥100`) | rec/s; `metric=throughput` |
+| **Throughput (smoke only)** | Same window but `flush_every=1` + poll overhead — **not publication** | rec/s; `metric=throughput_smoke` |
 | **Seal latency** | `writer_seal_call` → durable footer (NXS only) | µs; P50 |
 | **Reader RSS HWM** | Peak RSS during full stream read | MB |
 
@@ -50,7 +52,7 @@ Read-path cost at P50 maps to decode steps before the first field is accessible:
 
 † FlatBuffers does not support native file-level streaming. The root offset table is written at buffer start; readers cannot access any record until the complete buffer is available. TTFR for FlatBuffers equals total file transfer time (~transfer_size / write_bandwidth). Streaming requires an external message-framing layer on top of the format; with external framing, per-message TTFR is expected to be comparable to Cap'n Proto framed streaming.
 
-**Honest read:** NXS leads P50 and P95; Cap'n Proto is slightly lower than NXS at P99 at n=200 (likely noise + poll jitter — verify on Linux with `inotify` at n=1000). Do **not** claim “NXS has tighter tails than Cap'n Proto” from the dev table alone.
+**Honest read:** NXS leads P50 and P95 on batched flush at n=1000. **P99 ordering depends on flush policy:** an earlier n=1000 **per-record flush** run had Cap'n Proto winning P99 (252 µs vs 321 µs); the publication **batched flush** run (`flush_every=100`) can show NXS ahead at P99 (e.g. 437 µs vs 583 µs). Do **not** claim “NXS wins P99” until Linux + `inotify` confirms which configuration is stable under push notification.
 
 ### Publication framing (draft)
 

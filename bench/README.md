@@ -40,6 +40,9 @@ make -C bench results-1m
 # Faster 1M matrix (fewer samples, skips Python FB scan)
 make -C bench results-1m-fast
 
+# matrix includes Workload D by default; skip with BENCH_D=0
+# At 1M rows for A/B/C, keep D fast: BENCH_RECORDS_D=1000 make -C bench matrix
+
 # Linux cold-open: drop page cache between runs (root)
 sudo bash bench/scripts/drop_caches.sh
 make bench-cold
@@ -56,7 +59,7 @@ At **1M+ records** the Python harness automatically uses fewer samples for `scan
 | C | Dense uniform analytical reducer | `sum` + `count_distinct` | Lose to Arrow; slowest zero-copy |
 | D | Streaming ingest (TTFR) | Time to first complete record (D2 file) | Tie proto on TTFR; publish NXS seal cost |
 
-**Workload D (Phase 1):** `make -C bench run-d-smoke` — Rust harness (`bench/harness/stream_d/`), NXS + Protobuf + Cap'n Proto, flat-8 schema. Seal breakdown: `make -C bench run-d-seal-profile`. See `bench/methodology/workload_D.md`.
+**Workload D (Phase 1):** `make -C bench run-d-smoke` — Rust harness (`bench/harness/stream_d/`), NXS + Protobuf + Cap'n Proto, flat-8 schema. Seal breakdown: `make -C bench run-d-seal-profile`. See `bench/methodology/workload_D.md`. Included in `matrix` by default (`BENCH_D=0` to skip); emits `ttfr` / `seal` / `throughput` JSON lines into `run.log` for `report.py`.
 
 ## Harness output
 
