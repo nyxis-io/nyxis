@@ -31,7 +31,7 @@ typedef struct {
     const char *path;
 } config_t;
 
-static uint8_t *map_file(const char *path, size_t *out_size) {
+static uint8_t *read_file_to_memory(const char *path, size_t *out_size) {
     FILE *f = fopen(path, "rb");
     if (!f) return NULL;
     fseek(f, 0, SEEK_END);
@@ -145,11 +145,13 @@ static void do_selective(void *p) {
     nxs_get_str(&obj, "s21", sbuf, sizeof(sbuf));
     nxs_get_f64(&obj, "f36", &f64);
     nxs_get_bool(&obj, "b46", &b);
+    volatile int64_t sink = i64;
+    sink += (int64_t)(f64 * 1000.0);
+    sink += b;
+    sink += (int64_t)(unsigned char)sbuf[0];
     nxs_get_i64(&obj, "i10", &i64);
-    (void)i64;
-    (void)f64;
-    (void)b;
-    (void)sbuf;
+    sink += i64;
+    (void)sink;
 }
 
 static int run_nxs(config_t *cfg) {
@@ -170,7 +172,7 @@ static int run_nxs(config_t *cfg) {
     }
 
     size_t len = 0;
-    uint8_t *data = map_file(cfg->path, &len);
+    uint8_t *data = read_file_to_memory(cfg->path, &len);
     if (!data) {
         fprintf(stderr, "cannot read %s\n", cfg->path);
         return 1;

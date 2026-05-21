@@ -444,7 +444,7 @@ pub fn write_stream_file_header(
 /// Append tail-index + footer for a streamable file (after all records are on disk).
 pub fn write_stream_file_footer(
     out: &mut std::fs::File,
-    data_start_abs: u64,
+    _data_start_abs: u64,
     record_abs_offsets: &[u64],
 ) -> std::io::Result<u64> {
     use std::io::Seek;

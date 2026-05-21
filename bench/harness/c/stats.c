@@ -68,7 +68,6 @@ bench_stats_t bench_measure(void (*fn)(void *ctx), void *ctx) {
     }
 
     int64_t *trimmed_buf = samples + trim_lo;
-    qsort(trimmed_buf, (size_t)trimmed, sizeof(int64_t), cmp_i64);
 
     out.p50_ns = percentile(trimmed_buf, trimmed, 0.50);
     out.p99_ns = percentile(trimmed_buf, trimmed, 0.99);
