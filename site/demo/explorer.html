@@ -303,7 +303,7 @@
 
   <section class="what-tested" aria-label="What this page tests">
     <strong>What this page tests</strong>
-    UI scalability for a <strong>very large</strong> log-shaped dataset (millions of rows): a fixed <strong>row pool</strong> and a tall inner <strong>spacer</strong> with scroll scaling map viewport position to record indices without creating one DOM node per line. With <code>.nxb</code>, field reads use the binary tail-index for <strong>random access</strong> without holding a full JS object graph for every record. With <code>.json</code>, the file is parsed once into an array, then the same virtual list runs over that in-memory model (useful for comparison). Search, jump-to-line, and the status bar’s <strong>render</strong> timing show whether scrolling stays smooth under load.
+    UI scalability for a <strong>very large</strong> log-shaped dataset (millions of rows): a fixed <strong>row pool</strong> and a tall inner <strong>spacer</strong> with scroll scaling map viewport position to record indices without creating one DOM node per line. With <code>.nxb</code>, loads use <code>NxsStreamReader</code> so schema and records parse while bytes arrive (v1.1 streamable files); after the footer seals, <code>NxsReader</code> tail-index enables <strong>random access</strong> without a full JS object graph. With <code>.json</code>, the file is parsed once into an array, then the same virtual list runs over that in-memory model (useful for comparison). Search, jump-to-line, and the status bar’s <strong>render</strong> timing show whether scrolling stays smooth under load.
   </section>
 
   <div class="toolbar">
@@ -344,7 +344,7 @@
 </main>
 
 <script type="module">
-import { NxsReader } from "/sdk/nxs.js";
+import { NxsReader, NxsStreamReader, NxsObject } from "/sdk/nxs.js";
 
 // ── Constants ──────────────────────────────────────────────────────────────
 const ROW_HEIGHT = 22;
@@ -379,13 +379,16 @@ const fmtBytes = n =>
                   `${(n/1073741824).toFixed(2)} GB`;
 
 // ── State ─────────────────────────────────────────────────────────────────
-let reader = null;          // NxsReader (binary mode)
+let reader = null;          // NxsReader (binary mode, after stream finishes)
+let streamReader = null;    // NxsStreamReader while bytes are still arriving
+let recordOffsets = null;   // per-record NYXO offsets during streaming (Uint32Array)
 let cursor = null;          // reusable cursor for render
 let slots = null;           // { id, username, email, created_at, score, active }
 let jsonRecords = null;     // null = .nxb mode; else Array<{id,username,email,tsDay,score,active}>
 let recordCount = 0;
 let rawBuffer = null;       // underlying ArrayBuffer (to send to worker)
 let _lastLoadedUrl = null;  // set when loading from a known URL; null for drag-and-drop
+let loadGeneration = 0;     // cancels stale fetch/stream loads
 
 let virtualHeight = 0;      // actual CSS height of spacer
 let scrollScale = 1;        // recordCount / (virtualHeight / ROW_HEIGHT) when capped
@@ -465,7 +468,7 @@ function jsonToExplorerRows(parsed) {
   return out;
 }
 
-function applyViewportLayout(name, sizeBytes, sourceLabel) {
+function updateViewportMetrics(resetScroll) {
   const ideal = recordCount * ROW_HEIGHT;
   if (ideal <= MAX_VIRTUAL_PX) {
     virtualHeight = ideal;
@@ -476,8 +479,11 @@ function applyViewportLayout(name, sizeBytes, sourceLabel) {
   }
   totalRowsVirtual = Math.floor(virtualHeight / ROW_HEIGHT);
   spacerEl.style.height = `${virtualHeight}px`;
+  if (resetScroll) scrollEl.scrollTop = 0;
+}
 
-  scrollEl.scrollTop = 0;
+function applyViewportLayout(name, sizeBytes, sourceLabel) {
+  updateViewportMetrics(true);
   matchesSet.clear();
   currentMatches = null;
   currentMatchIdx = -1;
@@ -492,6 +498,31 @@ function applyViewportLayout(name, sizeBytes, sourceLabel) {
 
   ensureRowPool();
   scheduleRender();
+}
+
+function applyStreamingProgress(name, receivedBytes, totalBytes) {
+  if (virtualHeight === 0 && recordCount > 0) {
+    updateViewportMetrics(false);
+    overlayEl.classList.add("hide");
+    ensureRowPool();
+  } else if (recordCount > 0) {
+    updateViewportMetrics(false);
+  }
+  const total = totalBytes > 0 ? ` — ${fmtBytes(receivedBytes)} / ${fmtBytes(totalBytes)}` : receivedBytes > 0 ? ` — ${fmtBytes(receivedBytes)} received` : "";
+  fileInfoEl.innerHTML =
+    `<strong>${escapeHtml(name)}</strong> <span style="color:var(--warn)">(streaming)</span>${total} — ${fmtInt(recordCount)} records`;
+  scheduleRender();
+}
+
+function resolveSlotsFromReader(r) {
+  return {
+    id: r.slot("id"),
+    username: r.slot("username"),
+    email: r.slot("email"),
+    created_at: r.slot("created_at"),
+    score: r.slot("score"),
+    active: r.slot("active"),
+  };
 }
 
 // ── Virtual scroller ─────────────────────────────────────────────────────
@@ -557,7 +588,7 @@ function scheduleRender() {
 
 function render() {
   rafPending = false;
-  if (!reader && jsonRecords === null) return;
+  if (!reader && !streamReader && jsonRecords === null) return;
 
   const t0 = performance.now();
   const scrollTop = scrollEl.scrollTop;
@@ -610,6 +641,21 @@ function renderRow(row, idx) {
     row.score.textContent = r.score !== undefined ? r.score.toFixed(2) : "";
     row.flag.textContent = r.active ? "●" : "○";
     row.flag.className = r.active ? "flag on" : "flag";
+  } else if (streamReader && recordOffsets) {
+    const obj = new NxsObject(streamReader, recordOffsets[idx]);
+    const id = obj.getI64BySlot(slots.id);
+    row.lineno.textContent = (id !== undefined ? id : idx + 1).toString().padStart(9, " ");
+    const tsNs = obj.getI64BySlot(slots.created_at);
+    row.ts.textContent = tsNs !== undefined
+      ? new Date(Math.round(tsNs / 1_000_000)).toISOString().slice(0, 10)
+      : "";
+    row.component.textContent = obj.getStrBySlot(slots.username) || "";
+    row.msg.textContent = obj.getStrBySlot(slots.email) || "";
+    const score = obj.getF64BySlot(slots.score);
+    row.score.textContent = score !== undefined ? score.toFixed(2) : "";
+    const active = obj.getBoolBySlot(slots.active);
+    row.flag.textContent = active ? "●" : "○";
+    row.flag.className = active ? "flag on" : "flag";
   } else {
     // Reuse cursor — zero allocation per record.
     cursor.seek(idx);
@@ -653,8 +699,104 @@ function updateStatus(scrollTop) {
 }
 
 // ── Loading ──────────────────────────────────────────────────────────────
-async function loadBuffer(buffer, name, sizeBytes) {
+function attachWorkerForNxb() {
+  ensureWorker();
+  if (!worker) return;
+  if (_lastLoadedUrl) {
+    worker.postMessage({ type: "load-url", url: _lastLoadedUrl });
+  } else if (rawBuffer) {
+    const copy = rawBuffer.slice(0);
+    worker.postMessage({ type: "load", buffer: copy }, [copy]);
+  }
+}
+
+async function loadFromReadableStream(body, name, sizeBytes) {
+  const gen = ++loadGeneration;
   jsonRecords = null;
+  reader = null;
+  cursor = null;
+  streamReader = null;
+  recordOffsets = null;
+  slots = null;
+  rawBuffer = null;
+  recordCount = 0;
+  virtualHeight = 0;
+  teardownExplorerWorker();
+
+  overlayEl.classList.remove("hide");
+  overlayEl.textContent = `Loading ${name}…`;
+
+  let sr;
+  try {
+    sr = new NxsStreamReader({
+      onSchema() {
+        if (gen !== loadGeneration) return;
+        slots = resolveSlotsFromReader(sr);
+      },
+      onRecord(obj, idx) {
+        if (gen !== loadGeneration) return;
+        if (!recordOffsets) recordOffsets = new Uint32Array(4096);
+        if (idx >= recordOffsets.length) {
+          const grown = new Uint32Array(recordOffsets.length * 2);
+          grown.set(recordOffsets);
+          recordOffsets = grown;
+        }
+        recordOffsets[idx] = obj.offset;
+        recordCount = idx + 1;
+        if (idx === 0 || (idx & 0x3fff) === 0) {
+          applyStreamingProgress(name, 0, sizeBytes);
+        }
+      },
+      onError(err) {
+        if (gen !== loadGeneration) return;
+        showError(`Failed to parse ${name}: ${err.message}`);
+      },
+    });
+    streamReader = sr;
+
+    if (_lastLoadedUrl) attachWorkerForNxb();
+
+    const webReader = body.getReader();
+    let received = 0;
+    while (true) {
+      const { done, value } = await webReader.read();
+      if (gen !== loadGeneration) {
+        await webReader.cancel?.();
+        return;
+      }
+      if (done) break;
+      received += value.byteLength;
+      sr.push(value);
+      if ((received & 0xfffff) < value.byteLength || recordCount === 1) {
+        overlayEl.textContent =
+          `Loading ${name}… ${fmtBytes(received)}${sizeBytes ? ` / ${fmtBytes(sizeBytes)}` : ""} — ${fmtInt(recordCount)} records`;
+        if (recordCount > 0) applyStreamingProgress(name, received, sizeBytes);
+      }
+    }
+    if (gen !== loadGeneration) return;
+
+    reader = sr.finish();
+    streamReader = null;
+    recordOffsets = null;
+    recordCount = reader.recordCount;
+    cursor = reader.cursor();
+    slots = resolveSlotsFromReader(reader);
+    const view = reader.bytes;
+    rawBuffer = view.buffer.slice(view.byteOffset, view.byteOffset + view.byteLength);
+    attachWorkerForNxb();
+    applyViewportLayout(name, sizeBytes || received);
+  } catch (e) {
+    if (gen !== loadGeneration) return;
+    showError(`Failed to load ${name}: ${e.message}`);
+  }
+}
+
+async function loadBuffer(buffer, name, sizeBytes) {
+  const gen = ++loadGeneration;
+  jsonRecords = null;
+  streamReader = null;
+  recordOffsets = null;
+  virtualHeight = 0;
   // Validate magic.
   const dv = new DataView(buffer);
   if (dv.byteLength < 4 || dv.getUint32(0, true) !== NXS_MAGIC) {
@@ -668,41 +810,18 @@ async function loadBuffer(buffer, name, sizeBytes) {
     showError(`Failed to parse ${name}: ${e.message}`);
     return;
   }
+  if (gen !== loadGeneration) return;
 
   rawBuffer = buffer;
   recordCount = reader.recordCount;
   cursor = reader.cursor();
-
-  // Resolve all slots once.
-  slots = {
-    id: reader.slot("id"),
-    username: reader.slot("username"),
-    email: reader.slot("email"),
-    created_at: reader.slot("created_at"),
-    score: reader.slot("score"),
-    active: reader.slot("active"),
-  };
-
-  // Tell the worker to fetch the file itself — no buffer copy across the
-  // postMessage boundary. If the name looks like a fixture path, derive a
-  // relative URL the worker can fetch. For drag-and-dropped files the worker
-  // won't be able to re-fetch, so we fall back to a direct transfer only
-  // when a URL is available.
-  ensureWorker();
-  if (worker) {
-    const fixtureUrl = _lastLoadedUrl;
-    if (fixtureUrl) {
-      worker.postMessage({ type: "load-url", url: fixtureUrl });
-    } else {
-      const copy = buffer.slice(0);
-      worker.postMessage({ type: "load", buffer: copy }, [copy]);
-    }
-  }
-
+  slots = resolveSlotsFromReader(reader);
+  attachWorkerForNxb();
   applyViewportLayout(name, sizeBytes);
 }
 
 async function loadJsonString(text, name, sizeBytes) {
+  loadGeneration++;
   let parsed;
   try {
     parsed = JSON.parse(text);
@@ -721,9 +840,12 @@ async function loadJsonString(text, name, sizeBytes) {
 
   teardownExplorerWorker();
   reader = null;
+  streamReader = null;
+  recordOffsets = null;
   cursor = null;
   slots = null;
   rawBuffer = null;
+  virtualHeight = 0;
   jsonRecords = rows;
   recordCount = jsonRecords.length;
   _lastLoadedUrl = null;
@@ -832,6 +954,13 @@ function startSearch(query) {
   currentMatchIdx = -1;
   lastFirstVr = -1;
 
+  if (streamReader) {
+    searchBadge.textContent = query ? "waiting for file…" : "";
+    searchBadge.className = "badge";
+    updateMatchesStatus();
+    return;
+  }
+
   if (!query) {
     searchToken++;  // cancel any in-flight
     currentMatches = null;
@@ -935,7 +1064,7 @@ document.addEventListener("keydown", (e) => {
   }
   // Don't hijack keys while typing in an input.
   if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA") return;
-  if (!reader && jsonRecords === null) return;
+  if (!reader && !streamReader && jsonRecords === null) return;
 
   const viewportRows = Math.ceil(scrollEl.clientHeight / ROW_HEIGHT);
   const page = Math.max(1, viewportRows - 2);
@@ -988,6 +1117,8 @@ async function loadFile(file) {
     if (fileLooksLikeJson(file)) {
       const text = await file.text();
       await loadJsonString(text, file.name, file.size);
+    } else if (typeof file.stream === "function") {
+      await loadFromReadableStream(file.stream(), file.name, file.size);
     } else {
       const buf = await file.arrayBuffer();
       await loadBuffer(buf, file.name, file.size);
@@ -1042,9 +1173,14 @@ overlayEl.querySelectorAll(".load-btn").forEach(btn => {
     try {
       const res = await fetch(path);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const buf = await res.arrayBuffer();
       _lastLoadedUrl = path;
-      await loadBuffer(buf, name, buf.byteLength);
+      const len = parseInt(res.headers.get("content-length") || "0", 10) || 0;
+      if (res.body) {
+        await loadFromReadableStream(res.body, name, len);
+      } else {
+        const buf = await res.arrayBuffer();
+        await loadBuffer(buf, name, buf.byteLength);
+      }
     } catch (e) {
       overlayEl.innerHTML = `
         <div>

@@ -5,7 +5,7 @@
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Nyxis — Zero-Copy Binary Serialization Protocol</title>
-<meta name="description" content="Nyxis (NXS) is a zero-copy binary serialization protocol: sigil-typed .nxs source, memory-mapped .nxb wire format, tail-index random access, and ten MIT language drivers.">
+<meta name="description" content="Nyxis (NXS) is a zero-copy binary serialization protocol: sigil-typed .nxs source, memory-mapped .nxb wire format, tail-index random access, streamable v1.1 sealing and append-only WALs, and ten MIT language drivers.">
 <script src="/demo/theme-init.js"></script>
 <link rel="stylesheet" href="/demo/theme.css">
 </head>
@@ -19,6 +19,7 @@
     <p class="page-lead">
       Nyxis is an infrastructure serialization standard — not application software. Human-readable <code>.nxs</code> compiles to
       memory-mapped <code>.nxb</code> you query by tail-index, without <code>JSON.parse()</code> or full-file decode passes.
+      v1.1 adds <strong>streamable sealing</strong>: emit schema and records incrementally, then seal the tail-index in the footer when the segment is complete.
     </p>
     <div class="landing-actions">
       <a class="btn btn-primary" href="/demo/">Try live demos</a>
@@ -75,7 +76,7 @@
 </section>
 
 <section class="landing-section">
-  <h2>Four pillars</h2>
+  <h2>Five pillars</h2>
   <ul class="pillars">
     <li>
       <strong>Fast</strong>
@@ -93,7 +94,38 @@
       <strong>Human readable</strong>
       <span><code>.nxs</code> is self-describing plain text — the source is the schema.</span>
     </li>
+    <li>
+      <strong>Streamable</strong>
+      <span>v1.1 writers stream records before the tail-index exists; append-only WAL mode seals to indexed <code>.nxb</code> on demand.</span>
+    </li>
   </ul>
+</section>
+
+<section class="landing-section" id="streaming">
+  <h2>Stream, then seal</h2>
+  <p class="page-lead" style="margin-bottom: 16px;">
+    Batch compilers are not the only path. Producers can emit aligned <code>.nxb</code> bytes while a segment is still open —
+    readers parse complete records as they arrive and only need the footer tail pointer once the writer seals the file.
+  </p>
+  <ul class="pillars" style="margin-top: 0;">
+    <li>
+      <strong>Streamable v1.1 <code>.nxb</code></strong>
+      <span>Preamble <code>TailPtr = 0</code> during ingest; schema and data sectors append incrementally; sealing writes <code>FooterTailPtr</code> + <code>MagicFooter</code> at EOF.</span>
+    </li>
+    <li>
+      <strong>Append-only WAL (<code>.nxsw</code>)</strong>
+      <span>Hot paths append NYXO rows without rewriting the tail-index every span; seal replays into a fully indexed <code>.nxb</code> segment.</span>
+    </li>
+    <li>
+      <strong>Incremental readers</strong>
+      <span>MIT drivers expose stream parsers (e.g. <code>NxsStreamReader</code>) so browsers and agents can consume records before the download finishes.</span>
+    </li>
+  </ul>
+  <div class="landing-actions" style="justify-content: flex-start; margin-top: 20px;">
+    <a class="btn btn-secondary" href="/demo/wal.html">WAL / spans demo</a>
+    <a class="btn btn-secondary" href="/use-cases/#streaming">Streaming use cases</a>
+    <a class="btn btn-secondary" href="https://github.com/nyxis-io/nyxis/blob/main/SPEC.md#v110--2026-05-18-streamable-nxb" rel="noopener">Spec v1.1</a>
+  </div>
 </section>
 
 <section class="landing-section">
@@ -143,7 +175,7 @@ Tableau / BI ◄── Apache Arrow bridge ◄── Snowflake ingest (pointer-s
     <li>
       <a href="/demo/wal.html">
         <div class="title">WAL / spans</div>
-        <div class="desc">OTel-style span ingestion — append-only WAL vs JSON payloads.</div>
+        <div class="desc">OTel-style span ingestion — streamable append-only WAL vs JSON payloads.</div>
       </a>
     </li>
     <li>
