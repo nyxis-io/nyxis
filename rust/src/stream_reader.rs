@@ -140,7 +140,9 @@ impl<'a> StreamReader<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::writer::{write_stream_file_footer, write_stream_file_header, NxsWriter, Schema, Slot};
+    use crate::writer::{
+        write_stream_file_footer, write_stream_file_header, NxsWriter, Schema, Slot,
+    };
     use std::io::Write;
 
     #[test]

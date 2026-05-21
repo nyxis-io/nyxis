@@ -1,13 +1,17 @@
 # Cross-format benchmark suite (see bench/README.md, ../BENCHMARK_SUITE.md)
 ROOT     := $(abspath ..)
 BENCH    := $(abspath .)
-DRV      := $(abspath ../../nyxis-drivers)
+DRV      := $(abspath $(ROOT)/../nyxis-drivers)
 DATA_JSON := $(BENCH)/data/json
 DATA_BIN  := $(BENCH)/data/bin
 BENCH_RECORDS ?= 10000
 BENCH_CFLAGS  ?= -O3 -std=c99 -Wall -Wextra
 TRANSCODE    := $(BENCH)/generators/transcode_rust/target/release/bench-transcode
+ifneq ($(wildcard $(DRV)/c/nxs.c),)
 HARNESS_C    := $(BENCH)/harness/c/harness
+else
+HARNESS_C    :=
+endif
 VENV_PY      := $(shell test -x $(ROOT)/.venv-bench/bin/python && echo $(ROOT)/.venv-bench/bin/python || echo python3)
 HARNESS_PY   := $(VENV_PY) $(BENCH)/harness/python/harness.py
 HARNESS_GO   := cd $(DRV)/go && go run $(BENCH)/harness/go/main.go
@@ -79,16 +83,24 @@ transcode: transcode-nxs transcode-formats
 $(TRANSCODE):
 	cd $(BENCH)/generators/transcode_rust && cargo build --release
 
-harness-c: $(HARNESS_C)
 harness-rust: $(HARNESS_RUST)
 
+ifneq ($(HARNESS_C),)
+harness-c: $(HARNESS_C)
 $(HARNESS_C):
 	$(MAKE) -C $(BENCH)/harness/c BENCH_CFLAGS="$(BENCH_CFLAGS)"
+else
+harness-c:
+	@echo "skip harness-c: $(DRV)/c not found (nyxis-drivers checkout optional)"
+endif
 
 $(HARNESS_RUST):
 	cd $(BENCH)/harness/rust && cargo build --release
 
-harness: harness-c harness-rust
+harness: harness-rust
+ifneq ($(HARNESS_C),)
+harness: harness-c
+endif
 
 # ── Workload B: all formats (Python harness for competitors) ─────────────────
 run-b: gen transcode harness
@@ -98,8 +110,10 @@ run-b: gen transcode harness
 	  $(HARNESS_PY) --workload B --format $$fmt --records $(BENCH_RECORDS) --metric access --data-dir $(DATA_BIN) 2>/dev/null || true; \
 	  $(HARNESS_PY) --workload B --format $$fmt --records $(BENCH_RECORDS) --metric scan --data-dir $(DATA_BIN) 2>/dev/null || true; \
 	done
-	@$(HARNESS_C) --workload B --format nxs --records $(BENCH_RECORDS) --metric size --data-dir $(DATA_BIN)
-	@$(HARNESS_C) --workload B --format nxs --records $(BENCH_RECORDS) --metric open --data-dir $(DATA_BIN)
+	@if [ -n "$(HARNESS_C)" ] && [ -x "$(HARNESS_C)" ]; then \
+	  $(HARNESS_C) --workload B --format nxs --records $(BENCH_RECORDS) --metric size --data-dir $(DATA_BIN); \
+	  $(HARNESS_C) --workload B --format nxs --records $(BENCH_RECORDS) --metric open --data-dir $(DATA_BIN); \
+	fi
 
 run-c: gen transcode harness
 	@for fmt in nxs proto capnp arrow; do \
