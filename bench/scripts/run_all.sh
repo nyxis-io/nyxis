@@ -94,6 +94,10 @@ for fmt in nxs proto capnp arrow; do
     py_harness C "$fmt" "$met"
   done
 done
+if [ -x "$HR" ] && [ "$BENCH_RECORDS" -ge 100000 ]; then
+  run "$HR" --workload C --format nxs --records "$BENCH_RECORDS" \
+    --metric scan --layout columnar --data-dir bench/data/bin
+fi
 run "${HARNESS_PY[@]}" --workload C --format arrow --records "$BENCH_RECORDS" \
   --metric distinct --data-dir bench/data/bin
 

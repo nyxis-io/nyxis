@@ -2,6 +2,26 @@
 /// returning a flat list of (key_index, value_bytes) for inspection.
 use crate::error::{NxsError, Result};
 
+const FLAG_COLUMNAR: u16 = 0x0001;
+const FLAG_PAX: u16 = 0x0004;
+
+fn validate_preamble_flags(flags: u16) -> Result<()> {
+    if flags & FLAG_COLUMNAR != 0 && flags & FLAG_PAX != 0 {
+        return Err(NxsError::InvalidFlags);
+    }
+    Ok(())
+}
+
+fn footer_size(flags: u16) -> usize {
+    if flags & FLAG_PAX != 0 {
+        28
+    } else if flags & FLAG_COLUMNAR != 0 {
+        20
+    } else {
+        12
+    }
+}
+
 const MAGIC_FILE: u32 = 0x4E595842;
 const MAGIC_OBJ: u32 = 0x4E59584F;
 const MAGIC_LIST: u32 = 0x4E59584C;
@@ -85,10 +105,27 @@ pub fn decode(data: &[u8]) -> Result<DecodedFile> {
 
     let version = u16::from_le_bytes(data[4..6].try_into().map_err(|_| NxsError::OutOfBounds)?);
     let flags = u16::from_le_bytes(data[6..8].try_into().map_err(|_| NxsError::OutOfBounds)?);
+    validate_preamble_flags(flags)?;
     let dict_hash = u64::from_le_bytes(data[8..16].try_into().map_err(|_| NxsError::OutOfBounds)?);
-    let mut tail_ptr =
+    let preamble_tail =
         u64::from_le_bytes(data[16..24].try_into().map_err(|_| NxsError::OutOfBounds)?);
-    if tail_ptr == 0 {
+    if flags & FLAG_COLUMNAR != 0 && preamble_tail == 0 {
+        return Err(NxsError::IncompatibleFlags);
+    }
+
+    let mut tail_ptr = preamble_tail;
+    if flags & (FLAG_COLUMNAR | FLAG_PAX) != 0 {
+        let footer = footer_size(flags);
+        if data.len() < footer {
+            return Err(NxsError::OutOfBounds);
+        }
+        let fo = data.len() - footer;
+        tail_ptr = u64::from_le_bytes(
+            data[fo..fo + 8]
+                .try_into()
+                .map_err(|_| NxsError::OutOfBounds)?,
+        );
+    } else if tail_ptr == 0 {
         if data.len() < 44 {
             return Err(NxsError::OutOfBounds);
         }
@@ -166,22 +203,41 @@ pub fn decode(data: &[u8]) -> Result<DecodedFile> {
         Vec::new()
     };
 
-    // Read tail-index for record count — guard against overflow from large tail_ptr values.
-    let tail_offset = if tail_ptr as usize as u64 == tail_ptr {
-        tail_ptr as usize
-    } else {
-        return Err(NxsError::OutOfBounds);
-    };
-    let record_count = if tail_offset.saturating_add(4) <= data.len() {
-        u32::from_le_bytes(
-            data[tail_offset..tail_offset + 4]
+    let (record_count, tail_start) = if flags & FLAG_COLUMNAR != 0 {
+        let footer = footer_size(flags);
+        let fo = data.len() - footer;
+        let rc = u64::from_le_bytes(
+            data[fo + 8..fo + 16]
                 .try_into()
                 .map_err(|_| NxsError::OutOfBounds)?,
-        ) as usize
+        ) as usize;
+        (rc, tail_ptr as usize)
+    } else if flags & FLAG_PAX != 0 {
+        let footer = footer_size(flags);
+        let fo = data.len() - footer;
+        let rc = u64::from_le_bytes(
+            data[fo + 8..fo + 16]
+                .try_into()
+                .map_err(|_| NxsError::OutOfBounds)?,
+        ) as usize;
+        (rc, tail_ptr as usize)
     } else {
-        0
+        let tail_offset = if tail_ptr as usize as u64 == tail_ptr {
+            tail_ptr as usize
+        } else {
+            return Err(NxsError::OutOfBounds);
+        };
+        let rc = if tail_offset.saturating_add(4) <= data.len() {
+            u32::from_le_bytes(
+                data[tail_offset..tail_offset + 4]
+                    .try_into()
+                    .map_err(|_| NxsError::OutOfBounds)?,
+            ) as usize
+        } else {
+            0
+        };
+        (rc, tail_offset.saturating_add(4))
     };
-    let tail_start = tail_offset.saturating_add(4);
 
     Ok(DecodedFile {
         version,

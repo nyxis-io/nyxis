@@ -40,6 +40,11 @@ impl Parser {
         }
     }
 
+    /// Resume parsing after leading pragma tokens.
+    pub fn set_pos(&mut self, pos: usize) {
+        self.pos = pos;
+    }
+
     fn peek(&self) -> &Token {
         self.tokens.get(self.pos).unwrap_or(&Token::Eof)
     }

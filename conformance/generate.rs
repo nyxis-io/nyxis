@@ -13,7 +13,12 @@ use std::io::Write as IoWrite;
 use std::path::Path;
 
 // Bring in the library types
+use nxs::layout;
 use nxs::writer::{NxsWriter, Schema, Slot};
+
+const FLAG_COLUMNAR: u16 = 0x0001;
+const FLAG_PAX: u16 = 0x0004;
+const FLAG_SCHEMA: u16 = 0x0002;
 
 // ── JSON value enum ───────────────────────────────────────────────────────────
 
@@ -638,6 +643,139 @@ fn make_truncated() -> (Vec<u8>, String) {
     (truncated, expected)
 }
 
+// ── Columnar / PAX vectors (OLAP.md §7.2) ────────────────────────────────────
+
+fn write_flat8_records(w: &mut NxsWriter<'_>, n: usize, dense: bool) {
+    for i in 0..n {
+        w.begin_object();
+        if dense || i % 10 == 0 {
+            w.write_i64(Slot(0), i as i64);
+            w.write_f64(Slot(1), i as f64 * 0.5);
+            w.write_bool(Slot(2), i % 2 == 0);
+            w.write_time(Slot(3), i as i64 * 1_000_000);
+        }
+        w.end_object();
+    }
+}
+
+fn make_columnar_dense_100() -> Vector {
+    let schema = Schema::new(&["id", "score", "active", "ts"]);
+    let mut w = NxsWriter::new(&schema);
+    write_flat8_records(&mut w, 100, true);
+    let nxb = layout::columnar_from_writer(&w).expect("columnar");
+    let expected = flat8_expected_json(100, true);
+    Vector {
+        name: "columnar_flat8_dense_100",
+        nxb,
+        expected,
+    }
+}
+
+fn make_columnar_sparse_100() -> Vector {
+    let schema = Schema::new(&["id", "score", "active", "ts"]);
+    let mut w = NxsWriter::new(&schema);
+    write_flat8_records(&mut w, 100, false);
+    let nxb = layout::columnar_from_writer(&w).expect("columnar");
+    let expected = flat8_expected_json(100, false);
+    Vector {
+        name: "columnar_flat8_sparse_10pct_100",
+        nxb,
+        expected,
+    }
+}
+
+fn flat8_expected_json(n: usize, dense: bool) -> String {
+    let keys = ["id", "score", "active", "ts"];
+    let mut records = Vec::new();
+    for i in 0..n {
+        let mut fields = Vec::new();
+        if dense || i % 10 == 0 {
+            fields.push(Some(("id", JV::Int(i as i64))));
+            fields.push(Some(("score", JV::Float(i as f64 * 0.5))));
+            fields.push(Some(("active", JV::Bool(i % 2 == 0))));
+            fields.push(Some(("ts", JV::Int(i as i64 * 1_000_000))));
+        }
+        records.push(fields);
+    }
+    expected_json(&keys, &records)
+}
+
+fn make_invalid_flags_both() -> (Vec<u8>, String) {
+    let schema = Schema::new(&["id", "score", "active", "ts"]);
+    let mut w = NxsWriter::new(&schema);
+    write_flat8_records(&mut w, 10, true);
+    let mut nxb = layout::columnar_from_writer(&w).expect("columnar");
+    let flags = FLAG_SCHEMA | FLAG_COLUMNAR | FLAG_PAX;
+    nxb[6..8].copy_from_slice(&flags.to_le_bytes());
+    (
+        nxb,
+        r#"{"error":"ERR_INVALID_FLAGS"}"#.to_string(),
+    )
+}
+
+fn make_invalid_streaming_columnar() -> (Vec<u8>, String) {
+    let schema = Schema::new(&["id", "score", "active", "ts"]);
+    let mut w = NxsWriter::new(&schema);
+    write_flat8_records(&mut w, 10, true);
+    let mut nxb = layout::columnar_from_writer(&w).expect("columnar");
+    nxb[16..24].copy_from_slice(&0u64.to_le_bytes());
+    (
+        nxb,
+        r#"{"error":"ERR_INCOMPATIBLE_FLAGS"}"#.to_string(),
+    )
+}
+
+fn make_pax_dense_1000() -> Vector {
+    let keys = vec![
+        "id".to_string(),
+        "score".to_string(),
+        "active".to_string(),
+        "ts".to_string(),
+    ];
+    let rows_data: Vec<layout::RecordRow> = (0..1000)
+        .map(|i| layout::RecordRow {
+            cells: vec![
+                layout::Cell::I64(i as i64),
+                layout::Cell::F64(i as f64 * 0.5),
+                layout::Cell::Bool(i % 2 == 0),
+                layout::Cell::Time(i as i64 * 1_000_000),
+            ],
+        })
+        .collect();
+    let nxb = layout::finish_pax(&keys, &rows_data, 256).expect("pax");
+    Vector {
+        name: "pax_flat8_dense_p256_1000",
+        nxb,
+        expected: flat8_expected_json(1000, true),
+    }
+}
+
+fn make_pax_sparse_1000() -> Vector {
+    let keys = vec![
+        "id".to_string(),
+        "score".to_string(),
+        "active".to_string(),
+        "ts".to_string(),
+    ];
+    let mut rows_data = Vec::new();
+    for i in 0..1000 {
+        let mut cells = vec![layout::Cell::Absent; 4];
+        if i % 10 == 0 {
+            cells[0] = layout::Cell::I64(i as i64);
+            cells[1] = layout::Cell::F64(i as f64 * 0.5);
+            cells[2] = layout::Cell::Bool(i % 2 == 0);
+            cells[3] = layout::Cell::Time(i as i64 * 1_000_000);
+        }
+        rows_data.push(layout::RecordRow { cells });
+    }
+    let nxb = layout::finish_pax(&keys, &rows_data, 256).expect("pax");
+    Vector {
+        name: "pax_flat8_sparse_10pct_p256",
+        nxb,
+        expected: flat8_expected_json(1000, false),
+    }
+}
+
 // ── Main ──────────────────────────────────────────────────────────────────────
 
 fn main() {
@@ -698,6 +836,35 @@ fn main() {
     fs::write(out_path.join("truncated.nxb"), &trunc_nxb).unwrap();
     fs::write(out_path.join("truncated.expected.json"), &trunc_json).unwrap();
     println!("  wrote truncated.nxb + .expected.json");
+
+    for v in [
+        make_columnar_dense_100(),
+        make_columnar_sparse_100(),
+        make_pax_dense_1000(),
+        make_pax_sparse_1000(),
+    ] {
+        let nxb_path = out_path.join(format!("{}.nxb", v.name));
+        let json_path = out_path.join(format!("{}.expected.json", v.name));
+        fs::write(&nxb_path, &v.nxb).unwrap();
+        fs::write(&json_path, &v.expected).unwrap();
+        println!("  wrote {} (columnar/PAX)", v.name);
+    }
+
+    let (inv_flags, inv_flags_json) = make_invalid_flags_both();
+    fs::write(out_path.join("columnar_invalid_flags_both.nxb"), &inv_flags).unwrap();
+    fs::write(
+        out_path.join("columnar_invalid_flags_both.expected.json"),
+        &inv_flags_json,
+    )
+    .unwrap();
+
+    let (inv_stream, inv_stream_json) = make_invalid_streaming_columnar();
+    fs::write(out_path.join("columnar_invalid_streaming.nxb"), &inv_stream).unwrap();
+    fs::write(
+        out_path.join("columnar_invalid_streaming.expected.json"),
+        &inv_stream_json,
+    )
+    .unwrap();
 
     println!(
         "\nAll conformance vectors written to: {}",

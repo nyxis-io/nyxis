@@ -21,6 +21,35 @@ const MAGIC_FILE: u32 = 0x4E59_5842; // NYXB
 const MAGIC_OBJ: u32 = 0x4E59_584F; // NYXO
 const MAGIC_FOOTER: u32 = 0x2153_584E;
 const FLAG_SCHEMA_EMBEDDED: u16 = 0x0002;
+const FLAG_COLUMNAR: u16 = 0x0001;
+const FLAG_PAX: u16 = 0x0004;
+
+/// Data-sector layout (OLAP.md).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Layout {
+    Row,
+    Columnar,
+    Pax,
+}
+
+fn footer_size(flags: u16) -> usize {
+    if flags & FLAG_PAX != 0 {
+        28
+    } else if flags & FLAG_COLUMNAR != 0 {
+        20
+    } else {
+        12
+    }
+}
+
+fn null_bitmap_bytes(n: usize) -> usize {
+    let raw = (n + 7) / 8;
+    (raw + 7) & !7
+}
+
+fn col_bit(bm: &[u8], rec: usize) -> bool {
+    (bm[rec / 8] >> (rec % 8)) & 1 == 1
+}
 
 // ── Reader ────────────────────────────────────────────────────────────────────
 
@@ -33,6 +62,9 @@ pub struct Reader<'a> {
     key_index: std::collections::HashMap<String, usize>,
     record_count: usize,
     tail_start: usize,
+    layout: Layout,
+    col_buf_off: Vec<u64>,
+    col_buf_len: Vec<u64>,
 }
 
 impl<'a> Reader<'a> {
@@ -56,18 +88,13 @@ impl<'a> Reader<'a> {
         }
 
         let flags = u16::from_le_bytes(data[6..8].try_into().map_err(|_| NxsError::OutOfBounds)?);
-        let mut tail_ptr =
-            u64::from_le_bytes(data[16..24].try_into().map_err(|_| NxsError::OutOfBounds)?)
-                as usize;
-        if tail_ptr == 0 {
-            if data.len() < 44 {
-                return Err(NxsError::OutOfBounds);
-            }
-            tail_ptr = u64::from_le_bytes(
-                data[data.len() - 12..data.len() - 4]
-                    .try_into()
-                    .map_err(|_| NxsError::OutOfBounds)?,
-            ) as usize;
+        if flags & FLAG_COLUMNAR != 0 && flags & FLAG_PAX != 0 {
+            return Err(NxsError::InvalidFlags);
+        }
+        let preamble_tail =
+            u64::from_le_bytes(data[16..24].try_into().map_err(|_| NxsError::OutOfBounds)?);
+        if flags & FLAG_COLUMNAR != 0 && preamble_tail == 0 {
+            return Err(NxsError::IncompatibleFlags);
         }
 
         let (keys, key_sigils, _schema_end) = if flags & FLAG_SCHEMA_EMBEDDED != 0 {
@@ -82,12 +109,63 @@ impl<'a> Reader<'a> {
             .map(|(i, k)| (k.clone(), i))
             .collect();
 
-        if tail_ptr + 4 > data.len() {
-            return Err(NxsError::OutOfBounds);
-        }
-        let record_count =
-            u32::from_le_bytes(data[tail_ptr..tail_ptr + 4].try_into().unwrap()) as usize;
-        let tail_start = tail_ptr + 4;
+        let (layout, record_count, tail_start, col_buf_off, col_buf_len) =
+            if flags & FLAG_COLUMNAR != 0 {
+                let footer = footer_size(flags);
+                let fo = data.len() - footer;
+                let tail_ptr = u64::from_le_bytes(
+                    data[fo..fo + 8].try_into().map_err(|_| NxsError::OutOfBounds)?,
+                ) as usize;
+                let record_count = u64::from_le_bytes(
+                    data[fo + 8..fo + 16]
+                        .try_into()
+                        .map_err(|_| NxsError::OutOfBounds)?,
+                ) as usize;
+                let kc = keys.len();
+                let mut off = vec![0u64; kc];
+                let mut len = vec![0u64; kc];
+                for i in 0..kc {
+                    let e = tail_ptr + i * 20;
+                    off[i] = u64::from_le_bytes(
+                        data[e + 4..e + 12].try_into().map_err(|_| NxsError::OutOfBounds)?,
+                    );
+                    len[i] = u64::from_le_bytes(
+                        data[e + 12..e + 20].try_into().map_err(|_| NxsError::OutOfBounds)?,
+                    );
+                }
+                (Layout::Columnar, record_count, tail_ptr, off, len)
+            } else if flags & FLAG_PAX != 0 {
+                let footer = footer_size(flags);
+                let fo = data.len() - footer;
+                let tail_ptr = u64::from_le_bytes(
+                    data[fo..fo + 8].try_into().map_err(|_| NxsError::OutOfBounds)?,
+                ) as usize;
+                let record_count = u64::from_le_bytes(
+                    data[fo + 8..fo + 16]
+                        .try_into()
+                        .map_err(|_| NxsError::OutOfBounds)?,
+                ) as usize;
+                (Layout::Pax, record_count, tail_ptr, vec![], vec![])
+            } else {
+                let mut tail_ptr = preamble_tail as usize;
+                if tail_ptr == 0 {
+                    if data.len() < 44 {
+                        return Err(NxsError::OutOfBounds);
+                    }
+                    tail_ptr = u64::from_le_bytes(
+                        data[data.len() - 12..data.len() - 4]
+                            .try_into()
+                            .map_err(|_| NxsError::OutOfBounds)?,
+                    ) as usize;
+                }
+                if tail_ptr + 4 > data.len() {
+                    return Err(NxsError::OutOfBounds);
+                }
+                let record_count =
+                    u32::from_le_bytes(data[tail_ptr..tail_ptr + 4].try_into().unwrap())
+                        as usize;
+                (Layout::Row, record_count, tail_ptr + 4, vec![], vec![])
+            };
 
         Ok(Self {
             data,
@@ -96,7 +174,175 @@ impl<'a> Reader<'a> {
             key_index,
             record_count,
             tail_start,
+            layout,
+            col_buf_off,
+            col_buf_len,
         })
+    }
+
+    /// Row, columnar, or PAX layout.
+    pub fn layout(&self) -> Layout {
+        self.layout
+    }
+
+    /// Sum `key` as f64 across all records (uses column buffers when columnar/PAX).
+    pub fn col_sum_f64(&self, key: &str) -> Option<f64> {
+        let slot = self.slot(key)?;
+        match self.layout {
+            Layout::Row => {
+                let mut sum = 0.0;
+                let mut any = false;
+                for rec in self.all() {
+                    if let Some(v) = rec.get_f64(key) {
+                        sum += v;
+                        any = true;
+                    }
+                }
+                any.then_some(sum)
+            }
+            Layout::Columnar => {
+                let (bm, vals) = self.col_field_parts(slot).ok()?;
+                Some(crate::col_reduce::sum_f64_column(
+                    vals,
+                    bm,
+                    self.record_count,
+                ))
+            }
+            Layout::Pax => {
+                let mut sum = 0.0;
+                for i in 0..self.record_count {
+                    if let Some(v) = self.pax_get_f64(i, slot) {
+                        sum += v;
+                    }
+                }
+                Some(sum)
+            }
+        }
+    }
+
+    /// Zero-copy slice of a column's value buffer (columnar only).
+    pub fn col_buffer(&self, key: &str) -> Option<&[u8]> {
+        if self.layout != Layout::Columnar {
+            return None;
+        }
+        let slot = self.slot(key)?;
+        let (_, vals) = self.col_field_parts(slot).ok()?;
+        Some(vals)
+    }
+
+    fn pax_get_f64(&self, record_index: usize, slot: usize) -> Option<f64> {
+        let mut lo = 0i32;
+        let mut hi = self.page_count().saturating_sub(1) as i32;
+        let mut page_idx: Option<usize> = None;
+        while lo <= hi {
+            let mid = ((lo + hi) / 2) as usize;
+            let start = self.pax_page_rec_start(mid)?;
+            let count = self.pax_page_rec_count(mid)?;
+            if (record_index as u64) < start {
+                hi = mid as i32 - 1;
+            } else if record_index >= start as usize + count as usize {
+                lo = mid as i32 + 1;
+            } else {
+                page_idx = Some(mid);
+                break;
+            }
+        }
+        let pi = page_idx?;
+        let local = record_index - self.pax_page_rec_start(pi)? as usize;
+        let (bm, vals) = self.pax_page_field_parts(pi, slot).ok()?;
+        if !col_bit(bm, local) {
+            return None;
+        }
+        let off = local * 8;
+        Some(f64::from_le_bytes(
+            vals.get(off..off + 8)?.try_into().ok()?,
+        ))
+    }
+
+    fn page_count(&self) -> usize {
+        if self.layout != Layout::Pax {
+            return 0;
+        }
+        let tp = self.tail_start;
+        if tp + 4 > self.data.len() {
+            return 0;
+        }
+        // page count stored in footer; re-read from footer
+        let fo = self.data.len() - footer_size(FLAG_PAX);
+        u32::from_le_bytes(self.data[fo + 16..fo + 20].try_into().unwrap_or([0; 4])) as usize
+    }
+
+    fn pax_page_rec_start(&self, page_idx: usize) -> Option<u64> {
+        let e = self.tail_start + page_idx * 28;
+        Some(u64::from_le_bytes(
+            self.data.get(e + 4..e + 12)?.try_into().ok()?,
+        ))
+    }
+
+    fn pax_page_rec_count(&self, page_idx: usize) -> Option<u32> {
+        let e = self.tail_start + page_idx * 28;
+        Some(u32::from_le_bytes(
+            self.data.get(e + 12..e + 16)?.try_into().ok()?,
+        ))
+    }
+
+    fn pax_page_field_parts(&self, page_idx: usize, slot: usize) -> Result<(&[u8], &[u8])> {
+        const MAGIC_PAGE: u32 = 0x4E58_5350;
+        let e = self.tail_start + page_idx * 28;
+        let poff = u64::from_le_bytes(
+            self.data.get(e + 16..e + 24)
+                .ok_or(NxsError::OutOfBounds)?
+                .try_into()
+                .map_err(|_| NxsError::OutOfBounds)?,
+        ) as usize;
+        if poff + 24 > self.data.len() {
+            return Err(NxsError::OutOfBounds);
+        }
+        if u32::from_le_bytes(self.data[poff..poff + 4].try_into().map_err(|_| NxsError::OutOfBounds)?)
+            != MAGIC_PAGE
+        {
+            return Err(NxsError::InvalidPageMagic);
+        }
+        let field_count = u16::from_le_bytes(
+            self.data[poff + 20..poff + 22]
+                .try_into()
+                .map_err(|_| NxsError::OutOfBounds)?,
+        ) as usize;
+        let rc = u32::from_le_bytes(
+            self.data[poff + 16..poff + 20]
+                .try_into()
+                .map_err(|_| NxsError::OutOfBounds)?,
+        ) as usize;
+        let mut body = poff + 24;
+        for fi in 0..slot {
+            let bm_len = null_bitmap_bytes(rc);
+            body += bm_len + rc * 8;
+            if fi >= field_count {
+                break;
+            }
+        }
+        let bm_len = null_bitmap_bytes(rc);
+        if body + bm_len + rc * 8 > self.data.len() {
+            return Err(NxsError::OutOfBounds);
+        }
+        Ok((
+            &self.data[body..body + bm_len],
+            &self.data[body + bm_len..body + bm_len + rc * 8],
+        ))
+    }
+
+    fn col_field_parts(&self, slot: usize) -> Result<(&[u8], &[u8])> {
+        let off = *self.col_buf_off.get(slot).ok_or(NxsError::OutOfBounds)? as usize;
+        let len = *self.col_buf_len.get(slot).ok_or(NxsError::OutOfBounds)? as usize;
+        if off + len > self.data.len() {
+            return Err(NxsError::OutOfBounds);
+        }
+        let bm_len = null_bitmap_bytes(self.record_count);
+        if len < bm_len {
+            return Err(NxsError::OutOfBounds);
+        }
+        let sector = &self.data[off..off + len];
+        Ok((&sector[..bm_len], &sector[bm_len..]))
     }
 
     /// Number of top-level records in the file.
@@ -124,13 +370,16 @@ impl<'a> Reader<'a> {
         if i >= self.record_count {
             return None;
         }
-        let entry = self.tail_start + i * 10;
-        let abs =
-            u64::from_le_bytes(self.data.get(entry + 2..entry + 10)?.try_into().ok()?) as usize;
+        let offset = if self.layout == Layout::Row {
+            let entry = self.tail_start + i * 10;
+            u64::from_le_bytes(self.data.get(entry + 2..entry + 10)?.try_into().ok()?) as usize
+        } else {
+            i
+        };
         Some(Record {
             data: self.data,
             reader: self,
-            offset: abs,
+            offset,
         })
     }
 
@@ -181,6 +430,20 @@ impl<'data, 'reader> Record<'data, 'reader> {
     /// Read an `f64` field.
     pub fn get_f64(&self, key: &str) -> Option<f64> {
         let slot = self.reader.slot(key)?;
+        if self.reader.layout == Layout::Columnar {
+            let ri = self.offset;
+            let (bm, vals) = self.reader.col_field_parts(slot).ok()?;
+            if !col_bit(bm, ri) {
+                return None;
+            }
+            let off = ri * 8;
+            return Some(f64::from_le_bytes(
+                vals.get(off..off + 8)?.try_into().ok()?,
+            ));
+        }
+        if self.reader.layout == Layout::Pax {
+            return self.reader.pax_get_f64(self.offset, slot);
+        }
         let off = self.resolve(slot)?;
         Some(f64::from_le_bytes(
             self.data.get(off..off + 8)?.try_into().ok()?,
@@ -713,5 +976,23 @@ mod tests {
         let r = Reader::new(&data).unwrap();
         let rec = r.record(0).unwrap();
         assert_eq!(rec.get_str_path("no.such.path"), None);
+    }
+
+    #[test]
+    fn columnar_conformance_vector_col_sum() {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../conformance/columnar_flat8_dense_100.nxb");
+        let data = match std::fs::read(&path) {
+            Ok(d) => d,
+            Err(_) => return,
+        };
+        let r = Reader::new(&data).unwrap();
+        assert_eq!(r.layout(), Layout::Columnar);
+        assert_eq!(r.record_count(), 100);
+        let sum = r.col_sum_f64("score").unwrap();
+        let want: f64 = (0..100).map(|i| i as f64 * 0.5).sum();
+        assert!((sum - want).abs() < 1e-9, "sum {sum} want {want}");
+        let buf = r.col_buffer("score").unwrap();
+        assert_eq!(buf.len(), 100 * 8);
     }
 }

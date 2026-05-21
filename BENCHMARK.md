@@ -7,7 +7,7 @@ Hardware: Apple M-series (arm64), macOS. All runs against locally-served fixture
 
 <!-- BENCH-PUBLICATION-SUMMARY -->
 
-> These benchmarks cover four workloads: sparse record density and selective access (A), zero-copy warm access and scan (B), dense columnar analytics (C), and streaming ingest time-to-first-record (D). All results are macOS dev runs; Linux + inotify results are pending. NXS leads zero-copy peers on warm selective access (sub-microsecond with C driver vs Cap'n Proto ~3 µs and FlatBuffers ~8 µs), TTFR at P50/P95 in the batched streaming configuration, and file size at 50%+ field population. NXS loses on cold open vs Cap'n Proto and FlatBuffers, on file size at low population rates vs FlatBuffers, and on columnar analytics vs Arrow by orders of magnitude — the Arrow bridge is the correct tool for that workload. Protobuf results are shown as a post-parse reference; their access and scan times are not comparable to zero-copy measurements.
+> These benchmarks cover four workloads: sparse record density and selective access (A), zero-copy warm access and scan (B), dense columnar analytics (C), and streaming ingest time-to-first-record (D). All results are macOS dev runs; Linux x86_64 results are pending. NXS leads zero-copy peers on warm selective access (sub-microsecond with C driver vs Cap'n Proto ~3 µs and FlatBuffers ~8 µs), TTFR at P50 in the batched streaming configuration, and file size at 50%+ field population. **NXS columnar layout** (`FLAG_COLUMNAR`, SIMD dense `sum_f64`) reaches **at parity with Arrow IPC** on dense 1M scan (107 µs vs 104 µs P50, Apple Silicon). **NXS row layout** remains **112× slower than Arrow** on the same workload (11.7 ms) — use columnar or the Arrow bridge for dense analytics. NXS loses on cold open vs Cap'n Proto and FlatBuffers, on file size at low population vs FlatBuffers, and on columnar file size vs Arrow (~15% larger at 1M). Protobuf results are post-parse references; access and scan times are not comparable to zero-copy measurements.
 <!-- BENCH-PUBLICATION-SUMMARY -->
 
 ---
@@ -489,7 +489,7 @@ NXS is not a drop-in replacement for JSON everywhere. It is the right choice whe
 
 <!-- BENCH-SUITE-FROZEN:START -->
 
-> These benchmarks cover four workloads: sparse record density and selective access (A), zero-copy warm access and scan (B), dense columnar analytics (C), and streaming ingest time-to-first-record (D). All results are macOS dev runs; Linux + inotify results are pending. NXS leads zero-copy peers on warm selective access (sub-microsecond with C driver vs Cap'n Proto ~3 µs and FlatBuffers ~8 µs), TTFR at P50/P95 in the batched streaming configuration, and file size at 50%+ field population. NXS loses on cold open vs Cap'n Proto and FlatBuffers, on file size at low population rates vs FlatBuffers, and on columnar analytics vs Arrow by orders of magnitude — the Arrow bridge is the correct tool for that workload. Protobuf results are shown as a post-parse reference; their access and scan times are not comparable to zero-copy measurements.
+> These benchmarks cover four workloads: sparse record density and selective access (A), zero-copy warm access and scan (B), dense columnar analytics (C), and streaming ingest time-to-first-record (D). All results are macOS dev runs; Linux x86_64 results are pending. NXS leads zero-copy peers on warm selective access (sub-microsecond with C driver vs Cap'n Proto ~3 µs and FlatBuffers ~8 µs), TTFR at P50 in the batched streaming configuration, and file size at 50%+ field population. **NXS columnar layout** (`FLAG_COLUMNAR`, SIMD dense `sum_f64`) reaches **at parity with Arrow IPC** on dense 1M scan (107 µs vs 104 µs P50, Apple Silicon). **NXS row layout** remains **112× slower than Arrow** on the same workload (11.7 ms) — use columnar or the Arrow bridge for dense analytics. NXS loses on cold open vs Cap'n Proto and FlatBuffers, on file size at low population vs FlatBuffers, and on columnar file size vs Arrow (~15% larger at 1M). Protobuf results are post-parse references; access and scan times are not comparable to zero-copy measurements.
 
 <a id="workload-comparison-suite"></a>
 
@@ -576,16 +576,36 @@ _NXS scan (`driver=c`): C `nxs_sum_f64` on flat-8 schema (~25 µs at 10k dev mac
 
 ### Workload C: Dense analytical reducer
 
+Workload C measures **sum of `score` (f64)** over a dense 8-field schema. Arrow uses `pyarrow.compute.sum` on a cached table (scan only). NXS row uses per-record traversal; NXS columnar uses `col_sum_f64` with runtime SIMD (NEON on Apple Silicon, AVX2 on x86_64).
 
-**Workload C — columnar vs row-oriented (Arrow required)**
+**Workload C — 10k records (frozen matrix)**
 
 | Format | open | scan | size |
 | --- | --- | --- | --- |
 | arrow | 87.1 µs | 3.0 µs | 0.56 MB |
-| nxs | 23.0 µs | 8.54 ms | 1.06 MB |
+| nxs (row) | 23.0 µs | 8.54 ms | 1.06 MB |
 | capnp | 1.6 µs | 2.86 ms | 0.64 MB |
 
-_Arrow wins columnar scan by orders of magnitude — the expected architectural result. Route dense analytics to Arrow (NXS Arrow bridge for ingest). NXS and Cap'n Proto are row-oriented; scan reflects per-record traversal, not batch column ops._
+_At 10k, Arrow columnar scan still wins on row-oriented NXS by orders of magnitude — expected for row vs columnar layouts._
+
+
+**Workload C — 1M records, Apple Silicon (columnar validation)**
+
+| Format | scan P50 | size | notes |
+| --- | --- | --- | --- |
+| arrow (IPC, cached table) | **104 µs** | 54 MB | `pc.sum` on loaded column |
+| nxs columnar (`col_sum_f64`, SIMD) | **107 µs** | 62 MB | Rust harness; reopen reader each sample |
+| nxs row (`SumF64` / per-record) | **11.7 ms** | 101 MB | 112× slower than Arrow — wrong layout for this workload |
+
+_Columnar NXS reaches **at parity with Arrow IPC** on dense scan after open-core SIMD (`col_reduce`). Row layout is not competitive for this workload. Columnar files are ~15% larger than Arrow IPC (tail-index + per-field null bitmaps). Linux x86_64 columnar scan pending AVX-512 dispatch verification._
+
+Reproduce 1M columnar:
+
+```bash
+cd nyxis/bench/harness/rust && cargo run --release -- \
+  --workload C --records 1000000 --metric scan --layout columnar \
+  --data-dir ../../data/bin
+```
 
 
 **Workload C — Protobuf (post-parse reference)**
@@ -642,7 +662,8 @@ _**throughput**: sustained rec/s from first complete record to last while the wr
 - NXS streaming **TTFR** leads at P50/P95 on this frozen batched run (n=1000, flush_every=100)
 - P99 TTFR vs Cap'n Proto **conflicts across flush policies** on macOS — do not claim a P99 win until Linux Q1
 - NXS sustained streaming throughput is in the same band as Protobuf and Cap'n Proto (~25k rec/s)
-- **Arrow** wins columnar scan by orders of magnitude — use the Arrow bridge for analytics
+- **NXS columnar** dense scan at **1M records is at parity with Arrow IPC** on Apple Silicon (107 µs vs 104 µs P50)
+- **NXS row** dense scan is **112× slower than Arrow** at 1M — use `columnar` layout or the Arrow bridge
 - NXS is the only format here with native file-level streaming **and** post-seal O(1) random access
 
 
@@ -650,7 +671,8 @@ _**throughput**: sustained rec/s from first complete record to last while the wr
 
 - NXS file size wins at low population (FlatBuffers leads at 10–25%)
 - NXS cold open vs Cap'n Proto / FlatBuffers at small files
-- NXS scan vs Arrow without noting row-oriented vs columnar design
+- Claiming NXS row layout competes with Arrow on dense columnar scan
+- Linux x86_64 columnar parity until AVX-512 path is verified on bare metal
 - Any NXS vs Protobuf claim on access/scan/selective without the post-parse footnote
 
 

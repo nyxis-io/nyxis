@@ -5,7 +5,7 @@
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Nyxis — Zero-Copy Binary Serialization Protocol</title>
-<meta name="description" content="Nyxis (NXS) is a zero-copy binary serialization protocol: sigil-typed .nxs source, memory-mapped .nxb wire format, tail-index random access, streamable v1.1 sealing and append-only WALs, and ten MIT language drivers.">
+<meta name="description" content="Nyxis (NXS): row, columnar, and PAX .nxb layouts. 142 µs streaming TTFR, columnar scan at parity with Arrow IPC on Apple Silicon, sub-µs warm access. Public benchmark suite vs Protobuf, FlatBuffers, Cap'n Proto, and Arrow.">
 <script src="/demo/theme-init.js"></script>
 <link rel="stylesheet" href="/demo/theme.css">
 </head>
@@ -15,16 +15,17 @@
 <section class="landing-hero">
   <div class="hero-inner">
     <p class="page-eyebrow">Zero-copy binary serialization</p>
-    <h1 class="page-title">Resolve any record offset in under 2&nbsp;µs</h1>
+    <h1 class="page-title">Zero-copy binary format with three layouts for three workloads</h1>
     <p class="hero-v8-link">
       <a href="/use-cases/#v8-limits">Learn why <code>JSON.parse()</code> crashes on 512&nbsp;MB datasets →</a>
     </p>
     <p class="page-lead">
       Nyxis is an infrastructure serialization standard — not application software. Human-readable <code>.nxs</code> compiles to
       memory-mapped <code>.nxb</code> you query by tail-index, without <code>JSON.parse()</code> or full-file decode passes.
-      <strong>Header + tail-index mapping</strong> resolves any record offset in under 2&nbsp;µs, independent of file size; warm field access is
-      sub-microsecond on the C driver (see <a href="../BENCHMARK.md#workload-comparison-suite">benchmarks</a>).
-      v1.1 adds <strong>streamable sealing</strong>: emit schema and records incrementally, then seal the tail-index in the footer when the segment is complete.
+      <strong>Row layout:</strong> 142&nbsp;µs time-to-first-record (streaming, P50).
+      <strong>Columnar layout:</strong> at parity with Arrow IPC on dense scan (Apple Silicon).
+      <strong>PAX layout:</strong> both, in the same file (Phase 2, in development).
+      v1.1 adds <strong>streamable sealing</strong>: emit schema and records incrementally, then seal the tail-index when the segment is complete.
     </p>
     <div class="landing-actions">
       <a class="btn btn-primary" href="/demo/">Try live demos</a>
@@ -54,21 +55,54 @@
 
 <div class="stat-row">
   <div class="stat">
-    <div class="value">&lt;1&nbsp;µs</div>
-    <div class="label">Warm selective read — C driver, 10k sparse records (<a href="../BENCHMARK.md#workload-a">A</a>)</div>
-  </div>
-  <div class="stat">
     <div class="value">142&nbsp;µs</div>
-    <div class="label">Streaming TTFR P50 — batched flush, n=1000 (<a href="../BENCHMARK.md#workload-d">D</a>)</div>
+    <div class="label">Row TTFR P50 — streaming ingest (<a href="../BENCHMARK.md#workload-d">D</a>)</div>
   </div>
   <div class="stat">
-    <div class="value">~2800×</div>
-    <div class="label">Arrow columnar scan vs NXS — route analytics to Arrow (<a href="../BENCHMARK.md#workload-c">C</a>)</div>
+    <div class="value">107&nbsp;µs</div>
+    <div class="label">Columnar scan P50 — at parity with Arrow at 1M (<a href="../BENCHMARK.md#workload-c">C</a>)</div>
+  </div>
+  <div class="stat">
+    <div class="value">&lt;1&nbsp;µs</div>
+    <div class="label">Warm selective read — C driver, sparse schema (<a href="../BENCHMARK.md#workload-a">A</a>)</div>
   </div>
 </div>
 <p class="page-lead" style="margin: -8px 0 32px; font-size: 14px; text-align: center; max-width: 52rem; margin-left: auto; margin-right: auto;">
-  macOS dev dataset, 10k records — <a href="../BENCHMARK.md#workload-comparison-suite">full tables &amp; methodology</a> · Linux + inotify pending.
+  macOS Apple Silicon — <a href="../BENCHMARK.md#workload-comparison-suite">full tables &amp; methodology</a> · Linux x86_64 pending.
 </p>
+
+<section class="landing-section">
+  <h2>Three layouts, three workloads</h2>
+  <p class="page-lead" style="margin-bottom: 0;">
+    Choose <code>row</code>, <code>columnar</code>, or <code>pax</code> at compile time — not one size fits all.
+    <a href="/use-cases/#bounds">Layout selection guide →</a>
+  </p>
+  <div class="layout-compare-grid">
+    <div class="bimodal-col">
+      <h3>Row (<code>.nxb</code>)</h3>
+      <p class="layout-metric">Stream records as they arrive.
+Sub-µs warm access after seal.
+O(1) seek via tail-index.</p>
+      <p class="layout-use"><strong>142&nbsp;µs TTFR P50</strong> (Workload D)<br>
+Virtual scroll · log explorers · APM traces</p>
+    </div>
+    <div class="bimodal-col">
+      <h3>Columnar (<code>.nxb</code>)</h3>
+      <p class="layout-metric">Field buffers for charts and analytics.
+~0.6&nbsp;µs open cost.
+No per-record traversal for aggregates.</p>
+      <p class="layout-use"><strong>At parity with Arrow IPC</strong> on dense scan (Workload C)<br>
+Chart rendering · OLAP · export pipelines<br>
+<a href="/demo/report.html">Try on your CSV →</a></p>
+    </div>
+    <div class="bimodal-col">
+      <h3>PAX (<code>.nxb</code>) — coming</h3>
+      <p class="layout-metric">Pages stream as they fill; sealed file supports both access patterns in one artifact.</p>
+      <p class="layout-use">Reporting dashboards · mixed scroll + charts<br>
+Phase 2 — in development</p>
+    </div>
+  </div>
+</section>
 
 <section class="landing-section">
   <h2>Bimodal wire format</h2>
@@ -106,7 +140,23 @@
       <strong>Streamable</strong>
       <span>v1.1 writers stream records before the tail-index exists; append-only WAL mode seals to indexed <code>.nxb</code> on demand.</span>
     </li>
+    <li>
+      <strong>AI-native</strong>
+      <span>The included MCP server exposes NXS files as typed tools for AI agents — the only binary serialization format with native AI agent access.</span>
+    </li>
   </ul>
+</section>
+
+<section class="landing-section">
+  <h2>Benchmarks</h2>
+  <p class="page-lead" style="margin: 0;">
+    Performance claims on this page are backed by a public benchmark suite covering four workloads against Protobuf,
+    FlatBuffers, Cap'n Proto, and Apache Arrow. Results include honest losses: columnar files are ~15% larger than Arrow
+    IPC at 1M records; row-oriented cold open trails FlatBuffers and Cap'n Proto on small files; dense analytics on
+    row layout are 112× slower than Arrow — use <code>columnar</code> or the Arrow bridge. Full methodology, raw data,
+    and reproduction instructions: <a href="../BENCHMARK.md#workload-comparison-suite">BENCHMARK.md</a>.
+    Interactive charts: <a href="/bench/">browser bench</a>.
+  </p>
 </section>
 
 <section class="landing-section" id="streaming">

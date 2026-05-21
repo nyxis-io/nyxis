@@ -42,6 +42,14 @@ name = "conformance_runner"
 path = "../conformance/run_rust.rs"
 
 [[bin]]
+name = "bench_columnar"
+path = "src/bin/bench_columnar.rs"
+
+[[bin]]
+name = "profile_columnar"
+path = "src/bin/profile_columnar.rs"
+
+[[bin]]
 name = "nxs-trace"
 path = "src/bin/nxs_trace.rs"
 

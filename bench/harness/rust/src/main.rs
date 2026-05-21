@@ -27,6 +27,9 @@ struct Args {
     data_dir: PathBuf,
     #[arg(long)]
     path: Option<PathBuf>,
+    /// Workload C scan: `row` (per-record) vs `columnar` (`col_sum_f64` on columnar `.nxb`).
+    #[arg(long, default_value = "row")]
+    layout: String,
 }
 
 #[derive(Serialize)]
@@ -49,6 +52,14 @@ struct Line<'a> {
     population: f64,
 }
 
+fn output_format(args: &Args) -> &str {
+    if args.workload.eq_ignore_ascii_case("C") && args.layout == "columnar" {
+        "nxs_columnar"
+    } else {
+        "nxs"
+    }
+}
+
 fn default_path(args: &Args) -> PathBuf {
     if let Some(p) = &args.path {
         return p.clone();
@@ -58,6 +69,11 @@ fn default_path(args: &Args) -> PathBuf {
         let pct = (args.population * 100.0).round() as u32;
         args.data_dir.join(format!(
             "workload_{wl}_nxs_{}_pop{pct:02}.nxb",
+            args.records
+        ))
+    } else if wl == "C" && args.layout == "columnar" {
+        args.data_dir.join(format!(
+            "workload_{wl}_nxs_columnar_{}.nxb",
             args.records
         ))
     } else {
@@ -96,9 +112,10 @@ fn main() {
     let path = default_path(&args);
     if args.metric == "size" {
         let meta = fs::metadata(&path).expect("stat");
+        let fmt = output_format(&args);
         let line = Line {
             workload: &args.workload,
-            format: "nxs",
+            format: fmt,
             records: args.records,
             metric: "size",
             driver: "rust",
@@ -148,17 +165,22 @@ fn main() {
             print_line(&args, p50, p99, iqr);
         }
         "scan" => {
+            let col_scan = args.layout == "columnar";
             let (p50, p99, iqr) = measure(|| {
                 let r = Reader::new(&data).expect("open");
-                let mut sum = 0.0f64;
-                for i in 0..r.record_count() {
-                    if let Some(rec) = r.record(i) {
-                        if let Some(v) = rec.get_f64(field) {
-                            sum += v;
+                if col_scan {
+                    std::hint::black_box(r.col_sum_f64(field).unwrap());
+                } else {
+                    let mut sum = 0.0f64;
+                    for i in 0..r.record_count() {
+                        if let Some(rec) = r.record(i) {
+                            if let Some(v) = rec.get_f64(field) {
+                                sum += v;
+                            }
                         }
                     }
+                    std::hint::black_box(sum);
                 }
-                std::hint::black_box(sum);
             });
             print_line(&args, p50, p99, iqr);
         }
@@ -207,7 +229,7 @@ fn main() {
 fn print_line(args: &Args, p50: i64, p99: i64, iqr: i64) {
     let line = Line {
         workload: &args.workload,
-        format: "nxs",
+        format: output_format(args),
         records: args.records,
         metric: &args.metric,
         driver: "rust",

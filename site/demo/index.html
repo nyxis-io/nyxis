@@ -30,6 +30,9 @@
       <a href="explorer.html">Log explorer<span class="meta">Large “log line” grid backed by <code>.nxb</code> — virtual scroll, jump-to-line, search — without rendering millions of DOM nodes.</span><span class="detail"><strong>What is tested:</strong> Scrolling and seeking through very large record counts (title uses ~10M lines) using a fixed row pool, a scaled inner spacer, and mapping scroll position to NXS record indices for zero-copy-style field reads (timestamp, component, message, score, flag). Exercises keyboard navigation, in-viewport row reuse, and whether the UI stays smooth while random-accessing the binary tail-index.</span></a>
     </li>
     <li>
+      <a href="report.html">Report layout<span class="meta">Your CSV → row + columnar <code>.nxb</code> in the browser; three real operations plus a chart from <code>col_buffer</code>.</span><span class="detail"><strong>What this is:</strong> Not a benchmark page — upload or paste data, see which layout fits streaming vs sum vs random access, and render a chart from columnar field buffers (Chart.js). Answers “which layout do I use for my report?” on your own numbers.</span></a>
+    </li>
+    <li>
       <a href="wal.html">WAL / spans<span class="meta">OTel-style span ingestion — append-only WAL vs JSON payloads.</span></a>
     </li>
   </ul>

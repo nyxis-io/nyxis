@@ -18,6 +18,7 @@
     { id: "ticker", label: "Ticker", href: "/demo/ticker.html" },
     { id: "workers", label: "Workers", href: "/demo/workers.html" },
     { id: "explorer", label: "Explorer", href: "/demo/explorer.html" },
+    { id: "report", label: "Report", href: "/demo/report.html" },
     { id: "wal", label: "WAL", href: "/demo/wal.html" },
   ];
 

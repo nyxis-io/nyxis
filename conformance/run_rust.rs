@@ -313,6 +313,11 @@ fn run_negative(dir: &Path, name: &str, expected_code: &str) -> Result<(), Strin
                 NxsError::BadMagic => "ERR_BAD_MAGIC",
                 NxsError::OutOfBounds => "ERR_OUT_OF_BOUNDS",
                 NxsError::DictMismatch => "ERR_DICT_MISMATCH",
+                NxsError::InvalidFlags => "ERR_INVALID_FLAGS",
+                NxsError::IncompatibleFlags => "ERR_INCOMPATIBLE_FLAGS",
+                NxsError::UnsupportedLayout => "ERR_UNSUPPORTED_LAYOUT",
+                NxsError::UnsupportedFieldType => "ERR_UNSUPPORTED_FIELD_TYPE",
+                NxsError::InvalidPageMagic => "ERR_INVALID_PAGE_MAGIC",
                 _ => "ERR_UNKNOWN",
             };
             if code != expected_code {
