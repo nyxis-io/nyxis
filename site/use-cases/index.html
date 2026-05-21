@@ -48,6 +48,7 @@
         <li><a href="#access-logs">NGINX &amp; API gateway log viewers</a></li>
         <li><a href="#web-workers">Web Worker zero-copy handoffs</a></li>
         <li><a href="#apm-traces">APM trace &amp; span explorers</a></li>
+        <li><a href="#reporting">Large report &amp; data export viewers</a></li>
         <li><a href="#llm-tracing">LLM generation tracing &amp; observability</a></li>
         <li><a href="#mcp">MCP agent tools &amp; servers</a></li>
         <li><a href="#hft-wal">HFT &amp; event-streaming WALs</a></li>
@@ -214,35 +215,47 @@
         </table>
       </div>
 
-      <h3>Workload suite results (macOS dev, 10k records)</h3>
+      <h3>Benchmark results</h3>
       <p>
-        Frozen dataset: <code>bench/results/2026-05-21_mmalta/</code> — full tables, footnotes, and reproduction steps in
-        <a href="../BENCHMARK.md#workload-comparison-suite">BENCHMARK.md</a> (harness under <code>bench/</code>).
-        Linux + inotify runs are pending; relative orderings below are unlikely to reverse.
+        Four workloads, run against Protobuf v3, FlatBuffers, Cap'n Proto, and Apache Arrow.
+        macOS Apple Silicon; Linux x86_64 results pending.
+        Full methodology and raw data: <a href="../BENCHMARK.md#workload-comparison-suite">BENCHMARK.md</a>.
       </p>
-      <ul class="benchmark-workloads">
-        <li>
-          <strong><a href="../BENCHMARK.md#workload-a">Workload A</a> — sparse records (C driver for NXS selective):</strong>
-          File size: NXS competitive with FlatBuffers at 50%+ population; FlatBuffers leads at low population; Protobuf smallest overall.
-          Selective read: NXS sub-microsecond (C driver); Cap'n Proto ~3&nbsp;µs; FlatBuffers ~8&nbsp;µs.
-        </li>
-        <li>
-          <strong><a href="../BENCHMARK.md#workload-b">Workload B</a> — warm access (10k flat-8):</strong>
-          NXS warm access: sub-microsecond (C driver, warm page cache at 1.3&nbsp;MB).
-          Cap'n Proto: 1.7&nbsp;µs access; FlatBuffers: 3.4&nbsp;µs.
-          NXS open/access at &lt;1&nbsp;µs on this file size reflects warm cache — cold header + tail-index mapping is ~25&nbsp;µs on ~1.5&nbsp;GB (see BENCHMARK.md).
-        </li>
-        <li>
-          <strong><a href="../BENCHMARK.md#workload-c">Workload C</a> — dense analytics:</strong>
-          Arrow wins columnar scan by ~2800× (3.0&nbsp;µs vs 8.54&nbsp;ms NXS) — use the Arrow bridge.
-          NXS and Cap'n Proto are row-oriented; dense scan reflects per-record traversal, not columnar batch operations.
-        </li>
-        <li>
-          <strong><a href="../BENCHMARK.md#workload-d">Workload D</a> — streaming TTFR (n=1000, batched flush):</strong>
-          NXS: 142&nbsp;µs P50, 437&nbsp;µs P99 · Cap'n Proto: 209&nbsp;µs P50, 583&nbsp;µs P99 · Protobuf: 214&nbsp;µs P50, 696&nbsp;µs P99.
-          FlatBuffers: no native file-level streaming. P99 ordering vs Cap'n Proto varies by flush policy — Linux Q1 pending.
-        </li>
-      </ul>
+
+      <h4>Workload A — sparse records (50-field schema, C driver)</h4>
+      <p>
+        File size: NXS leads Cap'n Proto at all population rates; leads FlatBuffers at 50%+ population;
+        Protobuf smallest overall (different design point — full parse on read).
+      </p>
+      <p>
+        Selective read: NXS sub-microsecond (C driver, FNV key index + rank cache);
+        Cap'n Proto ~3&nbsp;µs; FlatBuffers ~8&nbsp;µs.
+        <a href="../BENCHMARK.md#workload-a">Full tables →</a>
+      </p>
+
+      <h4>Workload B — warm random access (flat-8 schema)</h4>
+      <p>
+        NXS warm access and open: sub-microsecond (warm cache, 10k records).
+        Cap'n Proto: 1.7&nbsp;µs open, 1.7&nbsp;µs access.
+        FlatBuffers: 2.3&nbsp;µs open, 3.4&nbsp;µs access.
+        <a href="../BENCHMARK.md#workload-b">Full tables →</a>
+      </p>
+
+      <h4>Workload C — dense columnar scan (1M records)</h4>
+      <p>
+        Arrow IPC: 104&nbsp;µs. NXS columnar: 107&nbsp;µs (at parity, SIMD vectorized).
+        NXS row: 11.7&nbsp;ms (112× slower than Arrow — use columnar layout or the Arrow bridge for this workload).
+        <a href="../BENCHMARK.md#workload-c">Full tables →</a>
+      </p>
+
+      <h4>Workload D — streaming TTFR (n=1000, batched flush)</h4>
+      <p>
+        NXS: 142&nbsp;µs P50, 437&nbsp;µs P99.
+        Cap'n Proto: 209&nbsp;µs P50, 583&nbsp;µs P99.
+        Protobuf: 214&nbsp;µs P50, 696&nbsp;µs P99.
+        FlatBuffers: no native file-level streaming.
+        <a href="../BENCHMARK.md#workload-d">Full tables →</a>
+      </p>
 
       <h3>When to choose NXS</h3>
       <div class="bimodal-grid">
@@ -252,6 +265,7 @@
             <li>You need warm random access among zero-copy formats — sub-µs selective read (<a href="../BENCHMARK.md#workload-a">A</a>), sub-µs field access (<a href="../BENCHMARK.md#workload-b">B</a>)</li>
             <li>You need streaming ingest with post-seal random access in the same file — 142&nbsp;µs TTFR P50, O(1) seek after seal (<a href="../BENCHMARK.md#workload-d">D</a>)</li>
             <li>Records are moderately to heavily populated (50%+ fields) — NXS file size competitive with FlatBuffers (<a href="../BENCHMARK.md#workload-a">A</a>)</li>
+            <li>Dense field scan at Arrow parity — <code>columnar</code> layout with SIMD (<a href="../BENCHMARK.md#workload-c">C</a>, 1M records)</li>
             <li>You need human-readable source, git-diffable binary, or AI-agent access via MCP</li>
           </ul>
         </div>
@@ -260,7 +274,7 @@
           <ul>
             <li>Minimum file size at any population rate → Protobuf</li>
             <li>Fastest cold open on small files → Cap'n Proto or FlatBuffers (~1.5–2&nbsp;µs warm-cache vs NXS; cold-open scaling in <a href="../BENCHMARK.md#workload-b">BENCHMARK.md</a>)</li>
-            <li>Columnar analytics on dense data → Arrow (NXS Arrow bridge for ingest)</li>
+            <li>Pure columnar analytics only → Arrow (or NXS <code>columnar</code> layout at parity; Arrow bridge for hybrid pipelines)</li>
             <li>Lowest P99 streaming latency → evaluate Cap'n Proto after Linux + inotify (Q1)</li>
           </ul>
         </div>
@@ -268,8 +282,8 @@
 
       <h3>Architectural Comparison: FlatBuffers &amp; Cap'n Proto</h3>
       <ul>
-        <li><strong>Sparse Field Efficiency (vs. FlatBuffers):</strong> FlatBuffers leads on file size at low field population (10–25%); NXS leads at 50%+ population. At 10% population: FlatBuffers 2.04&nbsp;MB vs NXS 2.25&nbsp;MB. At 90% population: NXS 6.03&nbsp;MB vs FlatBuffers 6.55&nbsp;MB. Selective read: NXS sub-microsecond (C driver) vs FlatBuffers ~8&nbsp;µs — <a href="../BENCHMARK.md#workload-a">Workload A</a>.</li>
-        <li><strong>Pointer-Offset Traversal (vs. Cap'n Proto):</strong> Verified in <a href="../BENCHMARK.md#workload-b">Workload B</a> — NXS warm access sub-microsecond vs Cap'n Proto 1.7&nbsp;µs. Cap'n Proto open 1.7&nbsp;µs vs NXS &lt;1&nbsp;µs warm-cache (cold-open at larger file sizes in BENCHMARK.md). In-place delta patching of fixed-width cells remains an NXS layout feature.</li>
+        <li><strong>Sparse field efficiency (vs. FlatBuffers):</strong> Verified in <a href="../BENCHMARK.md#workload-a">Workload A</a>: NXS leads FlatBuffers on file size at 50%+ field population and on selective read at all population rates (sub-µs vs ~8&nbsp;µs). FlatBuffers leads on file size at low population (10–25%) due to lower fixed overhead.</li>
+        <li><strong>Pointer-offset traversal (vs. Cap'n Proto):</strong> Verified in <a href="../BENCHMARK.md#workload-b">Workload B</a>: NXS warm field access sub-microsecond vs Cap'n Proto 1.7&nbsp;µs on flat-8 schema. Cold-open behavior documented at scale in BENCHMARK.md. In-place delta patching of fixed-width cells remains an NXS layout feature.</li>
         <li><strong>In-Place Mutation Mechanics:</strong> Modifying bytes inside an initialized FlatBuffers or Cap'n
           Proto array is highly restricted by structural layouts. Nyxis supports in-place delta patching of fixed-width
           atomic values (Int64, Float64, Bool, Time) by overwriting the cell bytes directly via byte-range offsets. For
@@ -278,15 +292,59 @@
           file, and the trailing tail-index is rewritten.</li>
       </ul>
 
-      <h3>Structural Positioning: Nyxis vs. Apache Arrow</h3>
-      <ul>
-        <li><strong>Apache Arrow</strong> wins columnar scan by ~2800× on uniform dense data (<a href="../BENCHMARK.md#workload-c">Workload C</a>: 3.0&nbsp;µs vs 8.54&nbsp;ms NXS). This is the expected result for columnar vs row-oriented layouts. For systems that ingest with NXS and analyze with Arrow, the enterprise <strong>Arrow bridge</strong> projects <code>.nxb</code> arrays into Arrow memory via the C Data Interface with no intermediate copies.</li>
-        <li><strong>Nyxis</strong> is engineered as a <strong>row-oriented, sparse-friendly transport layout</strong>.
-          It natively preserves individual record boundaries, handles highly dynamic or missing variables gracefully,
-          and maintains a bimodal workflow where developers can seamlessly de-compile binary <code>.nxb</code> buffers
-          back into human-readable, plain-text <code>.nxs</code> source configurations for quick Git-diffing and local
-          debugging.</li>
-      </ul>
+      <h3>Structural positioning: Nyxis vs. Apache Arrow</h3>
+      <p>
+        Verified in <a href="../BENCHMARK.md#workload-c">Workload C</a>: Arrow IPC scan at 104&nbsp;µs vs NXS row-oriented
+        scan at 11.7&nbsp;ms — 112× difference on dense uniform data. This is the expected architectural result for
+        columnar vs row-oriented formats on scan-heavy workloads. NXS <strong>columnar layout</strong> closes this gap to
+        at parity on Apple Silicon (107&nbsp;µs) using SIMD vectorization. For pure analytical workloads, use the
+        <strong>Arrow bridge</strong>. For mixed streaming + analytics workloads, use NXS PAX layout (in development).
+      </p>
+      <p>
+        Nyxis remains a <strong>sparse-friendly transport format</strong> with bimodal <code>.nxs</code> ↔ <code>.nxb</code>
+        workflow — individual record boundaries, git-diffable source, and de-compile back to plain text for debugging.
+      </p>
+
+      <h3>Layout selection</h3>
+      <p>
+        The NXS compiler emits one of three layouts based on a <code>--layout</code> flag or inline
+        <code>@layout</code> pragma. Choose based on your access pattern:
+      </p>
+      <table class="parity-matrix">
+        <thead>
+          <tr>
+            <th>Layout</th>
+            <th>Best for</th>
+            <th>Trade-off</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>row</code> (default)</td>
+            <td>Streaming ingest, virtual scroll, random record access, log tailing</td>
+            <td>Dense scan 112× slower than Arrow</td>
+            <td>Stable v1.1</td>
+          </tr>
+          <tr>
+            <td><code>columnar</code></td>
+            <td>Charts, OLAP aggregations, export pipelines</td>
+            <td>No native streaming; random record access slower than row</td>
+            <td>v1.2, stable</td>
+          </tr>
+          <tr>
+            <td><code>pax</code></td>
+            <td>Reporting dashboards, mixed scroll + charts</td>
+            <td>Higher TTFR than row (page fill before first record); scan slightly slower than columnar</td>
+            <td>v1.2, in development</td>
+          </tr>
+        </tbody>
+      </table>
+      <p class="use-case-footnote">
+        Compiler: <code>nxs compile --layout columnar report.nxs</code> or inline <code>@layout columnar</code>.
+        C writer: <code>NXS_LAYOUT_COLUMNAR</code> on <code>nxs_writer_open</code> for server-side pivot.
+        <a href="/demo/report.html">See columnar vs row on a real dataset →</a>
+      </p>
     </section>
 
     <section class="landing-section" id="streaming">
@@ -534,6 +592,57 @@
       </p>
       <p class="use-case-cta">
         <a class="btn btn-secondary" href="/demo/wal.html">WAL / spans demo</a>
+      </p>
+    </article>
+
+    <article class="use-case" id="reporting">
+      <p class="use-case-tier use-case-tier--oss">Open core · row + columnar · streaming v1.1</p>
+      <h2>Large report and data export viewers</h2>
+
+      <h3>The high-scale bottleneck</h3>
+      <p>
+        Reporting tools that return 50k–500k row datasets as a single JSON payload force users to wait for full
+        download and parse before any data appears. A 100&nbsp;MB JSON report on a 50&nbsp;Mbps connection takes 16+
+        seconds to download, then expands to 500&nbsp;MB+ of heap objects. Search and chart rendering run synchronously
+        against the in-memory object graph.
+      </p>
+
+      <h3>The Nyxis topology</h3>
+      <p>The report server selects a layout based on the query type:</p>
+      <ul>
+        <li>
+          <strong>Record view requests</strong> (virtual scroll, row-level search): row layout with v1.1 streaming.
+          The server writes rows as they generate; the browser renders each record as it arrives via
+          <code>NxsStreamReader</code> before the report completes.
+        </li>
+        <li>
+          <strong>Chart and aggregation requests</strong> (sum by region, histogram of response times): columnar layout.
+          The server emits field buffers; the browser reads them directly into chart library data structures via
+          <code>nxs_col_buffer()</code> with no intermediate deserialization.
+        </li>
+        <li>
+          <strong>Mixed requests</strong> (scroll + charts on the same dataset): PAX layout when available. Pages stream
+          as they fill; each page's column buffers feed chart components while row access supports virtual scroll.
+        </li>
+      </ul>
+
+      <h3>The system advantage</h3>
+      <p class="use-case-roi">
+        Row layout: first row in 142&nbsp;µs P50 (<a href="../BENCHMARK.md#workload-d">Workload D</a>);
+        ~25k rec/s sustained — a 100k-row report fully streamed in ~4&nbsp;s. Columnar layout: dense field scan at
+        parity with Arrow IPC (107&nbsp;µs at 1M records, Apple Silicon,
+        <a href="../BENCHMARK.md#workload-c">Workload C</a>). After sealing, any record accessible via O(1) tail-index
+        seek regardless of report size.
+      </p>
+      <p class="use-case-footnote">
+        Benchmarks:
+        <a href="../BENCHMARK.md#workload-c">Workload C (columnar scan)</a>,
+        <a href="../BENCHMARK.md#workload-d">Workload D (streaming TTFR)</a>.
+      </p>
+      <p class="use-case-cta">
+        <a class="btn btn-primary" href="/demo/report.html">Try it on your data</a>
+        <a class="btn btn-secondary" href="/demo/explorer.html">Log explorer demo</a>
+        <a class="btn btn-secondary" href="/demo/wal.html">WAL / streaming demo</a>
       </p>
     </article>
 

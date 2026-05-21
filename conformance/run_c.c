@@ -372,9 +372,14 @@ static int run_negative(const char *dir, const char *name, const char *expected_
 
     /* check that the error code matches */
     const char *got_code =
-        err==NXS_ERR_BAD_MAGIC     ? "ERR_BAD_MAGIC"     :
-        err==NXS_ERR_OUT_OF_BOUNDS ? "ERR_OUT_OF_BOUNDS" :
-        err==NXS_ERR_DICT_MISMATCH ? "ERR_DICT_MISMATCH" :
+        err==NXS_ERR_BAD_MAGIC       ? "ERR_BAD_MAGIC"             :
+        err==NXS_ERR_OUT_OF_BOUNDS   ? "ERR_OUT_OF_BOUNDS"         :
+        err==NXS_ERR_DICT_MISMATCH   ? "ERR_DICT_MISMATCH"         :
+        err==NXS_ERR_INVALID_FLAGS   ? "ERR_INVALID_FLAGS"         :
+        err==NXS_ERR_INCOMPATIBLE    ? "ERR_INCOMPATIBLE_FLAGS"    :
+        err==NXS_ERR_UNSUPPORTED     ? "ERR_UNSUPPORTED_LAYOUT"    :
+        err==NXS_ERR_BAD_PAGE_MAGIC  ? "ERR_INVALID_PAGE_MAGIC"    :
+        err==NXS_ERR_UNSUPPORTED_TYPE ? "ERR_UNSUPPORTED_FIELD_TYPE" :
         "ERR_UNKNOWN";
 
     if(strcmp(got_code,expected_code)!=0) {

@@ -220,6 +220,18 @@ impl<'a> NxsWriter<'a> {
         &self.record_offsets
     }
 
+    pub fn schema_keys(&self) -> &[String] {
+        &self.schema.keys
+    }
+
+    pub fn data_buf(&self) -> &[u8] {
+        &self.buf
+    }
+
+    pub fn slot_sigils(&self) -> &[u8] {
+        &self.slot_sigils
+    }
+
     /// Finish and return the complete .nxb file bytes.
     /// The tail-index contains one entry per top-level object written.
     pub fn finish(self) -> Vec<u8> {
@@ -394,7 +406,7 @@ impl<'a> NxsWriter<'a> {
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
-fn build_schema(keys: &[String], sigils: &[u8]) -> Vec<u8> {
+pub(crate) fn build_schema(keys: &[String], sigils: &[u8]) -> Vec<u8> {
     let mut b = Vec::new();
     b.extend_from_slice(&(keys.len() as u16).to_le_bytes());
     for (i, _) in keys.iter().enumerate() {
@@ -468,7 +480,7 @@ fn build_tail_index_records(record_abs_offsets: &[u64], tail_ptr: u64) -> Vec<u8
     b
 }
 
-fn murmur3_64(data: &[u8]) -> u64 {
+pub(crate) fn murmur3_64(data: &[u8]) -> u64 {
     let mut h: u64 = 0x9368_1D62_5531_3A99;
     for chunk in data.chunks(8) {
         let mut k = 0u64;

@@ -42,6 +42,8 @@ transcode-nxs: $(TRANSCODE)
 	@test -f $(DATA_JSON)/workload_C_$(BENCH_RECORDS).json
 	$(TRANSCODE) --workload C --json $(DATA_JSON)/workload_C_$(BENCH_RECORDS).json \
 	  --out $(DATA_BIN)/workload_C_nxs_$(BENCH_RECORDS).nxb
+	$(TRANSCODE) --workload C --columnar --json $(DATA_JSON)/workload_C_$(BENCH_RECORDS).json \
+	  --out $(DATA_BIN)/workload_C_nxs_columnar_$(BENCH_RECORDS).nxb
 	@for pop in 10 25 50 90; do \
 	  f=$(DATA_JSON)/workload_A_pop$${pop}_$(BENCH_RECORDS).json; \
 	  test -f $$f || continue; \

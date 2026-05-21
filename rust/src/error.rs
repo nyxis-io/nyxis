@@ -25,6 +25,18 @@ pub enum NxsError {
     ConvertEntityExpansion,
     /// Exit 3 — nesting depth exceeded `--max-depth` / `--xml-max-depth`.
     ConvertDepthExceeded,
+    /// Both `FLAG_COLUMNAR` and `FLAG_PAX` set (OLAP §7.1).
+    InvalidFlags,
+    /// Incompatible flag combination (e.g. columnar + streaming `TailPtr=0`).
+    IncompatibleFlags,
+    /// Reader does not implement the requested layout.
+    UnsupportedLayout,
+    /// String/binary/keyword in columnar/PAX initial release (OLAP §Q3).
+    UnsupportedFieldType,
+    /// PAX page magic not `NXSP`.
+    InvalidPageMagic,
+    /// Optional per-page CRC mismatch.
+    PageCrcMismatch,
 }
 
 impl fmt::Display for NxsError {
@@ -48,6 +60,12 @@ impl fmt::Display for NxsError {
             }
             NxsError::ConvertEntityExpansion => write!(f, "ERR_ENTITY_EXPANSION"),
             NxsError::ConvertDepthExceeded => write!(f, "ERR_DEPTH_EXCEEDED"),
+            NxsError::InvalidFlags => write!(f, "ERR_INVALID_FLAGS"),
+            NxsError::IncompatibleFlags => write!(f, "ERR_INCOMPATIBLE_FLAGS"),
+            NxsError::UnsupportedLayout => write!(f, "ERR_UNSUPPORTED_LAYOUT"),
+            NxsError::UnsupportedFieldType => write!(f, "ERR_UNSUPPORTED_FIELD_TYPE"),
+            NxsError::InvalidPageMagic => write!(f, "ERR_INVALID_PAGE_MAGIC"),
+            NxsError::PageCrcMismatch => write!(f, "ERR_PAGE_CRC_MISMATCH"),
         }
     }
 }

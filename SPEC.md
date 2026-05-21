@@ -107,7 +107,7 @@ A `.nxb` file consists of four segments in order:
 | :--- | :--- | :--- | :--- |
 | 0 | 4 | `Magic` | `0x4E595842` (`NYXB`) |
 | 4 | 2 | `Version` | `0x0101` (major=1, minor=1) |
-| 6 | 2 | `Flags` | Bit 0: Jumbo Offsets; Bit 1: Schema Embedded; Bits 2–15: reserved (MUST be 0) |
+| 6 | 2 | `Flags` | Bit 0: Jumbo Offsets **or** `FLAG_COLUMNAR` (0x0001); Bit 1: Schema Embedded (0x0002); Bit 2: `FLAG_PAX` (0x0004); Bits 3–15: reserved. `FLAG_COLUMNAR` and `FLAG_PAX` are mutually exclusive and require Schema Embedded. See OLAP.md for columnar/PAX footers and tail-index layouts. |
 | 8 | 8 | `DictHash` | 64-bit MurmurHash3 of the Schema Header bytes |
 | 16 | 8 | `TailPtr` | Absolute byte offset to the Tail-Index; `0` means streamable v1.1 and the final footer carries the Tail-Index offset |
 | 24 | 8 | `Reserved` | MUST be `0x00` |

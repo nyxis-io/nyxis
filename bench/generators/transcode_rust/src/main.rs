@@ -5,6 +5,7 @@
 //!       --out ../data/bin/workload_B_nxs_1000000.nxb
 
 use clap::Parser;
+use nxs::layout::{finish_columnar, Cell, RecordRow};
 use nxs::writer::{
     write_stream_file_footer, write_stream_file_header, NxsWriter, Schema, Slot,
 };
@@ -23,6 +24,9 @@ struct Args {
     json: PathBuf,
     #[arg(long)]
     out: PathBuf,
+    /// Workload C only: emit columnar `.nxb` via `finish_columnar`.
+    #[arg(long, default_value_t = false)]
+    columnar: bool,
 }
 
 #[derive(Deserialize)]
@@ -281,6 +285,49 @@ fn stream_dense8(json: &PathBuf, out: &PathBuf) -> Result<(), Box<dyn std::error
     Ok(())
 }
 
+fn dense8_record_row(r: &Dense8) -> RecordRow {
+    RecordRow {
+        cells: vec![
+            Cell::I64(r.id),
+            Cell::I64(r.bucket),
+            Cell::I64(r.quantity),
+            Cell::F64(r.amount),
+            Cell::F64(r.rate),
+            Cell::F64(r.score),
+            Cell::I64(r.category),
+            Cell::Bool(r.active),
+        ],
+    }
+}
+
+struct Dense8Collect;
+
+impl<'de> Visitor<'de> for Dense8Collect {
+    type Value = Vec<RecordRow>;
+
+    fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+        formatter.write_str("a JSON array of dense8 records")
+    }
+
+    fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
+    where
+        A: SeqAccess<'de>,
+    {
+        let mut rows = Vec::new();
+        while let Some(r) = seq.next_element::<Dense8>()? {
+            rows.push(dense8_record_row(&r));
+        }
+        Ok(rows)
+    }
+}
+
+fn collect_dense8_rows(json: &PathBuf) -> Result<Vec<RecordRow>, Box<dyn std::error::Error>> {
+    let file = File::open(json)?;
+    let reader = BufReader::with_capacity(256 * 1024, file);
+    let mut de = serde_json::Deserializer::from_reader(reader);
+    Ok(de.deserialize_seq(Dense8Collect)?)
+}
+
 fn transcode_dense8_bytes(
     schema: &Schema,
     slots: [Slot; 8],
@@ -292,6 +339,19 @@ fn transcode_dense8_bytes(
     let mut de = serde_json::Deserializer::from_reader(reader);
     de.deserialize_seq(Dense8Seq { w: &mut w, slots })?;
     Ok(w.finish())
+}
+
+fn stream_dense8_columnar(json: &PathBuf, out: &PathBuf) -> Result<(), Box<dyn std::error::Error>> {
+    let keys: Vec<String> = [
+        "id", "bucket", "quantity", "amount", "rate", "score", "category", "active",
+    ]
+    .into_iter()
+    .map(str::to_string)
+    .collect();
+    let rows = collect_dense8_rows(json)?;
+    let nbytes = finish_columnar(&keys, &rows)?;
+    std::fs::write(out, nbytes)?;
+    Ok(())
 }
 
 fn write_sparse_record<'a>(w: &mut NxsWriter<'a>, r: &SparseRecord) {
@@ -430,6 +490,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
     match args.workload {
         'B' | 'b' => stream_flat8(&args.json, &args.out)?,
+        'C' | 'c' if args.columnar => stream_dense8_columnar(&args.json, &args.out)?,
         'C' | 'c' => stream_dense8(&args.json, &args.out)?,
         'A' | 'a' => stream_sparse(&args.json, &args.out)?,
         _ => {

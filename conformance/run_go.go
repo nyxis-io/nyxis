@@ -223,11 +223,9 @@ func runPositive(conformanceDir, name string, exp expected) error {
 		}
 	}
 
-	// Tail start location (same calculation as reader)
-	tailStart := int(reader.TailPtr) + 4
-
 	// Validate each record
 	for ri, expRec := range exp.Records {
+		obj := reader.Record(ri)
 		for key, expVal := range expRec {
 			slot := -1
 			for i, k := range reader.Keys {
@@ -245,10 +243,38 @@ func runPositive(conformanceDir, name string, exp expected) error {
 				sigil = reader.KeySigils[slot]
 			}
 
-			actual, present := getFieldValue(data, reader, tailStart, ri, slot, sigil)
+			var actual interface{}
+			var present bool
+			switch sigil {
+			case 0x3D, 0x40:
+				var v int64
+				v, present = obj.GetI64BySlot(slot)
+				if present {
+					actual = float64(v)
+				}
+			case 0x7E:
+				var v float64
+				v, present = obj.GetF64BySlot(slot)
+				if present {
+					actual = v
+				}
+			case 0x3F:
+				var v bool
+				v, present = obj.GetBoolBySlot(slot)
+				if present {
+					actual = v
+				}
+			case 0x22:
+				var s string
+				s, present = obj.GetStrBySlot(slot)
+				if present {
+					actual = s
+				}
+			default:
+				actual, present = getFieldValue(data, reader, int(reader.TailPtr)+4, ri, slot, sigil)
+			}
 
 			if expVal == nil {
-				// null — accept present-null or absent
 				_ = present
 				continue
 			}
