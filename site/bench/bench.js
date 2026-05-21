@@ -15,8 +15,8 @@ import { performance } from "node:perf_hooks";
 
 const __benchDir = dirname(fileURLToPath(import.meta.url));
 const WASM_PATH = join(__benchDir, "wasm/nxs_reducers.wasm");
-import { NxsReader } from "../../nyxis-drivers/js/nxs.js";
-import { loadWasm } from "../../nyxis-drivers/js/wasm.js";
+import { NxsReader } from "../../../nyxis-drivers/js/nxs.js";
+import { loadWasm } from "../../../nyxis-drivers/js/wasm.js";
 
 // Synchronous zero-copy helper for the benchmark harness.
 function readNxbIntoWasmSync(wasm, path) {

@@ -22,7 +22,7 @@ CONF ?= $(abspath conformance)
 #   make all            # fix + test + conformance
 #   make install-git-hooks   # pre-commit → make lint (SKIP_HOOKS=1 to bypass once)
 
-.PHONY: all lint fix test conformance fuzz fixtures sdk rust-examples install-git-hooks demo bench-node \
+.PHONY: all lint fix test conformance fuzz fixtures sdk rust-examples install-git-hooks demo bench-node bench-sequential \
         lint-rust  fix-rust  test-rust \
         lint-js    fix-js    test-js \
         lint-py    fix-py    test-py \
@@ -58,6 +58,10 @@ demo:
 
 bench-node:
 	node site/bench/bench.js $(FIXTURE_OUT)
+
+# All language benches, one after another (avoids cross-bench CPU/cache interference).
+bench-sequential:
+	bash scripts/bench-sequential.sh
 
 # ── Top-level ─────────────────────────────────────────────────────────────────
 

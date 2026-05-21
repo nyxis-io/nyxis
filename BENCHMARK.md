@@ -94,20 +94,20 @@ The Swift and Kotlin baselines are large (2000 ms / 1300 ms) because `NSJSONSeri
 
 | Scenario              | NXS (pure JS) | NXS (WASM)   | JSON                | CSV     |
 | --------------------- | ------------- | ------------ | ------------------- | ------- |
-| Open                  | **2.4 µs**    | —            | 310 ms              | ~310 ms |
-| Warm random (by slot) | 406 ns        | —            | ~40 ns              | ~40 ns  |
-| Cold read             | **3.3 µs**    | —            | 281 ms              | —       |
-| Reducer `sumF64`      | 13.54 ms      | **8.11 ms**  | ~10 ms (pre-parsed) | —       |
-| Cold pipeline         | —             | **10.72 ms** | 302 ms              | —       |
+| Open                  | **10.9 µs**   | —            | 386 ms              | ~394 ms |
+| Warm random (by slot) | 377 ns        | —            | ~131 ns             | ~76 ns  |
+| Cold read             | **6.9 µs**    | —            | 321 ms              | —       |
+| Reducer `sumF64`      | 12.33 ms      | **7.53 ms**  | ~12 ms (pre-parsed) | —       |
+| Cold pipeline         | —             | **17.0 ms**  | 396 ms              | —       |
 | **Write 1M records**  | **~420 ms**   | —            | ~310 ms             | —       |
 
 
 Notes:
 
 - JSON warm random is faster because V8's hidden-class property access is a single instruction.
-- NXS open is ~130,000× faster than JSON because it reads only the 32-byte preamble + schema + tail-index — no data sector touched.
+- NXS open is ~35,000× faster than JSON because it reads only the 32-byte preamble + schema + tail-index — no data sector touched.
 - WASM reducer ties or beats JSON's in-memory sum at scale.
-- Cold pipeline uses copy-in WASM (no zero-copy since SharedArrayBuffer requires COOP/COEP headers).
+- Cold pipeline uses WASM with `readNxbIntoWasm` (mmap-style read into WASM memory); copy-in path is slower (~88 ms at 1M).
 - Write path: `NxsWriter` emits directly into a growing buffer with back-patching. Write cost is ~1.35× `JSON.stringify` at 1M records; produced files are immediately zero-copy readable without a parse step.
 
 ---
@@ -212,13 +212,13 @@ Notes:
 
 | Language       | NXS (C/native) | NXS (interpreted) | JSON baseline |
 | -------------- | -------------- | ----------------- | ------------- |
-| Rust           | **777 ns**     | —                 | 45.67 ms      |
+| Rust           | **944 ns**     | —                 | 43.4 ms       |
 | Go             | **279 ns**     | —                 | 1.04 s        |
 | C              | **< 1 µs**     | —                 | —             |
 | PHP (C ext)    | **291 ns**     | 986 ns            | 532 ms        |
 | Python (C ext) | **367 ns**     | 2.53 ms           | 774 ms        |
 | Ruby (C ext)   | **667 ns**     | 2.7 µs            | 339 ms        |
-| JavaScript     | —              | **2.4 µs**        | 310 ms        |
+| JavaScript     | —              | **10.9 µs**       | 386 ms        |
 | Swift          | —              | **< 1 µs**        | —             |
 | Kotlin         | —              | **< 1 µs**        | —             |
 | C#             | —              | **< 1 µs**        | —             |
@@ -233,7 +233,7 @@ Notes:
 | Go             | **300 ns** | 1.06 s | **3,533,000×** |
 | Python (C ext) | **450 ns** | 773 ms | **1,718,000×** |
 | Ruby (C ext)   | **1.0 µs** | 341 ms | **341,000×**   |
-| JavaScript     | **3.3 µs** | 281 ms | **85,000×**    |
+| JavaScript     | **6.9 µs** | 321 ms | **47,000×**    |
 
 
 ### Reducer `sum_f64` (1M records)
@@ -245,11 +245,11 @@ Notes:
 | PHP (C ext)       | **2.21 ms** | 30.9 ms                     | **14×**       |
 | Go indexed (hot)  | **249 µs**  | 252 µs (pre-parsed)         | **ties**      |
 | Go parallel       | **851 µs**  | 252 µs (pre-parsed)         | 3.4× slower   |
-| Kotlin            | **4.3 ms**  | 1286 ms (org.json)          | **296×**      |
+| Kotlin            | **4.4 ms**  | 1369 ms (org.json)          | **313×**      |
 | Python (C ext)    | **3.48 ms** | 31 ms                       | **8.9×**      |
 | Swift             | **8.2 ms**  | 2038 ms (JSONSerialization) | **249×**      |
-| C#                | **8.8 ms**  | 292 ms (System.Text.Json)   | **33×**       |
-| JavaScript (WASM) | **8.11 ms** | ~10 ms (pre-parsed)         | ties          |
+| C#                | **8.3 ms**  | 275 ms (System.Text.Json)   | **33×**       |
+| JavaScript (WASM) | **7.53 ms** | ~12 ms (pre-parsed)         | ties          |
 | Ruby (C ext)      | **7.49 ms** | 39 ms                       | **5.2×**      |
 
 
@@ -263,7 +263,7 @@ Notes:
 | Go (indexed hot)  | **249 µs**              | 252 µs pre-parsed | **ties** |
 | Go (parallel)     | **11.92 ms**            | 1.05 s            | **88×**  |
 | Rust              | **~122 ms** (serialize) | 201 ms            | **1.7×** |
-| JavaScript (WASM) | **10.72 ms**            | 302 ms            | **28×**  |
+| JavaScript (WASM) | **17.0 ms**             | 396 ms            | **23×**  |
 | Python (C ext)    | —                       | 774 ms            | —        |
 | Ruby (C ext)      | **7.63 ms**             | 400 ms            | **52×**  |
 | PHP (C ext)       | **21.79 ms**            | 582 ms            | **27×**  |
@@ -278,8 +278,8 @@ The Rust benchmark measures the `NxsWriter` hot path (direct binary write, no `.
 
 | Scenario                 | NXS wire   | JSON     | XML      | CSV     |
 | ------------------------ | ---------- | -------- | -------- | ------- |
-| **Serialize 1M records** | **121 ms** | 201 ms   | 208 ms   | 306 ms  |
-| **Open (deser header)**  | **777 ns** | 45.67 ms | 56.29 ms | 8.55 ms |
+| **Serialize 1M records** | **120 ms** | 200 ms   | 209 ms   | 316 ms  |
+| **Open (deser header)**  | **944 ns** | 43.4 ms  | 56.0 ms  | 8.9 ms  |
 
 
 Notes:
@@ -336,7 +336,7 @@ Kotlin 2.1 on JDK 25. JSON baseline is `org.json.JSONArray` (common lightweight 
 
 | Scenario            | NXS         | org.json parse | CSV raw scan | NXS faster by    |
 | ------------------- | ----------- | -------------- | ------------ | ---------------- |
-| `sumF64("score")`   | **4.3 ms**  | 1286 ms        | 105 ms       | **296× vs JSON** |
+| `sumF64("score")`   | **4.4 ms**  | 1369 ms        | 63 ms        | **313× vs JSON** |
 | `sumI64("id")`      | **3.8 ms**  | —              | —            | —                |
 | Random access ×1000 | **0.08 ms** | —              | —            | —                |
 
@@ -355,7 +355,7 @@ C# 12 on .NET 10. JSON baseline is `System.Text.Json.JsonDocument` (the BCL stre
 
 | Scenario            | NXS         | System.Text.Json | CSV raw scan | NXS faster by   |
 | ------------------- | ----------- | ---------------- | ------------ | --------------- |
-| `SumF64("score")`   | **8.8 ms**  | 292 ms           | 73 ms        | **33× vs JSON** |
+| `SumF64("score")`   | **8.3 ms**  | 275 ms           | 71 ms        | **33× vs JSON** |
 | `SumI64("id")`      | **7.8 ms**  | —                | —            | —               |
 | Random access ×1000 | **0.13 ms** | —                | —            | —               |
 
@@ -378,9 +378,9 @@ Four pipeline stages are measured. The Rust numbers are from `cargo run --releas
 
 | Spans   | Append ns/span | Recover ns/span | Seal ns/span | Roundtrip ns/span | JSON NDJSON ns/span | WAL size | NXB size | JSON NDJSON |
 | ------- | -------------- | --------------- | ------------ | ----------------- | ------------------- | -------- | -------- | ----------- |
-| 1,000   | 2,924          | 1,222           | 3,947        | 7,816             | 129                 | 113 KB   | 123 KB   | 175 KB      |
-| 10,000  | 2,291          | 1,041           | 3,563        | 6,280             | 131                 | 1.11 MB  | 1.20 MB  | 1.71 MB     |
-| 100,000 | 2,216          | 1,056           | 3,378        | 6,284             | 128                 | 11.1 MB  | 12.0 MB  | 17.2 MB     |
+| 1,000   | 1,640          | 1,213           | 3,541        | 6,087             | 125                 | 113 KB   | 121 KB   | 175 KB      |
+| 10,000  | 742            | 1,039           | 3,090        | 4,527             | 131                 | 1.11 MB  | 1.19 MB  | 1.71 MB     |
+| 100,000 | 644            | 1,050           | 3,422        | 4,589             | 125                 | 11.1 MB  | 12.0 MB  | 17.2 MB     |
 
 
 Stage definitions:
@@ -436,8 +436,8 @@ All numbers are **pure in-memory encode** (no I/O), best-of-3 at n=10,000 spans.
 
 | Language              | NXS encode ns/span | NXS k spans/s | JSON encode ns/span | JSON k spans/s | NXS vs JSON      |
 | --------------------- | ------------------ | ------------- | ------------------- | -------------- | ---------------- |
-| **C**                 | 82                 | 12,255        | 262                 | 3,817          | **3.2× faster**  |
-| **Go**                | 138                | 7,250         | 289                 | 3,460          | **2.1× faster**  |
+| **C**                 | 73                 | 13,700        | 270                 | 3,700          | **3.7× faster**  |
+| **Go**                | 131                | 7,600         | 301                 | 3,320          | **2.3× faster**  |
 | **Rust**              | ~131 ¹             | ~7,600        | 131                 | 7,634          | **~1× (parity)** |
 | **JS (WASM)**         | ~375               | ~2,650        | ~320                | ~3,125         | **~1.15× faster**|
 | **JS (fast)**         | ~250               | ~4,000        | ~320                | ~3,125         | **~1.3× faster** |
@@ -484,64 +484,62 @@ NXS is not a drop-in replacement for JSON everywhere. It is the right choice whe
 
 ## Running the Benchmarks
 
+Fixtures and the Node harness live in **nyxis** (`site/bench/`). Language SDK benches live in **nyxis-drivers**. In the monorepo, generate fixtures once, then point every runner at the same directory.
+
+Run every bench **sequentially** (recommended — parallel runs skew timings):
+
 ```bash
-# Rust (read benchmarks)
-cd rust && cargo run --release --bin bench -- ../js/fixtures
-
-# C
-cd c && make bench && ./bench ../js/fixtures
-
-# JavaScript (Node.js)
-cd js && node bench.js ./fixtures
-
-# Python
-cd py && python bench_c.py
-
-# Go
-cd go && go run ./cmd/bench ../js/fixtures
-
-# Ruby
-ruby ruby/bench_c.rb js/fixtures
-
-# PHP
-php -d extension=php/nxs_ext/modules/nxs.so -d memory_limit=2G php/bench_c.php js/fixtures
-
-# Swift
-cd swift && swift run -c release nxs-bench ../js/fixtures
-
-# Kotlin (requires JDK 17+, Gradle)
-cd kotlin && gradle bench
-
-# C# (requires .NET 8+)
-cd csharp && dotnet run -c Release -- ../js/fixtures --bench
+make -C nyxis bench-sequential   # log: nyxis/bench-sequential.log
 ```
 
-**WAL span ingestion pipeline (append throughput):**
-
 ```bash
-# Rust — full WAL pipeline (append / recover / seal / roundtrip ns/span)
-cd rust && cargo run --release --bin bench
+# From nyxis/ (core)
+make fixtures FIXTURE_COUNT=1000000
+# → site/bench/fixtures/records_1000000.{nxb,json,csv}
 
-# C — WAL append vs JSON snprintf
-cd c && cc -O2 -std=c99 bench_wal.c nxs_writer.c -o bench_wal && ./bench_wal
-
-# Go — WAL append vs json.Marshal
-cd go && go test -run TestWalBench -v
-
-# Python — WAL append vs json.dumps
-cd py && python bench_wal.py
-
-# Ruby — WAL append vs to_json
-ruby ruby/bench_wal.rb
-
-# JavaScript (browser) — live benchmark
-# open js/wal.html and click "Run benchmark"
+FIX="$(pwd)/site/bench/fixtures"   # adjust if you used FIXTURE_DIR=…
 ```
 
-Generate fixtures at any scale:
+**Core (nyxis/):**
 
 ```bash
-cd rust && cargo run --release --bin gen_fixtures -- ../js/fixtures 1000000
-# outputs records_1000000.{nxb,json,csv}
+cd rust && cargo run --release --bin bench          # serialize + WAL pipeline (in-memory)
+node site/bench/bench.js site/bench/fixtures        # Node.js + WASM reducers
+```
+
+**Drivers (nyxis-drivers/)** — build native extensions first where noted (`make test-py-ci`, `bash ruby/ext/build.sh`, `bash php/nxs_ext/build.sh`):
+
+```bash
+FIX=../nyxis/site/bench/fixtures
+
+cd c && make bench && ./bench "$FIX"
+cd go && go run ./cmd/bench "$FIX"
+cd py && python3 bench_c.py "$FIX"
+ruby ruby/bench_c.rb "$FIX"
+php -d extension=php/nxs_ext/modules/nxs.so -d memory_limit=2G php/bench_c.php "$FIX"
+cd swift && swift run -c release nxs-bench "$FIX"
+cd kotlin && ./gradlew bench    # default FIX=../../nyxis/site/bench/fixtures
+cd csharp && dotnet run -c Release -- "$FIX" --bench   # needs records_1000.* or symlink for smoke tests
+```
+
+**WAL span ingestion (encode throughput, in-memory unless noted):**
+
+```bash
+# Rust — full WAL pipeline on tmpfs (append-batch / recover / seal / roundtrip)
+cd nyxis/rust && cargo run --release --bin bench
+
+cd nyxis-drivers/c && cc -O2 -std=c99 bench_wal.c nxs_writer.c -o bench_wal && ./bench_wal
+cd nyxis-drivers/go && go test -run TestWalBench -v -count=1
+cd nyxis-drivers/py && python3 bench_wal.py
+ruby nyxis-drivers/ruby/bench_wal.rb
+
+# Browser — live encoder comparison (Chrome)
+# docker compose up  →  http://localhost:8000/demo/wal.html
+```
+
+Regenerate fixtures at any scale:
+
+```bash
+cd nyxis/rust && cargo run --release --bin gen_fixtures -- ../site/bench/fixtures 1000000
 ```
 
