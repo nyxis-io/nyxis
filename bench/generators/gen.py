@@ -14,6 +14,7 @@ import argparse
 import json
 import random
 import sys
+import zlib
 from pathlib import Path
 from typing import Any
 
@@ -42,6 +43,11 @@ def _maybe(rng: random.Random, rate: float) -> bool:
     return rng.random() < rate
 
 
+def _field_salt(name: str) -> int:
+    """Stable per-field offset (Python hash() is salted per process)."""
+    return zlib.crc32(name.encode()) % 1000
+
+
 def _nested_block(rng: random.Random, i: int) -> dict[str, Any] | None:
     if not _maybe(rng, 0.15):
         return None
@@ -61,7 +67,7 @@ def gen_sparse_record(rng: random.Random, i: int, population: float) -> dict[str
     rec: dict[str, Any] = {}
     for name in I64_FIELDS:
         if _maybe(rng, population):
-            rec[name] = i + hash(name) % 1000
+            rec[name] = i + _field_salt(name)
     for name in STR_FIELDS:
         if _maybe(rng, population):
             rec[name] = f"{name}_{i:08d}"
@@ -79,7 +85,7 @@ def gen_sparse_record(rng: random.Random, i: int, population: float) -> dict[str
         if name in rec:
             continue
         if name.startswith("i"):
-            rec[name] = i + hash(name) % 1000
+            rec[name] = i + _field_salt(name)
         elif name.startswith("s"):
             rec[name] = f"{name}_{i:08d}"
         elif name.startswith("f"):

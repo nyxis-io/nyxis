@@ -1,20 +1,20 @@
 //! Workload D — streaming ingest / time-to-first-record (Phase 1: NXS + Protobuf, D2 file).
 
 use std::fs::{self, File, OpenOptions};
-use std::io::{Read, Seek, Write};
+use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::Arc;
+#[cfg(not(any(target_os = "macos", target_os = "linux")))]
+use std::sync::OnceLock;
 use std::thread;
 use std::time::{Duration, Instant};
 
-use clap::Parser;
-use nyxis::stream_reader::{complete_nyxo_end, StreamReader};
-use nyxis::writer::{
-    write_stream_file_footer, write_stream_file_header, NxsWriter, Schema, Slot,
-};
 use capnp::message::{Builder, ReaderOptions};
 use capnp::serialize;
+use clap::Parser;
+use nyxis::stream_reader::{complete_nyxo_end, StreamReader};
+use nyxis::writer::{write_stream_file_footer, write_stream_file_header, NxsWriter, Schema, Slot};
 use prost::Message;
 
 mod flat8_capnp {
@@ -185,7 +185,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     let mut out: Vec<FormatResult> = Vec::new();
-    for fmt in args.formats.split(',').map(str::trim).filter(|s| !s.is_empty()) {
+    for fmt in args
+        .formats
+        .split(',')
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
         match fmt {
             "nxs" => out.push(run_nxs_d2(
                 &records,
@@ -274,28 +279,53 @@ fn percentiles(xs: Vec<u64>) -> Percentiles {
     }
 }
 
+/// Read only new tail bytes from a growing file (reopen + seek; no full-file reread).
+struct IncrementalReader {
+    buf: Vec<u8>,
+}
+
+impl IncrementalReader {
+    fn new() -> Self {
+        Self { buf: Vec::new() }
+    }
+
+    fn poll(&mut self, path: &PathBuf) -> &[u8] {
+        let Ok(meta) = fs::metadata(path) else {
+            return &self.buf;
+        };
+        let file_len = meta.len() as usize;
+        if file_len <= self.buf.len() {
+            return &self.buf;
+        }
+        if let Ok(mut f) = File::open(path) {
+            let _ = f.seek(SeekFrom::Start(self.buf.len() as u64));
+            let mut tail = Vec::with_capacity(file_len - self.buf.len());
+            let _ = f.read_to_end(&mut tail);
+            self.buf.extend_from_slice(&tail);
+        }
+        &self.buf
+    }
+}
+
 fn poll_nxs_ttfr(
     path: &PathBuf,
     start_reader: Arc<AtomicU64>,
     deadline: Instant,
     poll_us: u64,
 ) -> u64 {
-    let mut buf = Vec::new();
+    let mut inc = IncrementalReader::new();
     loop {
         if Instant::now() > deadline {
             eprintln!("stream_d: nxs reader timed out waiting for first record");
             return 0;
         }
-        if let Ok(mut f) = File::open(path) {
-            buf.clear();
-            let _ = f.read_to_end(&mut buf);
-            if let Ok(sr) = StreamReader::open(&buf) {
-                if sr.has_first_complete() {
-                    let _ = sr.get_i64_at(sr.data_start(), "id");
-                    let t0w = start_reader.load(Ordering::Acquire);
-                    if t0w != 0 {
-                        return monotonic_ns().saturating_sub(t0w);
-                    }
+        let buf = inc.poll(path);
+        if let Ok(sr) = StreamReader::open(buf) {
+            if sr.has_first_complete() {
+                let _ = sr.get_i64_at(sr.data_start(), "id");
+                let t0w = start_reader.load(Ordering::Acquire);
+                if t0w != 0 {
+                    return monotonic_ns().saturating_sub(t0w);
                 }
             }
         }
@@ -309,20 +339,17 @@ fn poll_capnp_ttfr(
     deadline: Instant,
     poll_us: u64,
 ) -> u64 {
-    let mut buf = Vec::new();
+    let mut inc = IncrementalReader::new();
     loop {
         if Instant::now() > deadline {
             eprintln!("stream_d: capnp reader timed out waiting for first record");
             return 0;
         }
-        if let Ok(mut f) = File::open(path) {
-            buf.clear();
-            let _ = f.read_to_end(&mut buf);
-            if capnp_first_record_ready(&buf) {
-                let t0 = start_reader.load(Ordering::Acquire);
-                if t0 != 0 {
-                    return monotonic_ns().saturating_sub(t0);
-                }
+        let buf = inc.poll(path);
+        if capnp_first_record_ready(buf) {
+            let t0 = start_reader.load(Ordering::Acquire);
+            if t0 != 0 {
+                return monotonic_ns().saturating_sub(t0);
             }
         }
         thread::sleep(Duration::from_micros(poll_us));
@@ -335,21 +362,18 @@ fn poll_proto_ttfr(
     deadline: Instant,
     poll_us: u64,
 ) -> u64 {
-    let mut buf = Vec::new();
+    let mut inc = IncrementalReader::new();
     loop {
         if Instant::now() > deadline {
             eprintln!("stream_d: proto reader timed out waiting for first record");
             return 0;
         }
-        if let Ok(mut f) = File::open(path) {
-            buf.clear();
-            let _ = f.read_to_end(&mut buf);
-            if let Some((msg, _)) = first_delimited_message(&buf) {
-                if Flat8Record::decode(msg).is_ok() {
-                    let t0 = start_reader.load(Ordering::Acquire);
-                    if t0 != 0 {
-                        return monotonic_ns().saturating_sub(t0);
-                    }
+        let buf = inc.poll(path);
+        if let Some((msg, _)) = first_delimited_message(buf) {
+            if Flat8Record::decode(msg).is_ok() {
+                let t0 = start_reader.load(Ordering::Acquire);
+                if t0 != 0 {
+                    return monotonic_ns().saturating_sub(t0);
                 }
             }
         }
@@ -365,7 +389,14 @@ fn measure_nxs_throughput(
     poll_us: u64,
 ) -> Result<f64, Box<dyn std::error::Error>> {
     let keys = [
-        "id", "username", "email", "age", "balance", "active", "score", "created_at",
+        "id",
+        "username",
+        "email",
+        "age",
+        "balance",
+        "active",
+        "score",
+        "created_at",
     ];
     let schema = Schema::new(&keys);
     let slots: [Slot; 8] = std::array::from_fn(|i| Slot(i as u16));
@@ -386,40 +417,37 @@ fn measure_nxs_throughput(
 
     let reader = thread::spawn(move || {
         let deadline = Instant::now() + Duration::from_secs(120);
+        let mut inc = IncrementalReader::new();
         let mut scan_from = 0usize;
         loop {
             if Instant::now() > deadline {
                 return;
             }
-            if let Ok(mut f) = File::open(&path_r) {
-                let mut buf = Vec::new();
-                if f.read_to_end(&mut buf).is_ok() {
-                    if ds.load(Ordering::Acquire) == 0 {
-                        if let Ok(sr) = StreamReader::open(&buf) {
-                            ds.store(sr.data_start() as u64, Ordering::Release);
-                            scan_from = sr.data_start();
-                        }
-                    } else {
-                        scan_from = ds.load(Ordering::Acquire) as usize;
-                    }
-                    let mut off = scan_from;
-                    let mut count = 0usize;
-                    while let Some(end) = complete_nyxo_end(&buf, off) {
-                        off = end;
-                        count += 1;
-                    }
-                    let prev = seen.load(Ordering::Acquire);
-                    if count > prev {
-                        if prev == 0 {
-                            tf.store(monotonic_ns(), Ordering::Release);
-                        }
-                        seen.store(count, Ordering::Release);
-                        tl.store(monotonic_ns(), Ordering::Release);
-                    }
-                    if count >= n && wd.load(Ordering::Acquire) {
-                        return;
-                    }
+            let buf = inc.poll(&path_r);
+            if ds.load(Ordering::Acquire) == 0 {
+                if let Ok(sr) = StreamReader::open(buf) {
+                    ds.store(sr.data_start() as u64, Ordering::Release);
+                    scan_from = sr.data_start();
                 }
+            } else {
+                scan_from = ds.load(Ordering::Acquire) as usize;
+            }
+            let mut off = scan_from;
+            let mut count = 0usize;
+            while let Some(end) = complete_nyxo_end(buf, off) {
+                off = end;
+                count += 1;
+            }
+            let prev = seen.load(Ordering::Acquire);
+            if count > prev {
+                if prev == 0 {
+                    tf.store(monotonic_ns(), Ordering::Release);
+                }
+                seen.store(count, Ordering::Release);
+                tl.store(monotonic_ns(), Ordering::Release);
+            }
+            if count >= n && wd.load(Ordering::Acquire) {
+                return;
             }
             thread::sleep(Duration::from_micros(poll_us));
         }
@@ -493,26 +521,23 @@ fn measure_proto_throughput(
 
     let reader = thread::spawn(move || {
         let deadline = Instant::now() + Duration::from_secs(120);
+        let mut inc = IncrementalReader::new();
         loop {
             if Instant::now() > deadline {
                 return;
             }
-            if let Ok(mut f) = File::open(&path_r) {
-                let mut buf = Vec::new();
-                if f.read_to_end(&mut buf).is_ok() {
-                    let count = count_proto_records(&buf);
-                    let prev = seen.load(Ordering::Acquire);
-                    if count > prev {
-                        if prev == 0 {
-                            tf.store(monotonic_ns(), Ordering::Release);
-                        }
-                        seen.store(count, Ordering::Release);
-                        tl.store(monotonic_ns(), Ordering::Release);
-                    }
-                    if count >= n && wd.load(Ordering::Acquire) {
-                        return;
-                    }
+            let buf = inc.poll(&path_r);
+            let count = count_proto_records(buf);
+            let prev = seen.load(Ordering::Acquire);
+            if count > prev {
+                if prev == 0 {
+                    tf.store(monotonic_ns(), Ordering::Release);
                 }
+                seen.store(count, Ordering::Release);
+                tl.store(monotonic_ns(), Ordering::Release);
+            }
+            if count >= n && wd.load(Ordering::Acquire) {
+                return;
             }
             thread::sleep(Duration::from_micros(poll_us));
         }
@@ -573,26 +598,23 @@ fn measure_capnp_throughput(
 
     let reader = thread::spawn(move || {
         let deadline = Instant::now() + Duration::from_secs(120);
+        let mut inc = IncrementalReader::new();
         loop {
             if Instant::now() > deadline {
                 return;
             }
-            if let Ok(mut f) = File::open(&path_r) {
-                let mut buf = Vec::new();
-                if f.read_to_end(&mut buf).is_ok() {
-                    let count = count_capnp_records(&buf);
-                    let prev = seen.load(Ordering::Acquire);
-                    if count > prev {
-                        if prev == 0 {
-                            tf.store(monotonic_ns(), Ordering::Release);
-                        }
-                        seen.store(count, Ordering::Release);
-                        tl.store(monotonic_ns(), Ordering::Release);
-                    }
-                    if count >= n && wd.load(Ordering::Acquire) {
-                        return;
-                    }
+            let buf = inc.poll(&path_r);
+            let count = count_capnp_records(buf);
+            let prev = seen.load(Ordering::Acquire);
+            if count > prev {
+                if prev == 0 {
+                    tf.store(monotonic_ns(), Ordering::Release);
                 }
+                seen.store(count, Ordering::Release);
+                tl.store(monotonic_ns(), Ordering::Release);
+            }
+            if count >= n && wd.load(Ordering::Acquire) {
+                return;
             }
             thread::sleep(Duration::from_micros(poll_us));
         }
@@ -658,7 +680,14 @@ fn run_seal_profile(
     flush_every: usize,
 ) -> Result<SealProfileResult, Box<dyn std::error::Error>> {
     let keys = [
-        "id", "username", "email", "age", "balance", "active", "score", "created_at",
+        "id",
+        "username",
+        "email",
+        "age",
+        "balance",
+        "active",
+        "score",
+        "created_at",
     ];
     let schema = Schema::new(&keys);
     let slots: [Slot; 8] = std::array::from_fn(|i| Slot(i as u16));
@@ -760,7 +789,14 @@ fn run_nxs_d2(
     throughput_n: usize,
 ) -> Result<FormatResult, Box<dyn std::error::Error>> {
     let keys = [
-        "id", "username", "email", "age", "balance", "active", "score", "created_at",
+        "id",
+        "username",
+        "email",
+        "age",
+        "balance",
+        "active",
+        "score",
+        "created_at",
     ];
     let schema = Schema::new(&keys);
     let slots: [Slot; 8] = std::array::from_fn(|i| Slot(i as u16));
@@ -843,7 +879,12 @@ fn run_nxs_d2(
 
     let throughput = if throughput_n >= 100 {
         eprintln!("stream_d: nxs throughput (n={throughput_n})...");
-        Some(measure_nxs_throughput(records, throughput_n, flush_every, poll_us)?)
+        Some(measure_nxs_throughput(
+            records,
+            throughput_n,
+            flush_every,
+            poll_us,
+        )?)
     } else {
         None
     };
@@ -901,8 +942,7 @@ fn write_capnp_record<W: Write>(w: &mut W, r: &Flat8Record) -> std::io::Result<(
         rec.set_score(r.score);
         rec.set_created_at(r.created_at);
     }
-    serialize::write_message(w, &message)
-        .map_err(|e| std::io::Error::other(e.to_string()))
+    serialize::write_message(w, &message).map_err(|e| std::io::Error::other(e.to_string()))
 }
 
 fn run_capnp_d2(
@@ -955,7 +995,12 @@ fn run_capnp_d2(
 
     let throughput = if throughput_n >= 100 {
         eprintln!("stream_d: capnp throughput (n={throughput_n})...");
-        Some(measure_capnp_throughput(records, throughput_n, flush_every, poll_us)?)
+        Some(measure_capnp_throughput(
+            records,
+            throughput_n,
+            flush_every,
+            poll_us,
+        )?)
     } else {
         None
     };
@@ -1037,7 +1082,12 @@ fn run_proto_d2(
 
     let throughput = if throughput_n >= 100 {
         eprintln!("stream_d: proto throughput (n={throughput_n})...");
-        Some(measure_proto_throughput(records, throughput_n, flush_every, poll_us)?)
+        Some(measure_proto_throughput(
+            records,
+            throughput_n,
+            flush_every,
+            poll_us,
+        )?)
     } else {
         None
     };
@@ -1123,5 +1173,6 @@ fn monotonic_ns() -> u64 {
 
 #[cfg(not(any(target_os = "macos", target_os = "linux")))]
 fn monotonic_ns() -> u64 {
-    Instant::now().elapsed().as_nanos() as u64
+    static START: OnceLock<Instant> = OnceLock::new();
+    START.get_or_init(Instant::now).elapsed().as_nanos() as u64
 }
