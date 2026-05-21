@@ -69,7 +69,7 @@ fn parse_cli(args: &[String]) -> (CompileOptions, Vec<String>) {
             "--layout" => {
                 i += 1;
                 if i < args.len() {
-                    opts.layout = Layout::from_str(&args[i]).unwrap_or_else(|| {
+                    opts.layout = Layout::parse_name(&args[i]).unwrap_or_else(|| {
                         eprintln!("error: unknown layout (row|columnar|pax)");
                         std::process::exit(1);
                     });

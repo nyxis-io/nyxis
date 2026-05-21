@@ -103,7 +103,7 @@ unsafe fn sum_f64_avx2(vals: &[u8], n: usize) -> f64 {
 
     let mut tail = hsum_pd256(_mm256_add_pd(_mm256_add_pd(a0, a1), _mm256_add_pd(a2, a3)));
     while i < n {
-        tail += *ptr.add(i);
+        tail += ptr.add(i).read_unaligned();
         i += 1;
     }
     tail
@@ -111,14 +111,11 @@ unsafe fn sum_f64_avx2(vals: &[u8], n: usize) -> f64 {
 
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
-unsafe fn hsum_pd256(v: __m256d) -> f64 {
+unsafe fn hsum_pd256(v: std::arch::x86_64::__m256d) -> f64 {
     use std::arch::x86_64::*;
-    let hi = _mm256_extractf128_pd(v, 1);
-    let lo = _mm256_castpd256_pd128(v);
-    let s = _mm_add_pd(lo, hi);
-    let shuf = _mm_movehdup_pd(s);
-    let sums = _mm_add_pd(s, shuf);
-    _mm_cvtsd_f64(sums)
+    let mut tmp = [0.0f64; 4];
+    _mm256_storeu_pd(tmp.as_mut_ptr(), v);
+    tmp.iter().sum()
 }
 
 #[cfg(target_arch = "aarch64")]
@@ -144,7 +141,7 @@ unsafe fn sum_f64_neon(vals: &[u8], n: usize) -> f64 {
 
     let mut tail = vaddvq_f64(vaddq_f64(vaddq_f64(a0, a1), vaddq_f64(a2, a3)));
     while i < n {
-        tail += *ptr.add(i);
+        tail += ptr.add(i).read_unaligned();
         i += 1;
     }
     tail

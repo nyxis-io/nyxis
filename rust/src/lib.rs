@@ -14,10 +14,10 @@
 
 pub mod col_reduce;
 pub mod compiler;
-pub mod layout;
 pub mod convert;
 pub mod decoder;
 pub mod error;
+pub mod layout;
 pub mod lexer;
 pub mod parser;
 pub mod query;
@@ -86,8 +86,12 @@ mod layout_tests {
     fn columnar_sum_ready() {
         let keys = vec!["score".to_string()];
         let rows = vec![
-            RecordRow { cells: vec![Cell::F64(1.0)] },
-            RecordRow { cells: vec![Cell::F64(2.0)] },
+            RecordRow {
+                cells: vec![Cell::F64(1.0)],
+            },
+            RecordRow {
+                cells: vec![Cell::F64(2.0)],
+            },
         ];
         let bytes = finish_columnar(&keys, &rows).unwrap();
         assert!(bytes.len() > 64);

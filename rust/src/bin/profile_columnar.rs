@@ -104,15 +104,12 @@ fn main() {
         sum_est,
         100.0 * sum_est / harness_ns
     );
-    println!("\n=== vs Arrow IPC scan P50 ≈ {:.0} µs ===", ARROW_P50_NS / 1000.0);
     println!(
-        "cached col_sum:  {:.1}× Arrow",
-        sum_ns / ARROW_P50_NS
+        "\n=== vs Arrow IPC scan P50 ≈ {:.0} µs ===",
+        ARROW_P50_NS / 1000.0
     );
-    println!(
-        "harness loop:    {:.1}× Arrow",
-        harness_ns / ARROW_P50_NS
-    );
+    println!("cached col_sum:  {:.1}× Arrow", sum_ns / ARROW_P50_NS);
+    println!("harness loop:    {:.1}× Arrow", harness_ns / ARROW_P50_NS);
     println!(
         "theoretical floor (f64 .sum): {:.1}× Arrow",
         slice_ns / ARROW_P50_NS
@@ -125,5 +122,9 @@ fn main() {
 }
 
 fn print_line(n: u32, label: &str, ns: f64) {
-    println!("{n}. {label:<42} {:>10.0} ns  ({:>7.2} µs)", ns, ns / 1000.0);
+    println!(
+        "{n}. {label:<42} {:>10.0} ns  ({:>7.2} µs)",
+        ns,
+        ns / 1000.0
+    );
 }

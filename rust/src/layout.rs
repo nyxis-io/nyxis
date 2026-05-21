@@ -32,7 +32,7 @@ pub enum Layout {
 }
 
 impl Layout {
-    pub fn from_str(s: &str) -> Option<Self> {
+    pub fn parse_name(s: &str) -> Option<Self> {
         match s {
             "row" => Some(Layout::Row),
             "columnar" => Some(Layout::Columnar),
@@ -70,7 +70,7 @@ impl CompileOptions {
 pub fn apply_pragma(opts: &mut CompileOptions, name: &str, value: &str) -> Result<()> {
     match name {
         "layout" => {
-            opts.layout = Layout::from_str(value)
+            opts.layout = Layout::parse_name(value)
                 .ok_or_else(|| NxsError::ParseError(format!("unknown layout: {value}")))?;
         }
         "page-size" => {
@@ -126,11 +126,9 @@ impl Cell {
             Value::Str(_) | Value::Keyword(_) | Value::Binary(_) => {
                 Err(NxsError::UnsupportedFieldType)
             }
-            Value::Object(_) | Value::List(_) | Value::Macro(_) | Value::Link(_) => {
-                Err(NxsError::ParseError(
-                    "nested values not supported in columnar/PAX records".into(),
-                ))
-            }
+            Value::Object(_) | Value::List(_) | Value::Macro(_) | Value::Link(_) => Err(
+                NxsError::ParseError("nested values not supported in columnar/PAX records".into()),
+            ),
         }
     }
 
@@ -352,8 +350,14 @@ pub fn finish_pax(keys: &[String], rows: &[RecordRow], page_size: u32) -> Result
         let count = ((n - i) as u32).min(page_size);
         let page_records = &rows[i..i + count as usize];
         let page_off = 32 + schema_bytes.len() as u64 + data.len() as u64;
-        let page_bytes =
-            encode_page(page_idx, rec_start, count, keys.len(), &sigils, &page_records)?;
+        let page_bytes = encode_page(
+            page_idx,
+            rec_start,
+            count,
+            keys.len(),
+            &sigils,
+            page_records,
+        )?;
         let page_len = page_bytes.len() as u32;
         pages.push((page_idx, rec_start, count, page_off, page_len));
         data.extend_from_slice(&page_bytes);
@@ -469,12 +473,7 @@ pub fn columnar_from_writer(w: &NxsWriter<'_>) -> Result<Vec<u8>> {
     finish_columnar(&keys, &rows)
 }
 
-fn decode_row_object(
-    buf: &[u8],
-    obj_off: usize,
-    width: usize,
-    sigils: &[u8],
-) -> Result<Vec<Cell>> {
+fn decode_row_object(buf: &[u8], obj_off: usize, width: usize, sigils: &[u8]) -> Result<Vec<Cell>> {
     const MAGIC_OBJ: u32 = 0x4E59_584F;
     if obj_off + 8 > buf.len() {
         return Err(NxsError::OutOfBounds);
@@ -485,8 +484,8 @@ fn decode_row_object(
     let mut cells = vec![Cell::Absent; width];
     let mut p = obj_off + 8;
     let mut slot = 0usize;
-    let mut table_idx = 0usize;
-    loop {
+    let mut present = vec![false; width];
+    while slot < width {
         if p >= buf.len() {
             return Err(NxsError::OutOfBounds);
         }
@@ -497,89 +496,53 @@ fn decode_row_object(
             if slot >= width {
                 break;
             }
-            if (bits >> bit) & 1 != 0 {
-                if slot < sigils.len() {
-                    // read offset from table after bitmask
-                }
-            }
+            present[slot] = (bits >> bit) & 1 != 0;
             slot += 1;
         }
         if b & 0x80 == 0 {
             break;
         }
     }
-    // Simpler: use scan like C driver — delegate to minimal inline decode
-    let _ = table_idx;
+    let table_start = p;
+    let mut rank = 0u16;
     for s in 0..width {
-        if let Some(off) = scan_slot_offset(buf, obj_off, s) {
-            let sig = sigils.get(s).copied().unwrap_or(0);
-            cells[s] = read_cell_at(buf, off, sig)?;
+        if !present[s] {
+            continue;
         }
+        let ot = table_start + (rank as usize) * 2;
+        if ot + 2 > buf.len() {
+            return Err(NxsError::OutOfBounds);
+        }
+        let rel = u16::from_le_bytes(
+            buf[ot..ot + 2]
+                .try_into()
+                .map_err(|_| NxsError::OutOfBounds)?,
+        );
+        let off = obj_off + rel as usize;
+        let sig = sigils.get(s).copied().unwrap_or(b'=');
+        cells[s] = read_cell_at(buf, off, sig)?;
+        rank += 1;
     }
     Ok(cells)
-}
-
-fn scan_slot_offset(buf: &[u8], obj_off: usize, target: usize) -> Option<usize> {
-    let mut p = obj_off + 8;
-    let mut slot = 0usize;
-    let mut table_idx = 0usize;
-    let mut found = false;
-    loop {
-        if p >= buf.len() {
-            return None;
-        }
-        let b = buf[p];
-        p += 1;
-        let bits = b & 0x7F;
-        for bit in 0..7 {
-            if slot == target {
-                if (bits >> bit) & 1 == 0 {
-                    return None;
-                }
-                found = true;
-            } else if slot < target && (bits >> bit) & 1 != 0 {
-                table_idx += 1;
-            }
-            slot += 1;
-        }
-        if found && b & 0x80 == 0 {
-            break;
-        }
-        if slot > target && found {
-            break;
-        }
-        if b & 0x80 == 0 {
-            return None;
-        }
-    }
-    while p < buf.len() && buf[p - 1] & 0x80 != 0 {
-        if p >= buf.len() {
-            break;
-        }
-        let b = buf[p];
-        if b & 0x80 == 0 {
-            break;
-        }
-        p += 1;
-    }
-    if p + table_idx * 2 + 2 > buf.len() {
-        return None;
-    }
-    let rel = u16::from_le_bytes(buf[p + table_idx * 2..p + table_idx * 2 + 2].try_into().ok()?);
-    Some(obj_off + rel as usize)
 }
 
 fn read_cell_at(buf: &[u8], off: usize, sigil: u8) -> Result<Cell> {
     match sigil {
         b'=' => Ok(Cell::I64(i64::from_le_bytes(
-            buf[off..off + 8].try_into().map_err(|_| NxsError::OutOfBounds)?,
+            buf[off..off + 8]
+                .try_into()
+                .map_err(|_| NxsError::OutOfBounds)?,
         ))),
         b'~' => Ok(Cell::F64(f64::from_le_bytes(
-            buf[off..off + 8].try_into().map_err(|_| NxsError::OutOfBounds)?,
+            buf[off..off + 8]
+                .try_into()
+                .map_err(|_| NxsError::OutOfBounds)?,
         ))),
         b'?' => Ok(Cell::Bool(buf[off] != 0)),
         b'@' => Ok(Cell::Time(i64::from_le_bytes(
-            buf[off..off + 8].try_into().map_err(|_| NxsError::OutOfBounds)?,
+            buf[off..off + 8]
+                .try_into()
+                .map_err(|_| NxsError::OutOfBounds)?,
         ))),
         b'^' => Ok(Cell::Null),
         b'"' | b'$' | b'<' => Err(NxsError::UnsupportedFieldType),
@@ -602,12 +565,7 @@ mod tests {
     use super::*;
 
     fn flat8_records(n: usize, dense: bool) -> (Vec<String>, Vec<RecordRow>) {
-        let keys = vec![
-            "id".into(),
-            "score".into(),
-            "active".into(),
-            "ts".into(),
-        ];
+        let keys = vec!["id".into(), "score".into(), "active".into(), "ts".into()];
         let mut rows = Vec::new();
         for i in 0..n {
             let mut cells = vec![Cell::Absent; 4];

@@ -707,10 +707,7 @@ fn make_invalid_flags_both() -> (Vec<u8>, String) {
     let mut nxb = layout::columnar_from_writer(&w).expect("columnar");
     let flags = FLAG_SCHEMA | FLAG_COLUMNAR | FLAG_PAX;
     nxb[6..8].copy_from_slice(&flags.to_le_bytes());
-    (
-        nxb,
-        r#"{"error":"ERR_INVALID_FLAGS"}"#.to_string(),
-    )
+    (nxb, r#"{"error":"ERR_INVALID_FLAGS"}"#.to_string())
 }
 
 fn make_invalid_streaming_columnar() -> (Vec<u8>, String) {
@@ -719,10 +716,7 @@ fn make_invalid_streaming_columnar() -> (Vec<u8>, String) {
     write_flat8_records(&mut w, 10, true);
     let mut nxb = layout::columnar_from_writer(&w).expect("columnar");
     nxb[16..24].copy_from_slice(&0u64.to_le_bytes());
-    (
-        nxb,
-        r#"{"error":"ERR_INCOMPATIBLE_FLAGS"}"#.to_string(),
-    )
+    (nxb, r#"{"error":"ERR_INCOMPATIBLE_FLAGS"}"#.to_string())
 }
 
 fn make_pax_dense_1000() -> Vector {

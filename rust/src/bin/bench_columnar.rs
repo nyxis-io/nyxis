@@ -9,12 +9,7 @@ use nxs::writer::{NxsWriter, Schema, Slot};
 use std::time::Instant;
 
 fn build_rows(n: usize) -> (Vec<String>, Vec<RecordRow>) {
-    let keys = vec![
-        "id".into(),
-        "score".into(),
-        "active".into(),
-        "ts".into(),
-    ];
+    let keys = vec!["id".into(), "score".into(), "active".into(), "ts".into()];
     let rows: Vec<RecordRow> = (0..n)
         .map(|i| RecordRow {
             cells: vec![
@@ -88,8 +83,14 @@ fn main() {
         std::hint::black_box(r.col_sum_f64("score").unwrap());
     });
 
-    let row_sum = Reader::new(&row_bytes).unwrap().col_sum_f64("score").unwrap();
-    let col_sum = Reader::new(&col_bytes).unwrap().col_sum_f64("score").unwrap();
+    let row_sum = Reader::new(&row_bytes)
+        .unwrap()
+        .col_sum_f64("score")
+        .unwrap();
+    let col_sum = Reader::new(&col_bytes)
+        .unwrap()
+        .col_sum_f64("score")
+        .unwrap();
     assert!((row_sum - col_sum).abs() < 1e-3, "checksum mismatch");
     println!("checksum ok: {row_sum}");
 }

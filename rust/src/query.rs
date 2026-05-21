@@ -114,7 +114,9 @@ impl<'a> Reader<'a> {
                 let footer = footer_size(flags);
                 let fo = data.len() - footer;
                 let tail_ptr = u64::from_le_bytes(
-                    data[fo..fo + 8].try_into().map_err(|_| NxsError::OutOfBounds)?,
+                    data[fo..fo + 8]
+                        .try_into()
+                        .map_err(|_| NxsError::OutOfBounds)?,
                 ) as usize;
                 let record_count = u64::from_le_bytes(
                     data[fo + 8..fo + 16]
@@ -122,15 +124,25 @@ impl<'a> Reader<'a> {
                         .map_err(|_| NxsError::OutOfBounds)?,
                 ) as usize;
                 let kc = keys.len();
+                let tail_end = tail_ptr
+                    .checked_add(kc.checked_mul(20).ok_or(NxsError::OutOfBounds)?)
+                    .ok_or(NxsError::OutOfBounds)?;
+                if tail_ptr >= fo || tail_end > fo {
+                    return Err(NxsError::OutOfBounds);
+                }
                 let mut off = vec![0u64; kc];
                 let mut len = vec![0u64; kc];
                 for i in 0..kc {
                     let e = tail_ptr + i * 20;
                     off[i] = u64::from_le_bytes(
-                        data[e + 4..e + 12].try_into().map_err(|_| NxsError::OutOfBounds)?,
+                        data[e + 4..e + 12]
+                            .try_into()
+                            .map_err(|_| NxsError::OutOfBounds)?,
                     );
                     len[i] = u64::from_le_bytes(
-                        data[e + 12..e + 20].try_into().map_err(|_| NxsError::OutOfBounds)?,
+                        data[e + 12..e + 20]
+                            .try_into()
+                            .map_err(|_| NxsError::OutOfBounds)?,
                     );
                 }
                 (Layout::Columnar, record_count, tail_ptr, off, len)
@@ -138,7 +150,9 @@ impl<'a> Reader<'a> {
                 let footer = footer_size(flags);
                 let fo = data.len() - footer;
                 let tail_ptr = u64::from_le_bytes(
-                    data[fo..fo + 8].try_into().map_err(|_| NxsError::OutOfBounds)?,
+                    data[fo..fo + 8]
+                        .try_into()
+                        .map_err(|_| NxsError::OutOfBounds)?,
                 ) as usize;
                 let record_count = u64::from_le_bytes(
                     data[fo + 8..fo + 16]
@@ -162,8 +176,7 @@ impl<'a> Reader<'a> {
                     return Err(NxsError::OutOfBounds);
                 }
                 let record_count =
-                    u32::from_le_bytes(data[tail_ptr..tail_ptr + 4].try_into().unwrap())
-                        as usize;
+                    u32::from_le_bytes(data[tail_ptr..tail_ptr + 4].try_into().unwrap()) as usize;
                 (Layout::Row, record_count, tail_ptr + 4, vec![], vec![])
             };
 
@@ -254,9 +267,7 @@ impl<'a> Reader<'a> {
             return None;
         }
         let off = local * 8;
-        Some(f64::from_le_bytes(
-            vals.get(off..off + 8)?.try_into().ok()?,
-        ))
+        Some(f64::from_le_bytes(vals.get(off..off + 8)?.try_into().ok()?))
     }
 
     fn page_count(&self) -> usize {
@@ -290,7 +301,8 @@ impl<'a> Reader<'a> {
         const MAGIC_PAGE: u32 = 0x4E58_5350;
         let e = self.tail_start + page_idx * 28;
         let poff = u64::from_le_bytes(
-            self.data.get(e + 16..e + 24)
+            self.data
+                .get(e + 16..e + 24)
                 .ok_or(NxsError::OutOfBounds)?
                 .try_into()
                 .map_err(|_| NxsError::OutOfBounds)?,
@@ -298,8 +310,11 @@ impl<'a> Reader<'a> {
         if poff + 24 > self.data.len() {
             return Err(NxsError::OutOfBounds);
         }
-        if u32::from_le_bytes(self.data[poff..poff + 4].try_into().map_err(|_| NxsError::OutOfBounds)?)
-            != MAGIC_PAGE
+        if u32::from_le_bytes(
+            self.data[poff..poff + 4]
+                .try_into()
+                .map_err(|_| NxsError::OutOfBounds)?,
+        ) != MAGIC_PAGE
         {
             return Err(NxsError::InvalidPageMagic);
         }
@@ -308,18 +323,18 @@ impl<'a> Reader<'a> {
                 .try_into()
                 .map_err(|_| NxsError::OutOfBounds)?,
         ) as usize;
+        if slot >= field_count {
+            return Err(NxsError::OutOfBounds);
+        }
         let rc = u32::from_le_bytes(
             self.data[poff + 16..poff + 20]
                 .try_into()
                 .map_err(|_| NxsError::OutOfBounds)?,
         ) as usize;
         let mut body = poff + 24;
-        for fi in 0..slot {
+        for _ in 0..slot {
             let bm_len = null_bitmap_bytes(rc);
             body += bm_len + rc * 8;
-            if fi >= field_count {
-                break;
-            }
         }
         let bm_len = null_bitmap_bytes(rc);
         if body + bm_len + rc * 8 > self.data.len() {
@@ -437,9 +452,7 @@ impl<'data, 'reader> Record<'data, 'reader> {
                 return None;
             }
             let off = ri * 8;
-            return Some(f64::from_le_bytes(
-                vals.get(off..off + 8)?.try_into().ok()?,
-            ));
+            return Some(f64::from_le_bytes(vals.get(off..off + 8)?.try_into().ok()?));
         }
         if self.reader.layout == Layout::Pax {
             return self.reader.pax_get_f64(self.offset, slot);
