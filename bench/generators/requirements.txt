@@ -1,0 +1,6 @@
+# Pinned for bench/generators/transcode.py — see bench/BENCHMARK_VERSIONS.md
+# Match Homebrew protoc 27+ / gencode 7.x (see BENCHMARK_VERSIONS.md)
+protobuf>=7.34
+flatbuffers>=24.3.25
+pycapnp>=2.0
+pyarrow>=15.0,<18

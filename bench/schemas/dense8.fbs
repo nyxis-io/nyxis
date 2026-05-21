@@ -1,0 +1,18 @@
+namespace nyxis.bench;
+
+table Dense8Record {
+  id:long;
+  bucket:long;
+  quantity:long;
+  amount:double;
+  rate:double;
+  score:double;
+  category:long;
+  active:bool;
+}
+
+table Dense8File {
+  records:[Dense8Record];
+}
+
+root_type Dense8File;

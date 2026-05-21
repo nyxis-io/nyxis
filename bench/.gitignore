@@ -1,0 +1,15 @@
+data/json/
+data/bin/
+generators/generated/nyxis/
+generators/generated/*_pb2.py
+generators/generated/Flat8/
+generators/generated/Dense8/
+generators/generated/Sparse/
+generators/transcode_rust/target/
+generators/.codegen_stamp
+harness/rust/target/
+harness/stream_d/target/
+harness/c/harness
+results/*
+!results/.gitkeep
+generators/generated/.codegen_stamp

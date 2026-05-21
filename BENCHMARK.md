@@ -482,6 +482,142 @@ NXS is not a drop-in replacement for JSON everywhere. It is the right choice whe
 
 ---
 
+## Workload comparison suite
+
+Head-to-head benchmarks against Protobuf, FlatBuffers, Cap'n Proto, and Apache Arrow IPC are defined in [BENCHMARK_SUITE.md](BENCHMARK_SUITE.md) and implemented under **`bench/`** (not `site/bench/`, which is the JSON/NXS SDK demo).
+
+| Workload | Focus | Expected Nyxis outcome |
+| --- | --- | --- |
+| **A** — Sparse hierarchical records | File size + selective read at 10–90% population | Win at low population; tie/lose at 90% |
+| **B** — Cold-open random access | Open → first field on record 0 | Tie zero-copy peers; possible win at 10M+ records |
+| **C** — Dense analytical reducer | `sum` + `count_distinct` vs Arrow IPC | **Lose** — Arrow wins; Nyxis slowest zero-copy |
+| **D** — Streaming ingest (TTFR) | Time to first complete record (D2 file) | Win P50/P95; Cap'n Proto wins P99; NXS seal cost |
+
+### Preliminary dev run (not for publication)
+
+**Run:** `bench/results/2026-05-21_mmalta/` · **Records:** 10,000 · **Platform:** Apple Silicon (arm64), macOS · **Harness:** Python (`bench/harness/python/`), buffer pre-loaded in RAM · **Status:** Draft — pending Linux bare-metal rerun, methodology review, and 1M-scale confirmation per [BENCHMARK_SUITE.md](BENCHMARK_SUITE.md).
+
+**NXS outcomes** (1 win · 0 ties · 14 losses vs best competitor per metric; within 5% = tie):
+
+| Workload | Primary loss / winner | NXS wins |
+| --- | --- | --- |
+| **A** — sparse | **proto** (file size, all pops); **capnp** (selective read, all pops) | — |
+| **B** — flat 8-field | **proto** (size, scan); **capnp** (open) | warm **access** |
+| **C** — dense reducer | **arrow** (columnar `sum`); **proto** (size); **capnp** (open) | — |
+
+Regenerate tables and `outcomes.json`: `make -C bench render-all RESULT_DIR=bench/results/2026-05-21_mmalta`
+
+#### Workload B — flat 8-field record
+
+| Format | size | open (p50) | access (p50) | scan (p50) |
+| --- | --- | --- | --- | --- |
+| capnp | 1.20 MB | 1.5 µs | 1.8 µs | 2.63 ms |
+| fb | 1.12 MB | 2.3 µs | 3.4 µs | 21.0 ms |
+| nxs | 1.30 MB | 25.4 µs | 1.0 µs | 9.11 ms |
+| proto | 0.72 MB | 516.8 µs | 513.3 µs | 1.41 ms |
+
+Cap'n Proto and FlatBuffers tie on open/access. NXS warm access is fastest among zero-copy formats here; open is slower than capnp/fb at 10k (tail-index parse). Protobuf pays full parse per sample. FlatBuffers scan uses a slow Python per-record loop in this harness — not representative of optimized C++.
+
+#### Workload C — dense `sum(score)` / `count_distinct(category)`
+
+| Format | size | open (p50) | scan sum (p50) | distinct (p50) |
+| --- | --- | --- | --- | --- |
+| arrow | 0.56 MB | 80.4 µs | **75.0 µs** | **86.3 µs** |
+| proto | 0.40 MB | 338.0 µs | 1.31 ms | — |
+| capnp | 0.64 MB | 1.5 µs | 2.73 ms | — |
+| nxs | 1.06 MB | 22.3 µs | **8.54 ms** | — |
+
+**Nyxis loses decisively to Arrow on columnar reducers** (~114× slower `sum` at 10k rows in this run). This is the expected outcome and supports positioning the Arrow bridge for analytical workloads.
+
+#### Workload A — sparse records (10–90% field population)
+
+**File size** (smaller is better)
+
+| Pop | proto | fb | nxs | capnp |
+| --- | --- | --- | --- | --- |
+| 10% | **0.78 MB** | 2.04 MB | 2.25 MB | 4.44 MB |
+| 25% | **1.34 MB** | 2.96 MB | 2.96 MB | 4.95 MB |
+| 50% | **2.28 MB** | 4.37 MB | 4.14 MB | 5.80 MB |
+| 90% | **3.76 MB** | 6.55 MB | 6.03 MB | 7.13 MB |
+
+**Selective read** — five fields (`i01`, `s21`, `f36`, `b46`, `i10`) from a random record; P50 latency (lower is better)
+
+| Pop | capnp | fb | nxs | proto |
+| --- | --- | --- | --- | --- |
+| 10% | **3.7 µs** | 7.5 µs | 64.0 µs | 826 µs |
+| 25% | **3.9 µs** | 7.8 µs | 71.4 µs | 1.24 ms |
+| 50% | **3.7 µs** | 7.5 µs | 88.9 µs | 1.80 ms |
+| 90% | **3.6 µs** | 7.9 µs | 114.9 µs | 2.66 ms |
+
+At 10k records in this dev run, **Protobuf is smallest on disk** at every population rate; Cap'n Proto and FlatBuffers win selective-read latency; NXS sits between zero-copy peers and Protobuf on selective read. Cap'n Proto file size is largest (segment overhead). These numbers are not yet publication-grade — confirm on Linux bare metal at 1M+ rows with frozen methodology.
+
+#### Workload D — Streaming ingest, time-to-first-record (TTFR)
+
+*Schema: flat-8 · 10k records · batched flush (every 100 records) · file-on-disk (D2) · macOS · poll 50 µs · n=1000 TTFR trials · **Linux + inotify pending***
+
+| Format | TTFR P50 | TTFR P95 | TTFR P99 | Seal P50 |
+| --- | --- | --- | --- | --- |
+| **NXS** | **71 µs** | **160 µs** | 321 µs | 4.0 ms |
+| **Protobuf** | 103 µs | 177 µs | 312 µs | — |
+| **Cap'n Proto** | 109 µs | 167 µs | **252 µs** | — |
+| **FlatBuffers** | n/a † | n/a † | n/a † | — |
+
+**Sustained throughput** (10k rows, batched flush, reader polls growing file — macOS dev, informal): NXS ~25.7k rec/s · Protobuf ~26.6k rec/s · Cap'n Proto ~24.4k rec/s. A 100k-row report at this rate fully streams in ~4 s after the first row. Re-run: `make -C bench run-d-throughput`.
+
+† FlatBuffers has no native file-level streaming (root offset at buffer start). With external per-record framing, TTFR is expected to match Cap'n Proto framed streaming.
+
+**Streaming mechanism**
+
+| Format | Mechanism | Native file-level streaming? |
+| --- | --- | --- |
+| NXS v1.1 | NYXO cell, self-delimiting (magic + length) | Yes |
+| Cap'n Proto | Segment framing (fixed header per message) | Yes (framed stream) |
+| Protobuf v3 | Varint length-prefix per record | Yes |
+| FlatBuffers | Root offset table at buffer start | No |
+
+All three streaming-capable formats deliver sub-115 µs TTFR at P50. **NXS leads at P50 and P95** (~1.5× vs Cap'n Proto at P50) because the read path has no varint decode before the first field is accessible.
+
+**Cap'n Proto has the lowest P99** (252 µs vs NXS 321 µs and Protobuf 312 µs at n=1000). The P99 ordering does not follow P50. Do not conclude NXS has tighter overall tail behavior than Cap'n Proto.
+
+**NXS pays a seal cost** (~4 ms at 10k records on this hardware, fsync-dominated) that Cap'n Proto and Protobuf do not. Sealed NXS files support O(1) random access via the tail-index; length-delimited protobuf and Cap'n Proto streams require a sequential scan to locate record N after close.
+
+FlatBuffers cannot stream at the file level natively. With external per-record framing, TTFR would be comparable to Cap'n Proto.
+
+Per-record flush (`flush_every=1`) moves P50 by only a few µs — TTFR is measured on the first record only. Lead with the batched table for the reporting use case.
+
+Reproduce: `make -C bench run-d BENCH_RECORDS=10000` · Methodology: `bench/methodology/workload_D.md`
+
+---
+
+### Reproducing these benchmarks
+
+```bash
+# One-time setup (Python 3.11–3.12 venv recommended)
+cd nyxis && bash bench/scripts/setup_venv.sh && source .venv-bench/bin/activate
+
+# Dev run (default 10k records)
+make -C bench results BENCH_RECORDS=10000
+
+# CI-friendly smoke (1k, NXS only)
+make -C bench quick
+
+# Publication scale (local; needs disk + time)
+make -C bench results BENCH_RECORDS=1000000
+```
+
+Regenerate markdown tables and win/tie/loss verdicts from a saved run:
+
+```bash
+make -C bench render-all RESULT_DIR=bench/results/2026-05-21_mmalta
+# tables + verdict counts to stdout; writes outcomes.json
+```
+
+The dev 10k run records **1 win, 14 losses** (no ties) in `outcomes.json` — mainly Workload C vs Arrow and Workload A vs proto/capnp; Workload B warm access is the sole NXS win.
+
+Methodology templates: `bench/methodology/workload_{A,B,C,D}.md`. Version pins: `bench/BENCHMARK_VERSIONS.md`.
+
+---
+
 ## Running the Benchmarks
 
 Fixtures and the Node harness live in **nyxis** (`site/bench/`). Language SDK benches live in **nyxis-drivers**. In the monorepo, generate fixtures once, then point every runner at the same directory.

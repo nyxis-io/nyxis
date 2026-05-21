@@ -1,3 +1,5 @@
+use std::io::{Seek, Write};
+
 /// NxsWriter — optimized direct-to-buffer .nxb emitter.
 ///
 /// Design:
@@ -196,6 +198,28 @@ impl<'a> NxsWriter<'a> {
         }
     }
 
+    /// Bytes in the data sector buffer (for incremental stream flush).
+    pub fn data_sector_len(&self) -> usize {
+        self.buf.len()
+    }
+
+    /// Append bytes appended to the data sector since `start` to `out`.
+    pub fn write_data_sector_since(
+        &self,
+        out: &mut impl std::io::Write,
+        start: usize,
+    ) -> std::io::Result<()> {
+        if self.buf.len() > start {
+            out.write_all(&self.buf[start..])?;
+        }
+        Ok(())
+    }
+
+    /// Relative record offsets in the data sector (for stream seal).
+    pub fn record_offsets(&self) -> &[u32] {
+        &self.record_offsets
+    }
+
     /// Finish and return the complete .nxb file bytes.
     /// The tail-index contains one entry per top-level object written.
     pub fn finish(self) -> Vec<u8> {
@@ -209,7 +233,12 @@ impl<'a> NxsWriter<'a> {
 
         let tail_ptr: u64 = data_start_abs + data_sector.len() as u64;
         // Build per-record tail-index
-        let tail = build_tail_index_records(data_start_abs, &self.record_offsets, tail_ptr);
+        let abs_offsets: Vec<u64> = self
+            .record_offsets
+            .iter()
+            .map(|rel| data_start_abs + u64::from(*rel))
+            .collect();
+        let tail = build_tail_index_records(&abs_offsets, tail_ptr);
 
         let total = 32 + schema_bytes.len() + data_sector.len() + tail.len();
         let mut out = Vec::with_capacity(total);
@@ -394,14 +423,44 @@ fn build_tail_index(data_start: u64) -> Vec<u8> {
     b
 }
 
-fn build_tail_index_records(data_start: u64, record_offsets: &[u32], tail_ptr: u64) -> Vec<u8> {
+/// Write streamable v1.1 preamble + embedded schema (`TailPtr = 0`). Returns data-sector start offset.
+pub fn write_stream_file_header(
+    out: &mut impl std::io::Write,
+    schema: &Schema,
+) -> std::io::Result<u64> {
+    let schema_bytes = build_schema(&schema.keys, &[]);
+    let dict_hash = murmur3_64(&schema_bytes);
+    let data_start_abs = 32u64 + schema_bytes.len() as u64;
+    out.write_all(&MAGIC_FILE.to_le_bytes())?;
+    out.write_all(&VERSION.to_le_bytes())?;
+    out.write_all(&FLAG_SCHEMA_EMBEDDED.to_le_bytes())?;
+    out.write_all(&dict_hash.to_le_bytes())?;
+    out.write_all(&0u64.to_le_bytes())?;
+    out.write_all(&0u64.to_le_bytes())?;
+    out.write_all(&schema_bytes)?;
+    Ok(data_start_abs)
+}
+
+/// Append tail-index + footer for a streamable file (after all records are on disk).
+pub fn write_stream_file_footer(
+    out: &mut std::fs::File,
+    _data_start_abs: u64,
+    record_abs_offsets: &[u64],
+) -> std::io::Result<u64> {
+    use std::io::Seek;
+    let tail_ptr = out.seek(std::io::SeekFrom::End(0))?;
+    let tail = build_tail_index_records(record_abs_offsets, tail_ptr);
+    out.write_all(&tail)?;
+    Ok(tail_ptr)
+}
+
+fn build_tail_index_records(record_abs_offsets: &[u64], tail_ptr: u64) -> Vec<u8> {
     // EntryCount (4) + N * [KeyID (2) + AbsoluteOffset (8)] + FooterTailPtr (8) + Magic (4)
-    let n = record_offsets.len();
+    let n = record_abs_offsets.len();
     let mut b = Vec::with_capacity(4 + n * 10 + 12);
     b.extend_from_slice(&(n as u32).to_le_bytes());
-    for (i, &rel_off) in record_offsets.iter().enumerate() {
+    for (i, &abs) in record_abs_offsets.iter().enumerate() {
         b.extend_from_slice(&(i as u16).to_le_bytes()); // KeyID = record index
-        let abs = data_start + rel_off as u64;
         b.extend_from_slice(&abs.to_le_bytes());
     }
     b.extend_from_slice(&tail_ptr.to_le_bytes());

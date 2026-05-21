@@ -1,0 +1,18 @@
+syntax = "proto3";
+package nyxis.bench;
+
+// Workload B/C baseline — matches gen_fixtures / BENCHMARK.md 8-field record.
+message Flat8Record {
+  int64  id         = 1;
+  string username   = 2;
+  string email      = 3;
+  int64  age        = 4;
+  double balance    = 5;
+  bool   active     = 6;
+  double score      = 7;
+  int64  created_at = 8;  // unix nanoseconds
+}
+
+message Flat8File {
+  repeated Flat8Record records = 1;
+}

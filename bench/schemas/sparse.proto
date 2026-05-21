@@ -1,0 +1,48 @@
+syntax = "proto3";
+package nyxis.bench;
+
+// Workload A — 50 optional top-level fields + 3-level nested block.
+message SparseGrandchild {
+  optional int64  gc_i64 = 1;
+  optional string gc_str = 2;
+}
+
+message SparseChild {
+  optional SparseGrandchild grandchild = 1;
+  optional double child_f64 = 2;
+}
+
+message SparseMeta {
+  optional SparseChild child = 1;
+  optional bool meta_flag = 2;
+}
+
+message SparseRecord {
+  // 20 int64 (1-20)
+  optional int64 i01 = 1;  optional int64 i02 = 2;  optional int64 i03 = 3;
+  optional int64 i04 = 4;  optional int64 i05 = 5;  optional int64 i06 = 6;
+  optional int64 i07 = 7;  optional int64 i08 = 8;  optional int64 i09 = 9;
+  optional int64 i10 = 10; optional int64 i11 = 11; optional int64 i12 = 12;
+  optional int64 i13 = 13; optional int64 i14 = 14; optional int64 i15 = 15;
+  optional int64 i16 = 16; optional int64 i17 = 17; optional int64 i18 = 18;
+  optional int64 i19 = 19; optional int64 i20 = 20;
+  // 15 string (21-35)
+  optional string s21 = 21; optional string s22 = 22; optional string s23 = 23;
+  optional string s24 = 24; optional string s25 = 25; optional string s26 = 26;
+  optional string s27 = 27; optional string s28 = 28; optional string s29 = 29;
+  optional string s30 = 30; optional string s31 = 31; optional string s32 = 32;
+  optional string s33 = 33; optional string s34 = 34; optional string s35 = 35;
+  // 10 float64 (36-45)
+  optional double f36 = 36; optional double f37 = 37; optional double f38 = 38;
+  optional double f39 = 39; optional double f40 = 40; optional double f41 = 41;
+  optional double f42 = 42; optional double f43 = 43; optional double f44 = 44;
+  optional double f45 = 45;
+  // 5 bool (46-50)
+  optional bool b46 = 46; optional bool b47 = 47; optional bool b48 = 48;
+  optional bool b49 = 49; optional bool b50 = 50;
+  optional SparseMeta meta = 51;
+}
+
+message SparseFile {
+  repeated SparseRecord records = 1;
+}
