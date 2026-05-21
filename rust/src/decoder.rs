@@ -201,8 +201,11 @@ pub fn decode(data: &[u8]) -> Result<DecodedFile> {
         if pos + 4 > data.len() {
             return Err(NxsError::OutOfBounds);
         }
-        if u32::from_le_bytes(data[pos..pos + 4].try_into().map_err(|_| NxsError::OutOfBounds)?)
-            != MAGIC_PAGE
+        if u32::from_le_bytes(
+            data[pos..pos + 4]
+                .try_into()
+                .map_err(|_| NxsError::OutOfBounds)?,
+        ) != MAGIC_PAGE
         {
             return Err(NxsError::InvalidPageMagic);
         }
