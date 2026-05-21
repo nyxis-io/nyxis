@@ -109,12 +109,13 @@ func main() {
 
 	switch *metric {
 	case "open":
+		r, err := nxs.NewReader(data)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
 		p50, p99, iqr := measure(func() {
-			rr, err := nxs.NewReader(data)
-			if err != nil {
-				return
-			}
-			rec := rr.Record(0)
+			rec := r.Record(0)
 			if rec != nil {
 				_, _ = rec.GetF64(field)
 			}

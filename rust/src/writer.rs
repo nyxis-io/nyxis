@@ -423,7 +423,7 @@ pub fn write_stream_file_header(
     out: &mut impl std::io::Write,
     schema: &Schema,
 ) -> std::io::Result<u64> {
-    let schema_bytes = build_schema(&schema.keys, &vec![0u8; schema.keys.len()]);
+    let schema_bytes = build_schema(&schema.keys, &[]);
     let dict_hash = murmur3_64(&schema_bytes);
     let data_start_abs = 32u64 + schema_bytes.len() as u64;
     out.write_all(&MAGIC_FILE.to_le_bytes())?;

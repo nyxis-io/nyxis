@@ -298,9 +298,14 @@ impl IncrementalReader {
             return &self.buf;
         }
         if let Ok(mut f) = File::open(path) {
-            let _ = f.seek(SeekFrom::Start(self.buf.len() as u64));
+            if f.seek(SeekFrom::Start(self.buf.len() as u64)).is_err() {
+                return &self.buf;
+            }
             let mut tail = Vec::with_capacity(file_len - self.buf.len());
-            let _ = f.read_to_end(&mut tail);
+            if let Err(e) = f.read_to_end(&mut tail) {
+                eprintln!("stream_d: incremental read error: {e}");
+                return &self.buf;
+            }
             self.buf.extend_from_slice(&tail);
         }
         &self.buf

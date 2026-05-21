@@ -33,8 +33,11 @@ static int64_t percentile(int64_t *sorted, int n, double p) {
 }
 
 bench_stats_t bench_measure(void (*fn)(void *ctx), void *ctx) {
-    int64_t *samples = calloc(BENCH_SAMPLES, sizeof(int64_t));
     bench_stats_t out = {0, 0, 0, BENCH_SAMPLES};
+    int64_t *samples = calloc(BENCH_SAMPLES, sizeof(int64_t));
+    if (!samples) {
+        return out;
+    }
 
     for (int i = 0; i < BENCH_WARMUP; i++) {
         fn(ctx);

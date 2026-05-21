@@ -128,7 +128,10 @@ def run_nxs(
 
     def open_read():
         r = NxsReader(data)
-        r.record(0).get_f64(field)
+        rec = r.record(0)
+        if rec is None:
+            return
+        rec.get_f64(field)
 
     reader = NxsReader(data)
     n = reader.record_count
@@ -137,7 +140,10 @@ def run_nxs(
     def access():
         nonlocal idx
         idx = (idx * 997 + 1) % max(n, 1)
-        reader.record(idx).get_f64(field)
+        rec = reader.record(idx)
+        if rec is None:
+            return
+        rec.get_f64(field)
 
     scan_reader = NxsReader(data)
     try:
@@ -188,7 +194,10 @@ def run_nxs(
                 r = NxsReader(data)
                 n = r.record_count
                 idx = (idx * 997 + 1) % max(n, 1)
-                read_selective(r.record(idx))
+                rec = r.record(idx)
+                if rec is None:
+                    return
+                read_selective(rec)
 
         else:
             sel_reader = NxsReader(data)
@@ -197,7 +206,10 @@ def run_nxs(
             def selective():
                 nonlocal idx
                 idx = (idx * 997 + 1) % max(n_sel, 1)
-                read_selective(sel_reader.record(idx))
+                rec = sel_reader.record(idx)
+                if rec is None:
+                    return
+                read_selective(rec)
 
         w, _ = resolve_timing(records, metric)
         for _ in range(w):

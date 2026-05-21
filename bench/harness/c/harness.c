@@ -37,6 +37,15 @@ static uint8_t *map_file(const char *path, size_t *out_size) {
     fseek(f, 0, SEEK_END);
     *out_size = (size_t)ftell(f);
     rewind(f);
+    if (*out_size == 0) {
+        fclose(f);
+        uint8_t *buf = malloc(1);
+        if (!buf) {
+            return NULL;
+        }
+        buf[0] = 0;
+        return buf;
+    }
     uint8_t *buf = malloc(*out_size);
     if (!buf) { fclose(f); return NULL; }
     if (fread(buf, 1, *out_size, f) != *out_size) {
