@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Run benchmark matrix: Workload B across formats, Workload C (+ Arrow), Workload A sizes.
+# Run benchmark matrix: Workload B, C, A, D (set BENCH_D=0 to skip D).
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$ROOT"
@@ -122,8 +122,6 @@ if [ -x "$HR" ]; then
         --metric "$met" --data-dir bench/data/bin
     fi
   done
-  run "$HR" --workload A --format nxs --records "$BENCH_RECORDS" \
-    --population 0.25 --metric selective --data-dir bench/data/bin
 fi
 if [ -d ../nyxis-drivers/go ]; then
   for met in open access scan; do
@@ -137,9 +135,6 @@ if [ -d ../nyxis-drivers/go ]; then
         --data-dir $ROOT/bench/data/bin"
     fi
   done
-  run bash -c "cd ../nyxis-drivers/go && go run ../../nyxis/bench/harness/go/main.go \
-    --workload A --format nxs --records $BENCH_RECORDS --population 0.25 --metric selective \
-    --data-dir $ROOT/bench/data/bin"
 fi
 
 # Workload A — sparse sizes + selective read at four population rates
@@ -148,7 +143,22 @@ for pop in 0.10 0.25 0.50 0.90; do
     py_harness A "$fmt" size --population "$pop"
     py_harness A "$fmt" selective --population "$pop"
   done
+  if [ -x "$HC" ]; then
+    run "$HC" --workload A --format nxs --records "$BENCH_RECORDS" \
+      --population "$pop" --metric selective --data-dir bench/data/bin
+  fi
 done
+
+# Workload D — streaming TTFR (Rust stream_d; ~1–3 min at 10k rows)
+if [ "${BENCH_D:-1}" != "0" ]; then
+  BENCH_RECORDS_D="${BENCH_RECORDS_D:-$BENCH_RECORDS}"
+  echo "Workload D → run-d-smoke (BENCH_RECORDS_D=$BENCH_RECORDS_D)" | tee -a "$LOG"
+  run make -C bench run-d-smoke BENCH_RECORDS_D="$BENCH_RECORDS_D"
+  echo "Workload D → run-d-ttfr (n=1000, batched flush, publication TTFR+seal)" | tee -a "$LOG"
+  run make -C bench run-d-ttfr BENCH_RECORDS_D="$BENCH_RECORDS_D"
+  echo "Workload D → run-d-throughput (batched flush, publication throughput)" | tee -a "$LOG"
+  run make -C bench run-d-throughput BENCH_RECORDS_D="$BENCH_RECORDS_D"
+fi
 
 if [ -z "${SKIP_REPORT:-}" ]; then
   "$PY" bench/scripts/report.py --results "$OUT" --raw "$LOG" || true

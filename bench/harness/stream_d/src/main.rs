@@ -226,7 +226,80 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     println!("{}", serde_json::to_string_pretty(&out)?);
+    emit_harness_jsonl(&out);
     Ok(())
+}
+
+/// One JSON object per line for bench/scripts/report.py (same shape as A/B/C harness).
+fn emit_harness_jsonl(results: &[FormatResult]) {
+    for r in results {
+        let fmt = match r.format.as_str() {
+            "flatbuffers" => "fb",
+            other => other,
+        };
+        let base = serde_json::json!({
+            "workload": "D",
+            "format": fmt,
+            "records": r.records,
+            "population": -1.0,
+            "flush_every": r.flush_every,
+            "variant": r.variant,
+            "driver": "stream_d",
+        });
+        if let Some(ttfr) = &r.ttfr_us {
+            let mut row = base.clone();
+            if let Some(obj) = row.as_object_mut() {
+                // Publication TTFR: n≥1000 trials, batched flush (flush_every≥100).
+                let metric = if r.runs >= 1000 && r.flush_every >= 100 {
+                    "ttfr"
+                } else {
+                    "ttfr_smoke"
+                };
+                obj.insert("metric".into(), serde_json::json!(metric));
+                obj.insert("p50_us".into(), serde_json::json!(ttfr.p50));
+                obj.insert("p95_us".into(), serde_json::json!(ttfr.p95));
+                obj.insert("p99_us".into(), serde_json::json!(ttfr.p99));
+                obj.insert("samples".into(), serde_json::json!(r.runs));
+            }
+            let line = serde_json::to_string(&row).expect("jsonl row");
+            println!("{line}");
+        }
+        if let Some(seal_us) = r.seal_us_p50 {
+            let mut row = base.clone();
+            if let Some(obj) = row.as_object_mut() {
+                let seal_n = r.seal_records.unwrap_or(0);
+                let metric = if r.flush_every >= 100 && seal_n >= r.records.saturating_sub(1) {
+                    "seal"
+                } else {
+                    "seal_smoke"
+                };
+                obj.insert("metric".into(), serde_json::json!(metric));
+                obj.insert("p50_us".into(), serde_json::json!(seal_us));
+                obj.insert(
+                    "seal_records".into(),
+                    serde_json::json!(r.seal_records.unwrap_or(0)),
+                );
+                obj.insert("samples".into(), serde_json::json!(r.runs));
+            }
+            let line = serde_json::to_string(&row).expect("jsonl row");
+            println!("{line}");
+        }
+        if let Some(tput) = r.throughput_rec_per_s_p50 {
+            let mut row = base.clone();
+            if let Some(obj) = row.as_object_mut() {
+                // flush_every=1 smoke runs include poll/fsync overhead — not publication throughput.
+                let metric = if r.flush_every >= 100 {
+                    "throughput"
+                } else {
+                    "throughput_smoke"
+                };
+                obj.insert("metric".into(), serde_json::json!(metric));
+                obj.insert("p50_rec_per_s".into(), serde_json::json!(tput));
+            }
+            let line = serde_json::to_string(&row).expect("jsonl row");
+            println!("{line}");
+        }
+    }
 }
 
 fn load_records(args: &Args) -> Result<Vec<Flat8Record>, Box<dyn std::error::Error>> {

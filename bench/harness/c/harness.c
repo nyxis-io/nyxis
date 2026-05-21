@@ -77,12 +77,13 @@ static void emit_json(const config_t *cfg, bench_stats_t *st, int64_t extra) {
                     : cfg->metric == MET_ACCESS ? "access" : "scan";
     if (cfg->metric == MET_SIZE) {
         printf("{\"workload\":\"%s\",\"format\":\"%s\",\"records\":%u,\"metric\":\"%s\","
-               "\"bytes\":%lld,\"population\":%.2f}\n",
+               "\"bytes\":%lld,\"population\":%.2f,\"driver\":\"c\"}\n",
                wl, fmt, cfg->records, met, (long long)extra, cfg->population);
         return;
     }
     printf("{\"workload\":\"%s\",\"format\":\"%s\",\"records\":%u,\"metric\":\"%s\","
-           "\"p50_ns\":%lld,\"p99_ns\":%lld,\"iqr_ns\":%lld,\"samples\":%d,\"population\":%.2f}\n",
+           "\"p50_ns\":%lld,\"p99_ns\":%lld,\"iqr_ns\":%lld,\"samples\":%d,"
+           "\"population\":%.2f,\"driver\":\"c\"}\n",
            wl, fmt, cfg->records, met,
            (long long)st->p50_ns, (long long)st->p99_ns, (long long)st->iqr_ns,
            st->samples, cfg->population);

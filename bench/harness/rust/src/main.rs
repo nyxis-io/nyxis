@@ -35,6 +35,7 @@ struct Line<'a> {
     format: &'a str,
     records: u32,
     metric: &'a str,
+    driver: &'static str,
     #[serde(skip_serializing_if = "Option::is_none")]
     p50_ns: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -100,6 +101,7 @@ fn main() {
             format: "nxs",
             records: args.records,
             metric: "size",
+            driver: "rust",
             p50_ns: None,
             p99_ns: None,
             iqr_ns: None,
@@ -208,6 +210,7 @@ fn print_line(args: &Args, p50: i64, p99: i64, iqr: i64) {
         format: "nxs",
         records: args.records,
         metric: &args.metric,
+        driver: "rust",
         p50_ns: Some(p50),
         p99_ns: Some(p99),
         iqr_ns: Some(iqr),

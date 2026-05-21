@@ -545,6 +545,7 @@ def main() -> int:
             "records": args.records,
             "metric": args.metric,
             "population": args.population,
+            "driver": "python",
         }
     )
 
