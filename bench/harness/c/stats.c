@@ -61,7 +61,11 @@ bench_stats_t bench_measure(void (*fn)(void *ctx), void *ctx) {
     int trim_lo = q1_idx;
     int trim_hi = q3_idx;
     int trimmed = trim_hi - trim_lo + 1;
-    if (trimmed < 1) trimmed = BENCH_SAMPLES;
+    if (trimmed < 1) {
+        trim_lo = 0;
+        trim_hi = BENCH_SAMPLES - 1;
+        trimmed = BENCH_SAMPLES;
+    }
 
     int64_t *trimmed_buf = samples + trim_lo;
     qsort(trimmed_buf, (size_t)trimmed, sizeof(int64_t), cmp_i64);

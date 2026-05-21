@@ -48,6 +48,17 @@ def _field_salt(name: str) -> int:
     return zlib.crc32(name.encode()) % 1000
 
 
+def write_json_array(path: Path, records) -> None:
+    """Write a JSON array without materializing one giant string."""
+    with path.open("w", encoding="utf-8") as f:
+        f.write("[")
+        for i, rec in enumerate(records):
+            if i:
+                f.write(",")
+            json.dump(rec, f, separators=(",", ":"))
+        f.write("]")
+
+
 def _nested_block(rng: random.Random, i: int) -> dict[str, Any] | None:
     if not _maybe(rng, 0.15):
         return None
@@ -103,7 +114,7 @@ def gen_workload_a(out: Path, records: int, population: float | None) -> list[Pa
         data = [gen_sparse_record(rng, i, rate) for i in range(records)]
         pct = int(rate * 100)
         path = out / f"workload_A_pop{pct:02d}_{records}.json"
-        path.write_text(json.dumps(data, separators=(",", ":")), encoding="utf-8")
+        write_json_array(path, data)
         print(f"  {path.name}  ({len(data)} records, pop={rate:.0%})")
         written.append(path)
     meta = out / "workload_A_selective_fields.json"
@@ -131,7 +142,7 @@ def gen_workload_b(out: Path, records: int) -> list[Path]:
     for n_eff in counts:
         data = [gen_flat8_record(i) for i in range(n_eff)]
         path = out / f"workload_B_{n_eff}.json"
-        path.write_text(json.dumps(data, separators=(",", ":")), encoding="utf-8")
+        write_json_array(path, data)
         print(f"  {path.name}  ({len(data)} records)")
         written.append(path)
     return written
@@ -156,7 +167,7 @@ def gen_workload_c(out: Path, records: int) -> list[Path]:
     for n_eff in counts:
         data = [gen_dense8_record(i) for i in range(n_eff)]
         path = out / f"workload_C_{n_eff}.json"
-        path.write_text(json.dumps(data, separators=(",", ":")), encoding="utf-8")
+        write_json_array(path, data)
         print(f"  {path.name}  ({len(data)} records)")
         written.append(path)
     return written

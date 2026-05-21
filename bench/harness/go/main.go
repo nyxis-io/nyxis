@@ -44,7 +44,6 @@ func measure(fn func()) (p50, p99, iqr int64) {
 	q3 := buf[(3*samples)/4]
 	iqr = q3 - q1
 	trim := buf[samples/4 : (3*samples)/4+1]
-	sort.Slice(trim, func(i, j int) bool { return trim[i] < trim[j] })
 	p50 = trim[len(trim)/2]
 	p99 = trim[int(float64(len(trim)-1)*0.99)]
 	return p50, p99, iqr

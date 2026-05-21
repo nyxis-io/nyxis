@@ -1,9 +1,10 @@
 //! Cross-format benchmark harness (Rust). Uniform JSON-line output.
 
 use clap::Parser;
+use memmap2::Mmap;
 use nxs::query::Reader;
 use serde::Serialize;
-use std::fs;
+use std::fs::{self, File};
 use std::path::PathBuf;
 use std::time::Instant;
 
@@ -110,7 +111,9 @@ fn main() {
         return;
     }
 
-    let data = fs::read(&path).expect("read");
+    let file = File::open(&path).expect("open");
+    let mmap = unsafe { Mmap::map(&file).expect("mmap") };
+    let data: &[u8] = &mmap;
     let field = if args.workload.eq_ignore_ascii_case("A") {
         "f36"
     } else {

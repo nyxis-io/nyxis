@@ -233,7 +233,12 @@ impl<'a> NxsWriter<'a> {
 
         let tail_ptr: u64 = data_start_abs + data_sector.len() as u64;
         // Build per-record tail-index
-        let tail = build_tail_index_records(data_start_abs, &self.record_offsets, tail_ptr);
+        let abs_offsets: Vec<u64> = self
+            .record_offsets
+            .iter()
+            .map(|rel| data_start_abs + u64::from(*rel))
+            .collect();
+        let tail = build_tail_index_records(&abs_offsets, tail_ptr);
 
         let total = 32 + schema_bytes.len() + data_sector.len() + tail.len();
         let mut out = Vec::with_capacity(total);
@@ -444,23 +449,18 @@ pub fn write_stream_file_footer(
 ) -> std::io::Result<u64> {
     use std::io::Seek;
     let tail_ptr = out.seek(std::io::SeekFrom::End(0))?;
-    let rel: Vec<u32> = record_abs_offsets
-        .iter()
-        .map(|a| (a.saturating_sub(data_start_abs)) as u32)
-        .collect();
-    let tail = build_tail_index_records(data_start_abs, &rel, tail_ptr);
+    let tail = build_tail_index_records(record_abs_offsets, tail_ptr);
     out.write_all(&tail)?;
     Ok(tail_ptr)
 }
 
-fn build_tail_index_records(data_start: u64, record_offsets: &[u32], tail_ptr: u64) -> Vec<u8> {
+fn build_tail_index_records(record_abs_offsets: &[u64], tail_ptr: u64) -> Vec<u8> {
     // EntryCount (4) + N * [KeyID (2) + AbsoluteOffset (8)] + FooterTailPtr (8) + Magic (4)
-    let n = record_offsets.len();
+    let n = record_abs_offsets.len();
     let mut b = Vec::with_capacity(4 + n * 10 + 12);
     b.extend_from_slice(&(n as u32).to_le_bytes());
-    for (i, &rel_off) in record_offsets.iter().enumerate() {
+    for (i, &abs) in record_abs_offsets.iter().enumerate() {
         b.extend_from_slice(&(i as u16).to_le_bytes()); // KeyID = record index
-        let abs = data_start + rel_off as u64;
         b.extend_from_slice(&abs.to_le_bytes());
     }
     b.extend_from_slice(&tail_ptr.to_le_bytes());

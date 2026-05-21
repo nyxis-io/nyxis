@@ -39,6 +39,20 @@ EXT = {
 EXT_ALT = {"fb": ("bfbs", "bin")}
 
 
+def read_fixture_bytes(path: Path) -> bytes:
+    """Load fixture bytes; use mmap for large files to avoid double buffering."""
+    size = path.stat().st_size
+    if size == 0:
+        return b""
+    if size > 64 * 1024 * 1024:
+        import mmap
+
+        with path.open("rb") as f:
+            with mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ) as m:
+                return bytes(m)
+    return path.read_bytes()
+
+
 def _env_flag(name: str) -> bool:
     return os.environ.get(name, "").strip().lower() in ("1", "true", "yes", "on")
 
@@ -125,7 +139,7 @@ def run_nxs(
 ) -> None:
     from nxs import NxsReader  # type: ignore
 
-    data = path.read_bytes()
+    data = read_fixture_bytes(path)
     if metric == "size":
         emit.emit(bytes=path.stat().st_size)
         return
@@ -229,7 +243,7 @@ def run_proto(
 ) -> None:
     mod_name = {"B": "flat8_pb2", "C": "dense8_pb2", "A": "sparse_pb2"}[workload]
     mod = __import__(mod_name)
-    blob = path.read_bytes()
+    blob = read_fixture_bytes(path)
 
     if metric == "size":
         emit.emit(bytes=path.stat().st_size)
@@ -307,7 +321,7 @@ def run_flatbuffers(
 ) -> None:
     import flatbuffers
 
-    blob = path.read_bytes()
+    blob = read_fixture_bytes(path)
     if metric == "size":
         emit.emit(bytes=path.stat().st_size)
         return
@@ -392,7 +406,7 @@ def run_capnp(
         "A": BENCH / "schemas" / "sparse.capnp",
     }[workload]
     schema = capnp.load(str(cap_file))
-    blob = path.read_bytes()
+    blob = read_fixture_bytes(path)
 
     if metric == "size":
         emit.emit(bytes=path.stat().st_size)

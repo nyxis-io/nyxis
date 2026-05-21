@@ -5,11 +5,13 @@
 //!       --out ../data/bin/workload_B_nxs_1000000.nxb
 
 use clap::Parser;
-use nxs::writer::{NxsWriter, Schema, Slot};
+use nxs::writer::{
+    write_stream_file_footer, write_stream_file_header, NxsWriter, Schema, Slot,
+};
 use serde::de::{Deserializer, SeqAccess, Visitor};
 use serde::Deserialize;
 use std::fs::File;
-use std::io::BufReader;
+use std::io::{BufReader, Seek, Write};
 use std::path::PathBuf;
 
 #[derive(Parser)]
@@ -165,8 +167,11 @@ fn write_flat8_record<'a>(w: &mut NxsWriter<'a>, slots: &[Slot; 8], r: &Flat8) {
 }
 
 struct Flat8Seq<'a, 's> {
+    out: &'a mut File,
     w: &'a mut NxsWriter<'s>,
     slots: [Slot; 8],
+    flushed: &'a mut usize,
+    abs_offsets: &'a mut Vec<u64>,
 }
 
 impl<'de, 'a, 's> Visitor<'de> for Flat8Seq<'a, 's> {
@@ -181,7 +186,16 @@ impl<'de, 'a, 's> Visitor<'de> for Flat8Seq<'a, 's> {
         A: SeqAccess<'de>,
     {
         while let Some(r) = seq.next_element::<Flat8>()? {
+            let pos = self
+                .out
+                .stream_position()
+                .map_err(|e| serde::de::Error::custom(e.to_string()))?;
             write_flat8_record(self.w, &self.slots, &r);
+            self.w
+                .write_data_sector_since(self.out, *self.flushed)
+                .map_err(|e| serde::de::Error::custom(e.to_string()))?;
+            *self.flushed = self.w.data_sector_len();
+            self.abs_offsets.push(pos);
         }
         Ok(())
     }
@@ -200,22 +214,24 @@ fn stream_flat8(json: &PathBuf, out: &PathBuf) -> Result<(), Box<dyn std::error:
     ];
     let schema = Schema::new(&keys);
     let slots: [Slot; 8] = std::array::from_fn(|i| Slot(i as u16));
-    let nbytes = transcode_flat8_bytes(&schema, slots, json)?;
-    std::fs::write(out, nbytes)?;
-    Ok(())
-}
-
-fn transcode_flat8_bytes(
-    schema: &Schema,
-    slots: [Slot; 8],
-    json: &PathBuf,
-) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
-    let mut w = NxsWriter::with_capacity(schema, 4096);
-    let file = File::open(json)?;
-    let reader = BufReader::with_capacity(256 * 1024, file);
+    let mut file = File::create(out)?;
+    let data_start = write_stream_file_header(&mut file, &schema)?;
+    let mut w = NxsWriter::with_capacity(&schema, 4096);
+    let mut flushed = 0usize;
+    let mut abs_offsets = Vec::new();
+    let reader = BufReader::with_capacity(256 * 1024, File::open(json)?);
     let mut de = serde_json::Deserializer::from_reader(reader);
-    de.deserialize_seq(Flat8Seq { w: &mut w, slots })?;
-    Ok(w.finish())
+    {
+        de.deserialize_seq(Flat8Seq {
+            out: &mut file,
+            w: &mut w,
+            slots,
+            flushed: &mut flushed,
+            abs_offsets: &mut abs_offsets,
+        })?;
+    }
+    write_stream_file_footer(&mut file, data_start, &abs_offsets)?;
+    Ok(())
 }
 
 fn write_dense8_record<'a>(w: &mut NxsWriter<'a>, slots: &[Slot; 8], r: &Dense8) {
