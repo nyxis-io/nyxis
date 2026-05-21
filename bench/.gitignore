@@ -12,3 +12,4 @@ harness/stream_d/target/
 harness/c/harness
 results/*
 !results/.gitkeep
+generators/generated/.codegen_stamp
