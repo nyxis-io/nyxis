@@ -93,6 +93,24 @@ Measured as records/s from first complete record until all N rows are visible wh
 make -C bench run-d-throughput BENCH_RECORDS_D=10000
 ```
 
+## PAX streaming TTFR (Phase 2)
+
+| Variant | Format | First readable unit | Typical TTFR (256-page flat-8 numeric) |
+|---------|--------|---------------------|------------------------------------------|
+| Row | `nxs` | First NYXO object | ~150 µs P50 (publication batched flush) |
+| PAX | `nxs_pax` | First complete `NXSP` page | ~10 ms order-of-magnitude (page fill bound) |
+
+**Mechanism:** Row streaming uses `NxsWriter` + `StreamReader::has_first_complete`. PAX uses `PaxStreamWriter` (`nyxis/rust/src/pax_stream.rs`): pages flush when `RecordCount == page_size`; the reader polls `complete_pax_page_end` and reads the first in-page `score` via `pax_page_local_f64`.
+
+**Schema note:** PAX pages encode numeric fields only (`id`, `age`, `balance`, `active`, `score`, `created_at`) — strings from flat-8 are excluded per OLAP v1.2a.
+
+```bash
+make -C bench run-d-pax-ttfr          # row + PAX side-by-side (200 trials, page_size=256)
+bench-stream-d --formats nxs_pax --page-size 256 --runs 1000 --flush-every 100 ...
+```
+
+JSONL metrics: `ttfr_pax` / `ttfr_pax_smoke` (vs `ttfr` for row). Mixed row/columnar/PAX analytics: [workload_E.md](workload_E.md).
+
 ## Remaining before publication
 
 1. Linux bare metal, D2 with `inotify`

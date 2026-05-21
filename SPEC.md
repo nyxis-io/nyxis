@@ -123,9 +123,34 @@ Present when `Flags` Bit 1 is set. Immediately follows the Preamble.
 
 The `StringPool` **MUST** be padded to an 8-byte boundary after the last null terminator.
 
----
+#### 4.2.3 Compiler layout flags
 
-### 4.3 Schema Evolution
+The reference compiler (`nxs compile`) accepts:
+
+```bash
+nxs compile input.nxs                              # row-oriented (default)
+nxs compile --layout columnar input.nxs            # FLAG_COLUMNAR
+nxs compile --layout pax input.nxs                 # FLAG_PAX, default page size 4096
+nxs compile --layout pax --page-size 1024 input.nxs
+```
+
+`--layout` and `--page-size` MAY also be set via `@layout` / `@page-size` pragmas in the `.nxs` source (pragma overrides CLI default; CLI overrides row default). Full columnar and PAX wire layouts are normative in **OLAP.md**; this section records preamble interactions and streaming rules.
+
+### 4.3 Columnar and PAX layouts (v1.2)
+
+When `FLAG_COLUMNAR` (0x0001) or `FLAG_PAX` (0x0004) is set, the data sector and tail-index follow OLAP.md instead of row-oriented NYXO objects. Both flags require `FLAG_SCHEMA_EMBEDDED` (0x0002). `FLAG_COLUMNAR` and `FLAG_PAX` are mutually exclusive.
+
+| Flag | Value | Footer size (bytes) |
+| :--- | :--- | :--- |
+| Row (default) | — | 12 (`FooterTailPtr` + `MagicFooter`) |
+| `FLAG_COLUMNAR` | 0x0001 | 20 (+ `RecordCount`) |
+| `FLAG_PAX` | 0x0004 | 28 (+ `RecordCount`, `PageCount`, `PageSize`) |
+
+**Columnar streaming.** Columnar files **MUST NOT** use Preamble `TailPtr == 0`. Writers and readers **MUST** reject `FLAG_COLUMNAR` with `TailPtr == 0` using `ERR_INCOMPATIBLE_FLAGS`.
+
+**Optional page CRC.** `FLAG_PAGE_CRC` (0x0008, preamble bit 3) enables a 4-byte CRC32 per PAX page (see OLAP.md §4.2). Writers **MUST** leave this bit clear unless per-page integrity is required. Readers **MAY** verify CRC when the bit is set.
+
+### 4.4 Schema Evolution
 
 NXS uses an **additive-only** schema evolution model within a single file. Writers may add new fields to the schema, but **adding fields changes the DictHash** because the hash covers the full Schema Header. A file compiled with an extended schema is therefore a **new file** with a new DictHash; it is not a drop-in replacement for the original file.
 
@@ -141,6 +166,38 @@ When a reader accesses a field by key name or slot index, it checks the per-obje
 5. A reader caching an external schema MUST verify `DictHash` before using that schema. A hash mismatch means the file was compiled from a different (or evolved) schema; the reader MUST fall back to the embedded Schema Header or fail with `ERR_DICT_MISMATCH`.
 
 **Example:** A file written with schema `["a", "b", "c"]` can be read by a reader that only queries `"a"` and `"b"`. Field `"c"` will be absent for that reader — no error is raised. A later file written with schema `["a", "b", "c", "d"]` has a different DictHash and is treated as a distinct file; cached schemas must not be applied to it without hash verification.
+
+### 4.5 PAX streaming protocol
+
+PAX layout (`FLAG_PAX`) supports **page-level streaming**: complete pages may be read while the file is still growing. This differs from row-oriented v1.1 streaming (§7), which polls complete NYXO objects.
+
+#### 4.5.1 Writer (unsealed)
+
+1. Write Preamble with `FLAG_PAX | FLAG_SCHEMA_EMBEDDED`, `TailPtr = 0`, and embedded Schema Header.
+2. Accumulate records until the current page reaches `PAGE_SIZE` (from `--page-size` or `@page-size`, default **4096**), then emit one complete page: `PageMagic` (`NXSP`), column group, `PageLength`, 8-byte alignment padding.
+3. Repeat step 2 for each full page.
+4. On close: emit the final partial page (if any records remain), write the PAX tail-index (one entry per page), then the 28-byte PAX footer (`TailIndexOffset`, `RecordCount`, `PageCount`, `PageSize`, `MagicFooter`), and set Preamble `TailPtr` to the tail-index absolute offset (non-zero).
+
+Until step 4 completes, the file is **unsealed**: `TailPtr == 0` and `MagicFooter` is absent.
+
+#### 4.5.2 Reader (poll while unsealed)
+
+1. If `FLAG_PAX` and Preamble `TailPtr == 0`, treat the file as a stream (no random-access tail-index yet).
+2. Scan forward from the end of the Schema Header for `PageMagic` (`0x4E585350`, `NXSP`). A page is **complete** when `PageLength` bytes are available starting at that offset (length includes header through `PageLength` field per OLAP.md §4.2).
+3. Process complete pages in order; partial trailing bytes belong to an in-progress page.
+4. When `MagicFooter` (`NXS!`) is present at EOF and Preamble `TailPtr` is non-zero (or the PAX footer’s `TailIndexOffset` resolves in-bounds), the file is **sealed** — use the PAX tail-index for cross-page record lookup and column scan.
+
+**Batch open on unsealed files.** Drivers that require a sealed tail-index (e.g. `nxs_open` loading the full tail-index at open) **MUST** fail on unsealed PAX with `ERR_BAD_MAGIC` when `MagicFooter` is missing, or `ERR_OUT_OF_BOUNDS` when the buffer is shorter than `FOOTER_PAX` (28 bytes). Incremental page polling is the supported unsealed read path.
+
+**Columnar contrast.** `FLAG_COLUMNAR` with `TailPtr == 0` remains invalid (`ERR_INCOMPATIBLE_FLAGS`). Only PAX permits `TailPtr == 0` among OLAP layouts.
+
+#### 4.5.3 Seal invariant
+
+A sealed PAX file **MUST** satisfy:
+
+- Preamble `TailPtr` equals the absolute offset of the first tail-index entry (same value as `TailIndexOffset` in the PAX footer).
+- Final 4 bytes are `MagicFooter` (`0x2153584E`).
+- `PageCount` in the footer equals the number of tail-index page entries.
 
 ---
 
@@ -253,6 +310,12 @@ Circular links (a chain of `&` references that resolves back to its origin) **MU
 | `ERR_MACRO_UNRESOLVED` | Macro expression cannot be statically resolved |
 | `ERR_LIST_TYPE_MISMATCH` | List contains elements of mixed sigil types |
 | `ERR_OVERFLOW` | Arithmetic overflow in Macro expression |
+| `ERR_INVALID_FLAGS` | Both `FLAG_COLUMNAR` and `FLAG_PAX` set |
+| `ERR_INCOMPATIBLE_FLAGS` | Invalid flag combination (e.g. `FLAG_COLUMNAR` with Preamble `TailPtr == 0`) |
+| `ERR_UNSUPPORTED_LAYOUT` | Reader does not implement the requested layout |
+| `ERR_UNSUPPORTED_FIELD_TYPE` | Field type not supported in columnar/PAX initial release (see OLAP.md §Q3) |
+| `ERR_INVALID_PAGE_MAGIC` | Expected `NXSP` at page boundary |
+| `ERR_PAGE_CRC_MISMATCH` | PAX page CRC32 does not match (only when `FLAG_PAGE_CRC` is set) |
 
 ---
 
@@ -297,3 +360,11 @@ user {
 - Readers MUST resolve `TailPtr == 0` by reading `FooterTailPtr` from `EOF - 12`.
 - Schema and record bytes remain unchanged, allowing incremental parsers to emit records before the Tail-Index arrives.
 - No binary format changes from the pre-release draft.
+
+### v1.2.0 — 2026-05-21 (Columnar & PAX)
+
+- `FLAG_COLUMNAR` (0x0001) and `FLAG_PAX` (0x0004) layouts; mutual exclusion and schema-embedded requirement (§4.3).
+- PAX page-level streaming with `TailPtr == 0` until seal (§4.5); columnar rejects streaming preamble.
+- Compiler `--layout` and `--page-size`; optional `FLAG_PAGE_CRC` (0x0008) disabled by default.
+- OLAP error codes `ERR_INVALID_FLAGS` through `ERR_PAGE_CRC_MISMATCH` (Appendix A).
+- Conformance vectors for columnar/PAX positive decode and negative flag/page/stream cases.
