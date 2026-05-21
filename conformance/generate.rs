@@ -769,10 +769,7 @@ fn make_pax_streaming_unsealed() -> (Vec<u8>, String) {
     let tail_len = page_count * PAX_TAIL_ENTRY_BYTES + FOOTER_PAX_BYTES;
     nxb.truncate(nxb.len().saturating_sub(tail_len));
     nxb[16..24].copy_from_slice(&0u64.to_le_bytes());
-    (
-        nxb,
-        r#"{"error":"ERR_BAD_MAGIC"}"#.to_string(),
-    )
+    (nxb, r#"{"error":"ERR_BAD_MAGIC"}"#.to_string())
 }
 
 fn make_pax_invalid_page_magic() -> (Vec<u8>, String) {
@@ -799,10 +796,7 @@ fn make_pax_invalid_page_magic() -> (Vec<u8>, String) {
     if poff + 4 <= nxb.len() {
         nxb[poff..poff + 4].copy_from_slice(&0xFFu32.to_le_bytes());
     }
-    (
-        nxb,
-        r#"{"error":"ERR_INVALID_PAGE_MAGIC"}"#.to_string(),
-    )
+    (nxb, r#"{"error":"ERR_INVALID_PAGE_MAGIC"}"#.to_string())
 }
 
 fn make_pax_sparse_1000() -> Vector {
