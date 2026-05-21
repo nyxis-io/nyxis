@@ -35,7 +35,12 @@ static uint8_t *map_file(const char *path, size_t *out_size) {
     FILE *f = fopen(path, "rb");
     if (!f) return NULL;
     fseek(f, 0, SEEK_END);
-    *out_size = (size_t)ftell(f);
+    long sz = ftell(f);
+    if (sz < 0) {
+        fclose(f);
+        return NULL;
+    }
+    *out_size = (size_t)sz;
     rewind(f);
     if (*out_size == 0) {
         fclose(f);

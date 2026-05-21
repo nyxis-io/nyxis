@@ -39,11 +39,15 @@ EXT = {
 EXT_ALT = {"fb": ("bfbs", "bin")}
 
 
+def _env_flag(name: str) -> bool:
+    return os.environ.get(name, "").strip().lower() in ("1", "true", "yes", "on")
+
+
 def resolve_timing(records: int, metric: str) -> tuple[int, int]:
     """Scale warmup/samples down for O(n) metrics and large fixtures."""
     if os.environ.get("BENCH_WARMUP") and os.environ.get("BENCH_SAMPLES"):
         return int(os.environ["BENCH_WARMUP"]), int(os.environ["BENCH_SAMPLES"])
-    fast = os.environ.get("BENCH_FAST", "")
+    fast = _env_flag("BENCH_FAST")
     if metric in O_N_METRICS:
         if records >= 1_000_000 or fast:
             return 5, 20

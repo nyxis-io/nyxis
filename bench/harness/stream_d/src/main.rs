@@ -279,36 +279,105 @@ fn percentiles(xs: Vec<u64>) -> Percentiles {
     }
 }
 
-/// Read only new tail bytes from a growing file (reopen + seek; no full-file reread).
+/// Read only new tail bytes from a growing file (one FD; seek-append reads).
 struct IncrementalReader {
+    file: Option<File>,
     buf: Vec<u8>,
 }
 
 impl IncrementalReader {
     fn new() -> Self {
-        Self { buf: Vec::new() }
+        Self {
+            file: None,
+            buf: Vec::new(),
+        }
     }
 
     fn poll(&mut self, path: &PathBuf) -> &[u8] {
         let Ok(meta) = fs::metadata(path) else {
+            self.file = None;
             return &self.buf;
         };
         let file_len = meta.len() as usize;
+        if file_len < self.buf.len() {
+            self.buf.clear();
+            self.file = None;
+        }
+        if self.file.is_none() {
+            self.file = File::open(path).ok();
+        }
+        let Some(f) = self.file.as_mut() else {
+            return &self.buf;
+        };
         if file_len <= self.buf.len() {
             return &self.buf;
         }
-        if let Ok(mut f) = File::open(path) {
-            if f.seek(SeekFrom::Start(self.buf.len() as u64)).is_err() {
-                return &self.buf;
-            }
-            let mut tail = Vec::with_capacity(file_len - self.buf.len());
-            if let Err(e) = f.read_to_end(&mut tail) {
-                eprintln!("stream_d: incremental read error: {e}");
-                return &self.buf;
-            }
-            self.buf.extend_from_slice(&tail);
+        if f.seek(SeekFrom::Start(self.buf.len() as u64)).is_err() {
+            self.file = None;
+            return &self.buf;
         }
+        let mut tail = Vec::with_capacity(file_len - self.buf.len());
+        if let Err(e) = f.read_to_end(&mut tail) {
+            eprintln!("stream_d: incremental read error: {e}");
+            self.file = None;
+            return &self.buf;
+        }
+        self.buf.extend_from_slice(&tail);
         &self.buf
+    }
+}
+
+struct ProtoScanState {
+    parse_pos: usize,
+    count: usize,
+}
+
+impl ProtoScanState {
+    fn new() -> Self {
+        Self {
+            parse_pos: 0,
+            count: 0,
+        }
+    }
+
+    fn advance(&mut self, buf: &[u8]) -> usize {
+        let mut pos = self.parse_pos;
+        while pos < buf.len() {
+            let Some((len, consumed)) = decode_varint(&buf[pos..]) else {
+                break;
+            };
+            pos += consumed;
+            if pos + len > buf.len() {
+                break;
+            }
+            pos += len;
+            self.count += 1;
+        }
+        self.parse_pos = pos;
+        self.count
+    }
+}
+
+struct CapnpScanState {
+    cursor_pos: usize,
+    count: usize,
+}
+
+impl CapnpScanState {
+    fn new() -> Self {
+        Self {
+            cursor_pos: 0,
+            count: 0,
+        }
+    }
+
+    fn advance(&mut self, buf: &[u8]) -> usize {
+        let mut cursor = std::io::Cursor::new(&buf[self.cursor_pos..]);
+        while serialize::read_message(&mut cursor, ReaderOptions::new()).is_ok() {
+            self.count += 1;
+        }
+        self.cursor_pos += cursor.position() as usize;
+        self.count
     }
 }
 
@@ -423,7 +492,8 @@ fn measure_nxs_throughput(
     let reader = thread::spawn(move || {
         let deadline = Instant::now() + Duration::from_secs(120);
         let mut inc = IncrementalReader::new();
-        let mut scan_from = 0usize;
+        let mut scan_off = 0usize;
+        let mut count = 0usize;
         loop {
             if Instant::now() > deadline {
                 return;
@@ -432,15 +502,13 @@ fn measure_nxs_throughput(
             if ds.load(Ordering::Acquire) == 0 {
                 if let Ok(sr) = StreamReader::open(buf) {
                     ds.store(sr.data_start() as u64, Ordering::Release);
-                    scan_from = sr.data_start();
+                    scan_off = sr.data_start();
                 }
-            } else {
-                scan_from = ds.load(Ordering::Acquire) as usize;
+            } else if scan_off == 0 {
+                scan_off = ds.load(Ordering::Acquire) as usize;
             }
-            let mut off = scan_from;
-            let mut count = 0usize;
-            while let Some(end) = complete_nyxo_end(buf, off) {
-                off = end;
+            while let Some(end) = complete_nyxo_end(buf, scan_off) {
+                scan_off = end;
                 count += 1;
             }
             let prev = seen.load(Ordering::Acquire);
@@ -489,23 +557,6 @@ fn measure_nxs_throughput(
     Ok((cnt - 1) as f64 / secs.max(1e-9))
 }
 
-fn count_proto_records(buf: &[u8]) -> usize {
-    let mut pos = 0usize;
-    let mut n = 0usize;
-    while pos < buf.len() {
-        let Some((len, consumed)) = decode_varint(&buf[pos..]) else {
-            break;
-        };
-        pos += consumed;
-        if pos + len > buf.len() {
-            break;
-        }
-        pos += len;
-        n += 1;
-    }
-    n
-}
-
 fn measure_proto_throughput(
     records: &[Flat8Record],
     n: usize,
@@ -527,12 +578,13 @@ fn measure_proto_throughput(
     let reader = thread::spawn(move || {
         let deadline = Instant::now() + Duration::from_secs(120);
         let mut inc = IncrementalReader::new();
+        let mut scan = ProtoScanState::new();
         loop {
             if Instant::now() > deadline {
                 return;
             }
             let buf = inc.poll(&path_r);
-            let count = count_proto_records(buf);
+            let count = scan.advance(buf);
             let prev = seen.load(Ordering::Acquire);
             if count > prev {
                 if prev == 0 {
@@ -574,15 +626,6 @@ fn measure_proto_throughput(
     Ok((cnt - 1) as f64 / ((tlv - tfv) as f64 / 1_000_000_000.0).max(1e-9))
 }
 
-fn count_capnp_records(buf: &[u8]) -> usize {
-    let mut cursor = std::io::Cursor::new(buf);
-    let mut n = 0usize;
-    while serialize::read_message(&mut cursor, ReaderOptions::new()).is_ok() {
-        n += 1;
-    }
-    n
-}
-
 fn measure_capnp_throughput(
     records: &[Flat8Record],
     n: usize,
@@ -604,12 +647,13 @@ fn measure_capnp_throughput(
     let reader = thread::spawn(move || {
         let deadline = Instant::now() + Duration::from_secs(120);
         let mut inc = IncrementalReader::new();
+        let mut scan = CapnpScanState::new();
         loop {
             if Instant::now() > deadline {
                 return;
             }
             let buf = inc.poll(&path_r);
-            let count = count_capnp_records(buf);
+            let count = scan.advance(buf);
             let prev = seen.load(Ordering::Acquire);
             if count > prev {
                 if prev == 0 {
@@ -807,9 +851,9 @@ fn run_nxs_d2(
     let slots: [Slot; 8] = std::array::from_fn(|i| Slot(i as u16));
 
     let mut ttfr_samples = Vec::with_capacity(runs);
+    let trial_dir = tempfile::tempdir()?;
     for trial in 0..runs {
-        let dir = tempfile::tempdir()?;
-        let path = dir.path().join("stream.nxb");
+        let path = trial_dir.path().join(format!("ttfr_{trial}.nxb"));
         let start_ns = Arc::new(AtomicU64::new(0));
         let path_reader = path.clone();
         let start_reader = Arc::clone(&start_ns);
@@ -850,9 +894,9 @@ fn run_nxs_d2(
 
     let mut seal_samples = Vec::new();
     if seal_records > 0 && seal_runs > 0 {
+        let seal_dir = tempfile::tempdir()?;
         for trial in 0..seal_runs {
-            let dir = tempfile::tempdir()?;
-            let path = dir.path().join("stream.nxb");
+            let path = seal_dir.path().join(format!("seal_{trial}.nxb"));
             let mut file = OpenOptions::new()
                 .create(true)
                 .write(true)
@@ -959,10 +1003,10 @@ fn run_capnp_d2(
     throughput_n: usize,
 ) -> Result<FormatResult, Box<dyn std::error::Error>> {
     let mut ttfr_samples = Vec::with_capacity(runs);
+    let trial_dir = tempfile::tempdir()?;
 
     for trial in 0..runs {
-        let dir = tempfile::tempdir()?;
-        let path = dir.path().join("stream.capnp");
+        let path = trial_dir.path().join(format!("ttfr_{trial}.capnp"));
         let start_ns = Arc::new(AtomicU64::new(0));
         let path_reader = path.clone();
         let start_reader = Arc::clone(&start_ns);
@@ -1043,10 +1087,10 @@ fn run_proto_d2(
     throughput_n: usize,
 ) -> Result<FormatResult, Box<dyn std::error::Error>> {
     let mut ttfr_samples = Vec::with_capacity(runs);
+    let trial_dir = tempfile::tempdir()?;
 
     for trial in 0..runs {
-        let dir = tempfile::tempdir()?;
-        let path = dir.path().join("stream.pb");
+        let path = trial_dir.path().join(format!("ttfr_{trial}.pb"));
         let start_ns = Arc::new(AtomicU64::new(0));
         let path_reader = path.clone();
         let start_reader = Arc::clone(&start_ns);

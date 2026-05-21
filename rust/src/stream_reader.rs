@@ -75,12 +75,27 @@ impl<'a> StreamReader<'a> {
             .map(|(i, k)| (k.clone(), i))
             .collect();
 
-        let sealed = data.len() >= 12
-            && u32::from_le_bytes(
+        // Header TailPtr stays 0 until seal; detect seal via EOF footer + in-bounds tail block.
+        let sealed = if data.len() < 16 {
+            false
+        } else {
+            let tail_magic = u32::from_le_bytes(
                 data[data.len() - 4..]
                     .try_into()
                     .map_err(|_| NxsError::OutOfBounds)?,
-            ) == MAGIC_FOOTER;
+            );
+            if tail_magic != MAGIC_FOOTER {
+                false
+            } else {
+                let footer_tail_ptr = u64::from_le_bytes(
+                    data[data.len() - 12..data.len() - 4]
+                        .try_into()
+                        .map_err(|_| NxsError::OutOfBounds)?,
+                );
+                let tp = footer_tail_ptr as usize;
+                tp > 0 && tp < data.len() && data.len() - tp >= 16
+            }
+        };
 
         Ok(Self {
             data,
