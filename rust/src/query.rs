@@ -134,12 +134,20 @@ impl<'a> Reader<'a> {
                 let mut len = vec![0u64; kc];
                 for i in 0..kc {
                     let e = tail_ptr + i * 20;
-                    off[i] = u64::from_le_bytes(
+                    let fid = u16::from_le_bytes(
+                        data[e..e + 2]
+                            .try_into()
+                            .map_err(|_| NxsError::OutOfBounds)?,
+                    ) as usize;
+                    if fid >= kc {
+                        return Err(NxsError::OutOfBounds);
+                    }
+                    off[fid] = u64::from_le_bytes(
                         data[e + 4..e + 12]
                             .try_into()
                             .map_err(|_| NxsError::OutOfBounds)?,
                     );
-                    len[i] = u64::from_le_bytes(
+                    len[fid] = u64::from_le_bytes(
                         data[e + 12..e + 20]
                             .try_into()
                             .map_err(|_| NxsError::OutOfBounds)?,
