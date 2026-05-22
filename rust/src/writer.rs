@@ -1,4 +1,4 @@
-use std::io::{Seek, Write};
+use std::io::Write;
 
 /// NxsWriter — optimized direct-to-buffer .nxb emitter.
 ///
@@ -30,7 +30,9 @@ pub struct Schema {
     keys: Vec<String>,
     /// Precomputed LEB128 bitmask size (one per possible present-bit count)
     bitmask_bytes: usize,
-    /// Per-slot sigil (default = SIGIL_STR; updated by NxsWriter on first write)
+    /// Per-slot sigil (default = SIGIL_STR; reserved for future per-schema type hints).
+    /// Actual slot sigils are tracked in `NxsWriter::slot_sigils` at write time.
+    #[allow(dead_code)]
     sigils: Vec<u8>,
 }
 

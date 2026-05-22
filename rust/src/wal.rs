@@ -22,7 +22,7 @@
 //!   ...
 
 use crate::error::{NxsError, Result};
-use crate::writer::{NxsWriter, Schema, Slot};
+use crate::writer::{NxsWriter, Schema};
 use std::fs::{File, OpenOptions};
 use std::io::{BufWriter, Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};

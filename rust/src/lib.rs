@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-#![allow(unused_imports)]
 #![allow(clippy::new_without_default)]
 #![allow(clippy::len_without_is_empty)]
 #![allow(clippy::manual_is_multiple_of)]
