@@ -77,20 +77,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Resolve drivers ref
-        id: drivers-ref
-        env:
-          GH_TOKEN: ${{ secrets.NYXIS_CI_AUTOMATION_TOKEN }}
-        run: |
-          if gh api repos/nyxis-io/nyxis-drivers/branches/${{ env.DRIVERS_REF }} --silent 2>/dev/null; then
-            echo "ref=${{ env.DRIVERS_REF }}" >> "$GITHUB_OUTPUT"
-          else
-            echo "ref=main" >> "$GITHUB_OUTPUT"
-          fi
       - uses: actions/checkout@v4
         with:
           repository: nyxis-io/nyxis-drivers
-          ref: ${{ steps.drivers-ref.outputs.ref }}
+          ref: ${{ env.DRIVERS_REF }}
           path: nyxis-drivers
           token: ${{ secrets.NYXIS_CI_AUTOMATION_TOKEN }}
 
@@ -112,20 +102,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Resolve drivers ref
-        id: drivers-ref
-        env:
-          GH_TOKEN: ${{ secrets.NYXIS_CI_AUTOMATION_TOKEN }}
-        run: |
-          if gh api repos/nyxis-io/nyxis-drivers/branches/${{ env.DRIVERS_REF }} --silent 2>/dev/null; then
-            echo "ref=${{ env.DRIVERS_REF }}" >> "$GITHUB_OUTPUT"
-          else
-            echo "ref=main" >> "$GITHUB_OUTPUT"
-          fi
       - uses: actions/checkout@v4
         with:
           repository: nyxis-io/nyxis-drivers
-          ref: ${{ steps.drivers-ref.outputs.ref }}
+          ref: ${{ env.DRIVERS_REF }}
           path: nyxis-drivers
           token: ${{ secrets.NYXIS_CI_AUTOMATION_TOKEN }}
 
@@ -147,20 +127,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Resolve drivers ref
-        id: drivers-ref
-        env:
-          GH_TOKEN: ${{ secrets.NYXIS_CI_AUTOMATION_TOKEN }}
-        run: |
-          if gh api repos/nyxis-io/nyxis-drivers/branches/${{ env.DRIVERS_REF }} --silent 2>/dev/null; then
-            echo "ref=${{ env.DRIVERS_REF }}" >> "$GITHUB_OUTPUT"
-          else
-            echo "ref=main" >> "$GITHUB_OUTPUT"
-          fi
       - uses: actions/checkout@v4
         with:
           repository: nyxis-io/nyxis-drivers
-          ref: ${{ steps.drivers-ref.outputs.ref }}
+          ref: ${{ env.DRIVERS_REF }}
           path: nyxis-drivers
           token: ${{ secrets.NYXIS_CI_AUTOMATION_TOKEN }}
 
@@ -182,20 +152,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Resolve drivers ref
-        id: drivers-ref
-        env:
-          GH_TOKEN: ${{ secrets.NYXIS_CI_AUTOMATION_TOKEN }}
-        run: |
-          if gh api repos/nyxis-io/nyxis-drivers/branches/${{ env.DRIVERS_REF }} --silent 2>/dev/null; then
-            echo "ref=${{ env.DRIVERS_REF }}" >> "$GITHUB_OUTPUT"
-          else
-            echo "ref=main" >> "$GITHUB_OUTPUT"
-          fi
       - uses: actions/checkout@v4
         with:
           repository: nyxis-io/nyxis-drivers
-          ref: ${{ steps.drivers-ref.outputs.ref }}
+          ref: ${{ env.DRIVERS_REF }}
           path: nyxis-drivers
           token: ${{ secrets.NYXIS_CI_AUTOMATION_TOKEN }}
 
@@ -217,20 +177,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Resolve drivers ref
-        id: drivers-ref
-        env:
-          GH_TOKEN: ${{ secrets.NYXIS_CI_AUTOMATION_TOKEN }}
-        run: |
-          if gh api repos/nyxis-io/nyxis-drivers/branches/${{ env.DRIVERS_REF }} --silent 2>/dev/null; then
-            echo "ref=${{ env.DRIVERS_REF }}" >> "$GITHUB_OUTPUT"
-          else
-            echo "ref=main" >> "$GITHUB_OUTPUT"
-          fi
       - uses: actions/checkout@v4
         with:
           repository: nyxis-io/nyxis-drivers
-          ref: ${{ steps.drivers-ref.outputs.ref }}
+          ref: ${{ env.DRIVERS_REF }}
           path: nyxis-drivers
           token: ${{ secrets.NYXIS_CI_AUTOMATION_TOKEN }}
 
@@ -252,20 +202,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Resolve drivers ref
-        id: drivers-ref
-        env:
-          GH_TOKEN: ${{ secrets.NYXIS_CI_AUTOMATION_TOKEN }}
-        run: |
-          if gh api repos/nyxis-io/nyxis-drivers/branches/${{ env.DRIVERS_REF }} --silent 2>/dev/null; then
-            echo "ref=${{ env.DRIVERS_REF }}" >> "$GITHUB_OUTPUT"
-          else
-            echo "ref=main" >> "$GITHUB_OUTPUT"
-          fi
       - uses: actions/checkout@v4
         with:
           repository: nyxis-io/nyxis-drivers
-          ref: ${{ steps.drivers-ref.outputs.ref }}
+          ref: ${{ env.DRIVERS_REF }}
           path: nyxis-drivers
           token: ${{ secrets.NYXIS_CI_AUTOMATION_TOKEN }}
 
@@ -283,20 +223,10 @@ jobs:
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
-      - name: Resolve drivers ref
-        id: drivers-ref
-        env:
-          GH_TOKEN: ${{ secrets.NYXIS_CI_AUTOMATION_TOKEN }}
-        run: |
-          if gh api repos/nyxis-io/nyxis-drivers/branches/${{ env.DRIVERS_REF }} --silent 2>/dev/null; then
-            echo "ref=${{ env.DRIVERS_REF }}" >> "$GITHUB_OUTPUT"
-          else
-            echo "ref=main" >> "$GITHUB_OUTPUT"
-          fi
       - uses: actions/checkout@v4
         with:
           repository: nyxis-io/nyxis-drivers
-          ref: ${{ steps.drivers-ref.outputs.ref }}
+          ref: ${{ env.DRIVERS_REF }}
           path: nyxis-drivers
           token: ${{ secrets.NYXIS_CI_AUTOMATION_TOKEN }}
 
@@ -314,20 +244,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Resolve drivers ref
-        id: drivers-ref
-        env:
-          GH_TOKEN: ${{ secrets.NYXIS_CI_AUTOMATION_TOKEN }}
-        run: |
-          if gh api repos/nyxis-io/nyxis-drivers/branches/${{ env.DRIVERS_REF }} --silent 2>/dev/null; then
-            echo "ref=${{ env.DRIVERS_REF }}" >> "$GITHUB_OUTPUT"
-          else
-            echo "ref=main" >> "$GITHUB_OUTPUT"
-          fi
       - uses: actions/checkout@v4
         with:
           repository: nyxis-io/nyxis-drivers
-          ref: ${{ steps.drivers-ref.outputs.ref }}
+          ref: ${{ env.DRIVERS_REF }}
           path: nyxis-drivers
           token: ${{ secrets.NYXIS_CI_AUTOMATION_TOKEN }}
 
@@ -352,20 +272,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Resolve drivers ref
-        id: drivers-ref
-        env:
-          GH_TOKEN: ${{ secrets.NYXIS_CI_AUTOMATION_TOKEN }}
-        run: |
-          if gh api repos/nyxis-io/nyxis-drivers/branches/${{ env.DRIVERS_REF }} --silent 2>/dev/null; then
-            echo "ref=${{ env.DRIVERS_REF }}" >> "$GITHUB_OUTPUT"
-          else
-            echo "ref=main" >> "$GITHUB_OUTPUT"
-          fi
       - uses: actions/checkout@v4
         with:
           repository: nyxis-io/nyxis-drivers
-          ref: ${{ steps.drivers-ref.outputs.ref }}
+          ref: ${{ env.DRIVERS_REF }}
           path: nyxis-drivers
           token: ${{ secrets.NYXIS_CI_AUTOMATION_TOKEN }}
 

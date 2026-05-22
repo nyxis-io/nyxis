@@ -17,6 +17,7 @@ use std::io::{Seek, Write};
 ///   w.write_bool(Slot(3), true);
 ///   w.end_object();
 ///   let bytes = w.finish();
+
 use crate::consts::{
     FLAG_SCHEMA_EMBEDDED, MAGIC_FILE, MAGIC_FOOTER, MAGIC_LIST, MAGIC_OBJ, VERSION,
 };
