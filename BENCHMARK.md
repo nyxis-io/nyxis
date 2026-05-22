@@ -607,6 +607,8 @@ cd nyxis/bench/harness/rust && cargo run --release -- \
   --data-dir ../../data/bin
 ```
 
+**String-inclusive columnar (Phase 3):** Conformance vector `columnar_flat8_strings_100` (100 records, `id` / `name` / `score` with `name` = `user_{i}`) validates offsets+values string columns in columnar layout. Workload C publication with string fields (scan + size vs Arrow) is **TBD**.
+
 
 **Workload C — Protobuf (post-parse reference)**
 

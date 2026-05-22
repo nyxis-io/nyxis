@@ -262,7 +262,7 @@ fn make_sparse() -> Vector {
 
     // Use a simple deterministic pattern to vary which fields each record has
     for i in 0..100u64 {
-        let mask = (i * 0xB7_E1_51_62_8A_ED_2A6B_u64.wrapping_add(i)) & 0xFF;
+        let mask = i.wrapping_mul(0xB7_E1_51_62_8A_ED_2A6B_u64.wrapping_add(i)) & 0xFF;
         // ensure at least one field always present
         let mask = if mask == 0 { 1 } else { mask };
 
@@ -684,6 +684,64 @@ fn make_columnar_sparse_100() -> Vector {
     }
 }
 
+fn make_columnar_strings_100() -> Vector {
+    let keys = vec!["id".to_string(), "name".to_string(), "score".to_string()];
+    let rows: Vec<layout::RecordRow> = (0..100)
+        .map(|i| layout::RecordRow {
+            cells: vec![
+                layout::Cell::I64(i as i64),
+                layout::Cell::Str(format!("user_{}", i)),
+                layout::Cell::F64(i as f64),
+            ],
+        })
+        .collect();
+    let nxb = layout::finish_columnar(&keys, &rows).expect("columnar");
+    let key_refs = ["id", "name", "score"];
+    let records: Vec<Vec<Option<(&str, JV)>>> = (0..100)
+        .map(|i| {
+            vec![
+                Some(("id", JV::Int(i as i64))),
+                Some(("name", JV::Str(format!("user_{}", i)))),
+                Some(("score", JV::Float(i as f64))),
+            ]
+        })
+        .collect();
+    Vector {
+        name: "columnar_flat8_strings_100",
+        nxb,
+        expected: expected_json(&key_refs, &records),
+    }
+}
+
+fn make_pax_strings_300() -> Vector {
+    let keys = vec!["id".to_string(), "name".to_string(), "score".to_string()];
+    let rows: Vec<layout::RecordRow> = (0..300)
+        .map(|i| layout::RecordRow {
+            cells: vec![
+                layout::Cell::I64(i as i64),
+                layout::Cell::Str(format!("user_{}", i)),
+                layout::Cell::F64(i as f64),
+            ],
+        })
+        .collect();
+    let nxb = layout::finish_pax(&keys, &rows, 128).expect("pax");
+    let key_refs = ["id", "name", "score"];
+    let records: Vec<Vec<Option<(&str, JV)>>> = (0..300)
+        .map(|i| {
+            vec![
+                Some(("id", JV::Int(i as i64))),
+                Some(("name", JV::Str(format!("user_{}", i)))),
+                Some(("score", JV::Float(i as f64))),
+            ]
+        })
+        .collect();
+    Vector {
+        name: "pax_flat8_strings_p128_300",
+        nxb,
+        expected: expected_json(&key_refs, &records),
+    }
+}
+
 fn flat8_expected_json(n: usize, dense: bool) -> String {
     let keys = ["id", "score", "active", "ts"];
     let mut records = Vec::new();
@@ -745,7 +803,7 @@ fn make_pax_dense_1000() -> Vector {
 }
 
 const FOOTER_PAX_BYTES: usize = 28;
-const PAX_TAIL_ENTRY_BYTES: usize = 24;
+const PAX_TAIL_ENTRY_BYTES: usize = 28;
 
 fn make_pax_streaming_unsealed() -> (Vec<u8>, String) {
     let keys = vec![
@@ -889,8 +947,10 @@ fn main() {
     for v in [
         make_columnar_dense_100(),
         make_columnar_sparse_100(),
+        make_columnar_strings_100(),
         make_pax_dense_1000(),
         make_pax_sparse_1000(),
+        make_pax_strings_300(),
     ] {
         let nxb_path = out_path.join(format!("{}.nxb", v.name));
         let json_path = out_path.join(format!("{}.expected.json", v.name));

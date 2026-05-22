@@ -2,6 +2,7 @@
 //!
 //! Phase 1: dense numeric columnar (`FLAG_COLUMNAR`).
 //! Phase 2: PAX pages with per-page column groups (`FLAG_PAX`).
+//! Phase 3: variable-length string/binary columns (u32 offsets + values tail).
 
 use crate::error::{NxsError, Result};
 use crate::parser::{Field, Value};
@@ -105,7 +106,7 @@ pub fn validate_preamble_flags(flags: u16) -> Result<()> {
 
 // ── Record model for layout emitters ─────────────────────────────────────────
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Cell {
     Absent,
     Null,
@@ -113,6 +114,8 @@ pub enum Cell {
     F64(f64),
     Bool(bool),
     Time(i64),
+    Str(String),
+    Binary(Vec<u8>),
 }
 
 impl Cell {
@@ -123,9 +126,9 @@ impl Cell {
             Value::Bool(b) => Ok(Cell::Bool(*b)),
             Value::Time(ns) => Ok(Cell::Time(*ns)),
             Value::Null => Ok(Cell::Null),
-            Value::Str(_) | Value::Keyword(_) | Value::Binary(_) => {
-                Err(NxsError::UnsupportedFieldType)
-            }
+            Value::Str(s) => Ok(Cell::Str(s.clone())),
+            Value::Binary(b) => Ok(Cell::Binary(b.clone())),
+            Value::Keyword(_) => Err(NxsError::UnsupportedFieldType),
             Value::Object(_) | Value::List(_) | Value::Macro(_) | Value::Link(_) => Err(
                 NxsError::ParseError("nested values not supported in columnar/PAX records".into()),
             ),
@@ -138,10 +141,108 @@ impl Cell {
             Cell::F64(_) => b'~',
             Cell::Bool(_) => b'?',
             Cell::Time(_) => b'@',
+            Cell::Str(_) => b'"',
+            Cell::Binary(_) => b'<',
             Cell::Null => b'^',
             Cell::Absent => 0,
         }
     }
+}
+
+/// True when the schema sigil denotes a variable-length column (`"` string, `<` binary).
+pub fn is_var_sigil(sigil: u8) -> bool {
+    matches!(sigil, b'"' | b'<')
+}
+
+/// Byte length of one encoded field column (null bitmap + value buffer(s)).
+pub fn column_sector_len(sector: &[u8], record_count: usize, sigil: u8) -> Result<usize> {
+    let bm_len = null_bitmap_bytes(record_count);
+    if sector.len() < bm_len {
+        return Err(NxsError::OutOfBounds);
+    }
+    if is_var_sigil(sigil) {
+        let off_bytes = (record_count + 1)
+            .checked_mul(4)
+            .ok_or(NxsError::OutOfBounds)?;
+        if sector.len() < bm_len.saturating_add(off_bytes) {
+            return Err(NxsError::OutOfBounds);
+        }
+        let end_off = bm_len + record_count * 4;
+        let last = u32::from_le_bytes(
+            sector[end_off..end_off + 4]
+                .try_into()
+                .map_err(|_| NxsError::OutOfBounds)?,
+        ) as usize;
+        Ok(bm_len + off_bytes + last)
+    } else {
+        Ok(bm_len + record_count * 8)
+    }
+}
+
+/// Column tail after the null bitmap: `(N+1)` little-endian u32 offsets, then UTF-8/raw bytes.
+pub fn col_var_parts<'a>(
+    sector: &'a [u8],
+    record_count: usize,
+) -> Result<(&'a [u8], &'a [u8], &'a [u8])> {
+    let bm_len = null_bitmap_bytes(record_count);
+    let off_bytes = (record_count + 1)
+        .checked_mul(4)
+        .ok_or(NxsError::OutOfBounds)?;
+    if sector.len() < bm_len.saturating_add(off_bytes) {
+        return Err(NxsError::OutOfBounds);
+    }
+    let bm = &sector[..bm_len];
+    let offsets = &sector[bm_len..bm_len + off_bytes];
+    let values = &sector[bm_len + off_bytes..];
+    Ok((bm, offsets, values))
+}
+
+/// Read one UTF-8 string cell from a variable-length column sector.
+pub fn var_str_at<'a>(offsets: &'a [u8], values: &'a [u8], record_index: usize) -> Option<&'a str> {
+    let need = (record_index + 2) * 4;
+    if offsets.len() < need {
+        return None;
+    }
+    let start = u32::from_le_bytes(
+        offsets[record_index * 4..record_index * 4 + 4]
+            .try_into()
+            .ok()?,
+    ) as usize;
+    let end = u32::from_le_bytes(
+        offsets[record_index * 4 + 4..record_index * 4 + 8]
+            .try_into()
+            .ok()?,
+    ) as usize;
+    if end < start || end > values.len() {
+        return None;
+    }
+    std::str::from_utf8(&values[start..end]).ok()
+}
+
+/// Read one binary cell from a variable-length column sector.
+pub fn var_binary_at<'a>(
+    offsets: &'a [u8],
+    values: &'a [u8],
+    record_index: usize,
+) -> Option<&'a [u8]> {
+    let need = (record_index + 2) * 4;
+    if offsets.len() < need {
+        return None;
+    }
+    let start = u32::from_le_bytes(
+        offsets[record_index * 4..record_index * 4 + 4]
+            .try_into()
+            .ok()?,
+    ) as usize;
+    let end = u32::from_le_bytes(
+        offsets[record_index * 4 + 4..record_index * 4 + 8]
+            .try_into()
+            .ok()?,
+    ) as usize;
+    if end < start || end > values.len() {
+        return None;
+    }
+    Some(&values[start..end])
 }
 
 #[derive(Clone)]
@@ -208,13 +309,13 @@ fn encode_null_bitmap(n: usize, present: impl Fn(usize) -> bool) -> Vec<u8> {
     b
 }
 
-fn cell_populated(c: Cell) -> bool {
+fn cell_populated(c: &Cell) -> bool {
     !matches!(c, Cell::Absent)
 }
 
-fn write_fixed_buffer(n: usize, cells: &[Cell], encode: impl Fn(Cell) -> [u8; 8]) -> Vec<u8> {
+fn write_fixed_buffer(n: usize, cells: &[Cell], encode: impl Fn(&Cell) -> [u8; 8]) -> Vec<u8> {
     let mut buf = vec![0u8; n * 8];
-    for (i, &c) in cells.iter().enumerate().take(n) {
+    for (i, c) in cells.iter().enumerate().take(n) {
         if cell_populated(c) {
             buf[i * 8..(i + 1) * 8].copy_from_slice(&encode(c));
         }
@@ -222,8 +323,41 @@ fn write_fixed_buffer(n: usize, cells: &[Cell], encode: impl Fn(Cell) -> [u8; 8]
     buf
 }
 
+fn encode_var_column(n: usize, col: &[Cell]) -> Result<Vec<u8>> {
+    let present = |i: usize| cell_populated(&col[i]);
+    let bitmap = encode_null_bitmap(n, present);
+    let mut offsets: Vec<u32> = Vec::with_capacity(n + 1);
+    let mut values: Vec<u8> = Vec::new();
+    offsets.push(0);
+    for i in 0..n {
+        if !present(i) {
+            offsets.push(*offsets.last().unwrap_or(&0));
+            continue;
+        }
+        match &col[i] {
+            Cell::Str(s) => values.extend_from_slice(s.as_bytes()),
+            Cell::Binary(b) => values.extend_from_slice(b),
+            _ => offsets.push(*offsets.last().unwrap_or(&0)),
+        }
+        let end = values.len();
+        if end > u32::MAX as usize {
+            return Err(NxsError::Overflow);
+        }
+        offsets.push(end as u32);
+    }
+    let mut out = bitmap;
+    for o in offsets {
+        out.extend_from_slice(&o.to_le_bytes());
+    }
+    out.extend_from_slice(&values);
+    Ok(out)
+}
+
 fn encode_field_column(n: usize, col: &[Cell], sigil: u8) -> Result<Vec<u8>> {
-    let present = |i: usize| cell_populated(col[i]);
+    if is_var_sigil(sigil) {
+        return encode_var_column(n, col);
+    }
+    let present = |i: usize| cell_populated(&col[i]);
     let bitmap = encode_null_bitmap(n, present);
     let values = match sigil {
         b'=' => write_fixed_buffer(n, col, |c| match c {
@@ -239,11 +373,10 @@ fn encode_field_column(n: usize, col: &[Cell], sigil: u8) -> Result<Vec<u8>> {
         b'?' => write_fixed_buffer(n, col, |c| match c {
             Cell::Bool(v) => {
                 let mut b = [0u8; 8];
-                b[0] = if v { 1 } else { 0 };
+                b[0] = if *v { 1 } else { 0 };
                 b
             }
-            Cell::Null => [0u8; 8],
-            Cell::Absent => [0u8; 8],
+            Cell::Null | Cell::Absent => [0u8; 8],
             _ => [0u8; 8],
         }),
         b'@' => write_fixed_buffer(n, col, |c| match c {
@@ -251,7 +384,7 @@ fn encode_field_column(n: usize, col: &[Cell], sigil: u8) -> Result<Vec<u8>> {
             Cell::Null | Cell::Absent => 0i64.to_le_bytes(),
             _ => [0u8; 8],
         }),
-        b'"' | b'$' | b'<' => return Err(NxsError::UnsupportedFieldType),
+        b'$' => return Err(NxsError::UnsupportedFieldType),
         _ => write_fixed_buffer(n, col, |c| match c {
             Cell::I64(v) => v.to_le_bytes(),
             Cell::Null | Cell::Absent => 0i64.to_le_bytes(),
@@ -268,7 +401,7 @@ pub(crate) fn sigils_for_keys(keys: &[String], rows: &[RecordRow]) -> Vec<u8> {
         .enumerate()
         .map(|(fi, _)| {
             for row in rows {
-                let c = row.cells.get(fi).copied().unwrap_or(Cell::Absent);
+                let c = row.cells.get(fi).cloned().unwrap_or(Cell::Absent);
                 if c != Cell::Absent {
                     return c.sigil();
                 }
@@ -293,7 +426,7 @@ pub fn finish_columnar(keys: &[String], rows: &[RecordRow]) -> Result<Vec<u8>> {
     for fi in 0..keys.len() {
         let col: Vec<Cell> = rows
             .iter()
-            .map(|r| r.cells.get(fi).copied().unwrap_or(Cell::Absent))
+            .map(|r| r.cells.get(fi).cloned().unwrap_or(Cell::Absent))
             .collect();
         let field_buf = encode_field_column(n, &col, sigils[fi])?;
         let offset = 32 + schema_bytes.len() as u64 + data.len() as u64;
@@ -408,7 +541,7 @@ pub(crate) fn encode_page(
     for fi in 0..field_count {
         let col: Vec<Cell> = rows
             .iter()
-            .map(|r| r.cells.get(fi).copied().unwrap_or(Cell::Absent))
+            .map(|r| r.cells.get(fi).cloned().unwrap_or(Cell::Absent))
             .collect();
         let sig = sigils.get(fi).copied().unwrap_or(b'=');
         body.extend_from_slice(&encode_field_column(n, &col, sig)?);
@@ -545,7 +678,37 @@ fn read_cell_at(buf: &[u8], off: usize, sigil: u8) -> Result<Cell> {
                 .map_err(|_| NxsError::OutOfBounds)?,
         ))),
         b'^' => Ok(Cell::Null),
-        b'"' | b'$' | b'<' => Err(NxsError::UnsupportedFieldType),
+        b'"' => {
+            if off + 4 > buf.len() {
+                return Err(NxsError::OutOfBounds);
+            }
+            let len = u32::from_le_bytes(
+                buf[off..off + 4]
+                    .try_into()
+                    .map_err(|_| NxsError::OutOfBounds)?,
+            ) as usize;
+            if off + 4 + len > buf.len() {
+                return Err(NxsError::OutOfBounds);
+            }
+            let s = std::str::from_utf8(&buf[off + 4..off + 4 + len])
+                .map_err(|_| NxsError::ParseError("invalid UTF-8 in string field".into()))?;
+            Ok(Cell::Str(s.to_string()))
+        }
+        b'<' => {
+            if off + 4 > buf.len() {
+                return Err(NxsError::OutOfBounds);
+            }
+            let len = u32::from_le_bytes(
+                buf[off..off + 4]
+                    .try_into()
+                    .map_err(|_| NxsError::OutOfBounds)?,
+            ) as usize;
+            if off + 4 + len > buf.len() {
+                return Err(NxsError::OutOfBounds);
+            }
+            Ok(Cell::Binary(buf[off + 4..off + 4 + len].to_vec()))
+        }
+        b'$' => Err(NxsError::UnsupportedFieldType),
         _ => Err(NxsError::OutOfBounds),
     }
 }
@@ -605,5 +768,58 @@ mod tests {
     #[test]
     fn invalid_flags_rejected() {
         assert!(validate_preamble_flags(FLAG_COLUMNAR | FLAG_PAX).is_err());
+    }
+
+    #[test]
+    fn columnar_strings_roundtrip() {
+        let keys = vec!["id".into(), "name".into(), "score".into()];
+        let mut rows = Vec::new();
+        for i in 0..100usize {
+            rows.push(RecordRow {
+                cells: vec![
+                    Cell::I64(i as i64),
+                    Cell::Str(format!("user_{i}")),
+                    Cell::F64(i as f64 * 1.25),
+                ],
+            });
+        }
+        let bytes = finish_columnar(&keys, &rows).unwrap();
+        let r = crate::query::Reader::new(&bytes).unwrap();
+        assert_eq!(r.record_count(), 100);
+        for i in 0..100 {
+            let rec = r.record(i).unwrap();
+            assert_eq!(rec.get_i64("id"), Some(i as i64));
+            let want = format!("user_{i}");
+            assert_eq!(rec.get_str("name"), Some(want.as_str()));
+            assert!((rec.get_f64("score").unwrap() - i as f64 * 1.25).abs() < 1e-9);
+        }
+        let (bm, offsets, values) = r.col_field_var_parts(1).unwrap();
+        assert_eq!(bm.len(), null_bitmap_bytes(100));
+        assert_eq!(offsets.len(), 101 * 4);
+        assert!(!values.is_empty());
+        assert_eq!(var_str_at(offsets, values, 42), Some("user_42"));
+    }
+
+    #[test]
+    fn pax_strings_roundtrip_across_pages() {
+        let keys = vec!["id".into(), "name".into(), "score".into()];
+        let rows: Vec<RecordRow> = (0..300usize)
+            .map(|i| RecordRow {
+                cells: vec![
+                    Cell::I64(i as i64),
+                    Cell::Str(format!("user_{i}")),
+                    Cell::F64(i as f64),
+                ],
+            })
+            .collect();
+        let bytes = finish_pax(&keys, &rows, 128).unwrap();
+        let r = crate::query::Reader::new(&bytes).unwrap();
+        assert_eq!(r.record_count(), 300);
+        for i in [0usize, 127, 128, 257, 299] {
+            let rec = r.record(i).unwrap();
+            let want = format!("user_{i}");
+            assert_eq!(rec.get_str("name"), Some(want.as_str()));
+            assert_eq!(rec.get_i64("id"), Some(i as i64));
+        }
     }
 }

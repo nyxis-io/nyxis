@@ -90,9 +90,11 @@ cargo run --release --bin gen_conformance -- ../conformance
 | `truncated` | negative | File cut at byte 20 → ERR_OUT_OF_BOUNDS |
 | `columnar_flat8_dense_100` | positive | 100 records, dense flat-8, columnar layout |
 | `columnar_flat8_sparse_10pct_100` | positive | 100 records, 10% sparse, columnar |
+| `columnar_flat8_strings_100` | positive | 100 records, id/name/score, string `name` = `user_{i}`, columnar |
 | `columnar_invalid_flags_both` | negative | FLAG_COLUMNAR + FLAG_PAX → ERR_INVALID_FLAGS |
 | `columnar_invalid_streaming` | negative | Columnar + TailPtr=0 → ERR_INCOMPATIBLE_FLAGS |
 | `pax_flat8_dense_p256_1000` | positive | 1000 records, page size 256, dense PAX |
 | `pax_flat8_sparse_10pct_p256` | positive | 1000 records, 10% sparse, PAX |
+| `pax_flat8_strings_p128_300` | positive | 300 records, page size 128, id/name/score, string `name` = `user_{i}`, PAX |
 | `pax_streaming_unsealed` | negative | Unsealed PAX (3 pages, no footer) — batch open → ERR_BAD_MAGIC |
 | `pax_invalid_page_magic` | negative | Corrupt NXSP at first page → ERR_INVALID_PAGE_MAGIC |
