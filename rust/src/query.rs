@@ -735,8 +735,7 @@ impl<'data, 'reader, P: Predicate> Iterator for Records<'data, 'reader, P> {
             let abs = match r.layout {
                 Layout::Row => {
                     let entry = r.tail_start + i * 10;
-                    u64::from_le_bytes(r.data.get(entry + 2..entry + 10)?.try_into().ok()?)
-                        as usize
+                    u64::from_le_bytes(r.data.get(entry + 2..entry + 10)?.try_into().ok()?) as usize
                 }
                 Layout::Columnar | Layout::Pax => i,
             };
@@ -798,14 +797,27 @@ impl Predicate for Eq<'_, bool> {
                 if is_var_sigil(*reader.key_sigils.get(slot).unwrap_or(&0)) {
                     return false;
                 }
-                let Ok((bm, vals)) = reader.col_field_parts(slot) else { return false; };
-                if !col_bit(bm, off) { return false; }
-                vals.get(off * 8).map(|&b| (b != 0) == self.value).unwrap_or(false)
+                let Ok((bm, vals)) = reader.col_field_parts(slot) else {
+                    return false;
+                };
+                if !col_bit(bm, off) {
+                    return false;
+                }
+                vals.get(off * 8)
+                    .map(|&b| (b != 0) == self.value)
+                    .unwrap_or(false)
             }
-            Layout::Pax => reader.pax_get_bool(off, slot).map(|v| v == self.value).unwrap_or(false),
+            Layout::Pax => reader
+                .pax_get_bool(off, slot)
+                .map(|v| v == self.value)
+                .unwrap_or(false),
             Layout::Row => {
-                let Some(foff) = resolve_slot(data, off, slot) else { return false; };
-                data.get(foff).map(|&b| (b != 0) == self.value).unwrap_or(false)
+                let Some(foff) = resolve_slot(data, off, slot) else {
+                    return false;
+                };
+                data.get(foff)
+                    .map(|&b| (b != 0) == self.value)
+                    .unwrap_or(false)
             }
         }
     }
@@ -817,19 +829,28 @@ impl<'k> Predicate for Eq<'k, &str> {
             return false;
         };
         match reader.layout {
-            Layout::Columnar => {
-                reader.col_field_var_parts(slot).ok()
-                    .and_then(|(bm, offsets, values)| {
-                        if !col_bit(bm, off) { return None; }
-                        crate::layout::var_str_at(offsets, values, off)
-                    })
-                    .map(|s| s == self.value)
-                    .unwrap_or(false)
-            }
-            Layout::Pax => reader.pax_get_str(off, slot).map(|s| s == self.value).unwrap_or(false),
+            Layout::Columnar => reader
+                .col_field_var_parts(slot)
+                .ok()
+                .and_then(|(bm, offsets, values)| {
+                    if !col_bit(bm, off) {
+                        return None;
+                    }
+                    crate::layout::var_str_at(offsets, values, off)
+                })
+                .map(|s| s == self.value)
+                .unwrap_or(false),
+            Layout::Pax => reader
+                .pax_get_str(off, slot)
+                .map(|s| s == self.value)
+                .unwrap_or(false),
             Layout::Row => {
-                let Some(foff) = resolve_slot(data, off, slot) else { return false; };
-                let Some(len_bytes) = data.get(foff..foff + 4) else { return false; };
+                let Some(foff) = resolve_slot(data, off, slot) else {
+                    return false;
+                };
+                let Some(len_bytes) = data.get(foff..foff + 4) else {
+                    return false;
+                };
                 let len = u32::from_le_bytes(len_bytes.try_into().unwrap()) as usize;
                 data.get(foff + 4..foff + 4 + len)
                     .and_then(|b| std::str::from_utf8(b).ok())
@@ -847,18 +868,33 @@ impl Predicate for Eq<'_, i64> {
         };
         match reader.layout {
             Layout::Columnar => {
-                if is_var_sigil(*reader.key_sigils.get(slot).unwrap_or(&0)) { return false; }
-                let Ok((bm, vals)) = reader.col_field_parts(slot) else { return false; };
-                if !col_bit(bm, off) { return false; }
+                if is_var_sigil(*reader.key_sigils.get(slot).unwrap_or(&0)) {
+                    return false;
+                }
+                let Ok((bm, vals)) = reader.col_field_parts(slot) else {
+                    return false;
+                };
+                if !col_bit(bm, off) {
+                    return false;
+                }
                 let o = off * 8;
-                vals.get(o..o + 8).and_then(|b| b.try_into().ok())
-                    .map(|b| i64::from_le_bytes(b) == self.value).unwrap_or(false)
+                vals.get(o..o + 8)
+                    .and_then(|b| b.try_into().ok())
+                    .map(|b| i64::from_le_bytes(b) == self.value)
+                    .unwrap_or(false)
             }
-            Layout::Pax => reader.pax_get_i64(off, slot).map(|v| v == self.value).unwrap_or(false),
+            Layout::Pax => reader
+                .pax_get_i64(off, slot)
+                .map(|v| v == self.value)
+                .unwrap_or(false),
             Layout::Row => {
-                let Some(foff) = resolve_slot(data, off, slot) else { return false; };
-                data.get(foff..foff + 8).and_then(|b| b.try_into().ok())
-                    .map(|b| i64::from_le_bytes(b) == self.value).unwrap_or(false)
+                let Some(foff) = resolve_slot(data, off, slot) else {
+                    return false;
+                };
+                data.get(foff..foff + 8)
+                    .and_then(|b| b.try_into().ok())
+                    .map(|b| i64::from_le_bytes(b) == self.value)
+                    .unwrap_or(false)
             }
         }
     }
@@ -871,18 +907,33 @@ impl Predicate for Eq<'_, f64> {
         };
         match reader.layout {
             Layout::Columnar => {
-                if is_var_sigil(*reader.key_sigils.get(slot).unwrap_or(&0)) { return false; }
-                let Ok((bm, vals)) = reader.col_field_parts(slot) else { return false; };
-                if !col_bit(bm, off) { return false; }
+                if is_var_sigil(*reader.key_sigils.get(slot).unwrap_or(&0)) {
+                    return false;
+                }
+                let Ok((bm, vals)) = reader.col_field_parts(slot) else {
+                    return false;
+                };
+                if !col_bit(bm, off) {
+                    return false;
+                }
                 let o = off * 8;
-                vals.get(o..o + 8).and_then(|b| b.try_into().ok())
-                    .map(|b| f64::from_le_bytes(b) == self.value).unwrap_or(false)
+                vals.get(o..o + 8)
+                    .and_then(|b| b.try_into().ok())
+                    .map(|b| f64::from_le_bytes(b) == self.value)
+                    .unwrap_or(false)
             }
-            Layout::Pax => reader.pax_get_f64(off, slot).map(|v| v == self.value).unwrap_or(false),
+            Layout::Pax => reader
+                .pax_get_f64(off, slot)
+                .map(|v| v == self.value)
+                .unwrap_or(false),
             Layout::Row => {
-                let Some(foff) = resolve_slot(data, off, slot) else { return false; };
-                data.get(foff..foff + 8).and_then(|b| b.try_into().ok())
-                    .map(|b| f64::from_le_bytes(b) == self.value).unwrap_or(false)
+                let Some(foff) = resolve_slot(data, off, slot) else {
+                    return false;
+                };
+                data.get(foff..foff + 8)
+                    .and_then(|b| b.try_into().ok())
+                    .map(|b| f64::from_le_bytes(b) == self.value)
+                    .unwrap_or(false)
             }
         }
     }
@@ -905,18 +956,33 @@ impl Predicate for Gt<'_, f64> {
         };
         match reader.layout {
             Layout::Columnar => {
-                if is_var_sigil(*reader.key_sigils.get(slot).unwrap_or(&0)) { return false; }
-                let Ok((bm, vals)) = reader.col_field_parts(slot) else { return false; };
-                if !col_bit(bm, off) { return false; }
+                if is_var_sigil(*reader.key_sigils.get(slot).unwrap_or(&0)) {
+                    return false;
+                }
+                let Ok((bm, vals)) = reader.col_field_parts(slot) else {
+                    return false;
+                };
+                if !col_bit(bm, off) {
+                    return false;
+                }
                 let o = off * 8;
-                vals.get(o..o + 8).and_then(|b| b.try_into().ok())
-                    .map(|b| f64::from_le_bytes(b) > self.value).unwrap_or(false)
+                vals.get(o..o + 8)
+                    .and_then(|b| b.try_into().ok())
+                    .map(|b| f64::from_le_bytes(b) > self.value)
+                    .unwrap_or(false)
             }
-            Layout::Pax => reader.pax_get_f64(off, slot).map(|v| v > self.value).unwrap_or(false),
+            Layout::Pax => reader
+                .pax_get_f64(off, slot)
+                .map(|v| v > self.value)
+                .unwrap_or(false),
             Layout::Row => {
-                let Some(foff) = resolve_slot(data, off, slot) else { return false; };
-                data.get(foff..foff + 8).and_then(|b| b.try_into().ok())
-                    .map(|b| f64::from_le_bytes(b) > self.value).unwrap_or(false)
+                let Some(foff) = resolve_slot(data, off, slot) else {
+                    return false;
+                };
+                data.get(foff..foff + 8)
+                    .and_then(|b| b.try_into().ok())
+                    .map(|b| f64::from_le_bytes(b) > self.value)
+                    .unwrap_or(false)
             }
         }
     }
@@ -929,18 +995,33 @@ impl Predicate for Gt<'_, i64> {
         };
         match reader.layout {
             Layout::Columnar => {
-                if is_var_sigil(*reader.key_sigils.get(slot).unwrap_or(&0)) { return false; }
-                let Ok((bm, vals)) = reader.col_field_parts(slot) else { return false; };
-                if !col_bit(bm, off) { return false; }
+                if is_var_sigil(*reader.key_sigils.get(slot).unwrap_or(&0)) {
+                    return false;
+                }
+                let Ok((bm, vals)) = reader.col_field_parts(slot) else {
+                    return false;
+                };
+                if !col_bit(bm, off) {
+                    return false;
+                }
                 let o = off * 8;
-                vals.get(o..o + 8).and_then(|b| b.try_into().ok())
-                    .map(|b| i64::from_le_bytes(b) > self.value).unwrap_or(false)
+                vals.get(o..o + 8)
+                    .and_then(|b| b.try_into().ok())
+                    .map(|b| i64::from_le_bytes(b) > self.value)
+                    .unwrap_or(false)
             }
-            Layout::Pax => reader.pax_get_i64(off, slot).map(|v| v > self.value).unwrap_or(false),
+            Layout::Pax => reader
+                .pax_get_i64(off, slot)
+                .map(|v| v > self.value)
+                .unwrap_or(false),
             Layout::Row => {
-                let Some(foff) = resolve_slot(data, off, slot) else { return false; };
-                data.get(foff..foff + 8).and_then(|b| b.try_into().ok())
-                    .map(|b| i64::from_le_bytes(b) > self.value).unwrap_or(false)
+                let Some(foff) = resolve_slot(data, off, slot) else {
+                    return false;
+                };
+                data.get(foff..foff + 8)
+                    .and_then(|b| b.try_into().ok())
+                    .map(|b| i64::from_le_bytes(b) > self.value)
+                    .unwrap_or(false)
             }
         }
     }
@@ -963,18 +1044,33 @@ impl Predicate for Lt<'_, f64> {
         };
         match reader.layout {
             Layout::Columnar => {
-                if is_var_sigil(*reader.key_sigils.get(slot).unwrap_or(&0)) { return false; }
-                let Ok((bm, vals)) = reader.col_field_parts(slot) else { return false; };
-                if !col_bit(bm, off) { return false; }
+                if is_var_sigil(*reader.key_sigils.get(slot).unwrap_or(&0)) {
+                    return false;
+                }
+                let Ok((bm, vals)) = reader.col_field_parts(slot) else {
+                    return false;
+                };
+                if !col_bit(bm, off) {
+                    return false;
+                }
                 let o = off * 8;
-                vals.get(o..o + 8).and_then(|b| b.try_into().ok())
-                    .map(|b| f64::from_le_bytes(b) < self.value).unwrap_or(false)
+                vals.get(o..o + 8)
+                    .and_then(|b| b.try_into().ok())
+                    .map(|b| f64::from_le_bytes(b) < self.value)
+                    .unwrap_or(false)
             }
-            Layout::Pax => reader.pax_get_f64(off, slot).map(|v| v < self.value).unwrap_or(false),
+            Layout::Pax => reader
+                .pax_get_f64(off, slot)
+                .map(|v| v < self.value)
+                .unwrap_or(false),
             Layout::Row => {
-                let Some(foff) = resolve_slot(data, off, slot) else { return false; };
-                data.get(foff..foff + 8).and_then(|b| b.try_into().ok())
-                    .map(|b| f64::from_le_bytes(b) < self.value).unwrap_or(false)
+                let Some(foff) = resolve_slot(data, off, slot) else {
+                    return false;
+                };
+                data.get(foff..foff + 8)
+                    .and_then(|b| b.try_into().ok())
+                    .map(|b| f64::from_le_bytes(b) < self.value)
+                    .unwrap_or(false)
             }
         }
     }
@@ -987,18 +1083,33 @@ impl Predicate for Lt<'_, i64> {
         };
         match reader.layout {
             Layout::Columnar => {
-                if is_var_sigil(*reader.key_sigils.get(slot).unwrap_or(&0)) { return false; }
-                let Ok((bm, vals)) = reader.col_field_parts(slot) else { return false; };
-                if !col_bit(bm, off) { return false; }
+                if is_var_sigil(*reader.key_sigils.get(slot).unwrap_or(&0)) {
+                    return false;
+                }
+                let Ok((bm, vals)) = reader.col_field_parts(slot) else {
+                    return false;
+                };
+                if !col_bit(bm, off) {
+                    return false;
+                }
                 let o = off * 8;
-                vals.get(o..o + 8).and_then(|b| b.try_into().ok())
-                    .map(|b| i64::from_le_bytes(b) < self.value).unwrap_or(false)
+                vals.get(o..o + 8)
+                    .and_then(|b| b.try_into().ok())
+                    .map(|b| i64::from_le_bytes(b) < self.value)
+                    .unwrap_or(false)
             }
-            Layout::Pax => reader.pax_get_i64(off, slot).map(|v| v < self.value).unwrap_or(false),
+            Layout::Pax => reader
+                .pax_get_i64(off, slot)
+                .map(|v| v < self.value)
+                .unwrap_or(false),
             Layout::Row => {
-                let Some(foff) = resolve_slot(data, off, slot) else { return false; };
-                data.get(foff..foff + 8).and_then(|b| b.try_into().ok())
-                    .map(|b| i64::from_le_bytes(b) < self.value).unwrap_or(false)
+                let Some(foff) = resolve_slot(data, off, slot) else {
+                    return false;
+                };
+                data.get(foff..foff + 8)
+                    .and_then(|b| b.try_into().ok())
+                    .map(|b| i64::from_le_bytes(b) < self.value)
+                    .unwrap_or(false)
             }
         }
     }
@@ -1261,14 +1372,24 @@ mod tests {
     }
 
     fn make_columnar_nxb() -> Vec<u8> {
-        use crate::layout::{Cell, RecordRow, finish_columnar};
+        use crate::layout::{finish_columnar, Cell, RecordRow};
         let keys = vec!["id".to_string(), "score".to_string(), "active".to_string()];
         let rows: Vec<RecordRow> = vec![
-            RecordRow { cells: vec![Cell::I64(1), Cell::F64(95.0), Cell::Bool(true)] },
-            RecordRow { cells: vec![Cell::I64(2), Cell::F64(42.0), Cell::Bool(false)] },
-            RecordRow { cells: vec![Cell::I64(3), Cell::F64(88.0), Cell::Bool(true)] },
-            RecordRow { cells: vec![Cell::I64(4), Cell::F64(15.0), Cell::Bool(false)] },
-            RecordRow { cells: vec![Cell::I64(5), Cell::F64(77.0), Cell::Bool(true)] },
+            RecordRow {
+                cells: vec![Cell::I64(1), Cell::F64(95.0), Cell::Bool(true)],
+            },
+            RecordRow {
+                cells: vec![Cell::I64(2), Cell::F64(42.0), Cell::Bool(false)],
+            },
+            RecordRow {
+                cells: vec![Cell::I64(3), Cell::F64(88.0), Cell::Bool(true)],
+            },
+            RecordRow {
+                cells: vec![Cell::I64(4), Cell::F64(15.0), Cell::Bool(false)],
+            },
+            RecordRow {
+                cells: vec![Cell::I64(5), Cell::F64(77.0), Cell::Bool(true)],
+            },
         ];
         finish_columnar(&keys, &rows).unwrap()
     }
