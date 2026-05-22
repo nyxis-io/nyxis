@@ -161,32 +161,37 @@ pub fn column_sector_len(sector: &[u8], record_count: usize, sigil: u8) -> Resul
         return Err(NxsError::OutOfBounds);
     }
     if is_var_sigil(sigil) {
-        let off_bytes = (record_count + 1)
-            .checked_mul(4)
+        let off_bytes = record_count
+            .checked_add(1)
+            .and_then(|n| n.checked_mul(4))
             .ok_or(NxsError::OutOfBounds)?;
-        if sector.len() < bm_len.saturating_add(off_bytes) {
+        if sector.len() < bm_len.checked_add(off_bytes).ok_or(NxsError::OutOfBounds)? {
             return Err(NxsError::OutOfBounds);
         }
-        let end_off = bm_len + record_count * 4;
+        let end_off = bm_len
+            .checked_add(record_count.checked_mul(4).ok_or(NxsError::OutOfBounds)?)
+            .ok_or(NxsError::OutOfBounds)?;
         let last = u32::from_le_bytes(
             sector[end_off..end_off + 4]
                 .try_into()
                 .map_err(|_| NxsError::OutOfBounds)?,
         ) as usize;
-        Ok(bm_len + off_bytes + last)
+        bm_len
+            .checked_add(off_bytes)
+            .and_then(|x| x.checked_add(last))
+            .ok_or(NxsError::OutOfBounds)
     } else {
-        Ok(bm_len + record_count * 8)
+        let cells = record_count.checked_mul(8).ok_or(NxsError::OutOfBounds)?;
+        bm_len.checked_add(cells).ok_or(NxsError::OutOfBounds)
     }
 }
 
 /// Column tail after the null bitmap: `(N+1)` little-endian u32 offsets, then UTF-8/raw bytes.
-pub fn col_var_parts<'a>(
-    sector: &'a [u8],
-    record_count: usize,
-) -> Result<(&'a [u8], &'a [u8], &'a [u8])> {
+pub fn col_var_parts(sector: &[u8], record_count: usize) -> Result<(&[u8], &[u8], &[u8])> {
     let bm_len = null_bitmap_bytes(record_count);
-    let off_bytes = (record_count + 1)
-        .checked_mul(4)
+    let off_bytes = record_count
+        .checked_add(1)
+        .and_then(|n| n.checked_mul(4))
         .ok_or(NxsError::OutOfBounds)?;
     if sector.len() < bm_len.saturating_add(off_bytes) {
         return Err(NxsError::OutOfBounds);
@@ -199,7 +204,7 @@ pub fn col_var_parts<'a>(
 
 /// Read one UTF-8 string cell from a variable-length column sector.
 pub fn var_str_at<'a>(offsets: &'a [u8], values: &'a [u8], record_index: usize) -> Option<&'a str> {
-    let need = (record_index + 2) * 4;
+    let need = record_index.checked_add(2).and_then(|n| n.checked_mul(4))?;
     if offsets.len() < need {
         return None;
     }
@@ -225,7 +230,7 @@ pub fn var_binary_at<'a>(
     values: &'a [u8],
     record_index: usize,
 ) -> Option<&'a [u8]> {
-    let need = (record_index + 2) * 4;
+    let need = record_index.checked_add(2).and_then(|n| n.checked_mul(4))?;
     if offsets.len() < need {
         return None;
     }
@@ -313,7 +318,7 @@ fn cell_populated(c: &Cell) -> bool {
     !matches!(c, Cell::Absent)
 }
 
-fn write_fixed_buffer(n: usize, cells: &[Cell], encode: impl Fn(&Cell) -> [u8; 8]) -> Vec<u8> {
+fn write_fixed_buffer(n: usize, cells: &[&Cell], encode: impl Fn(&Cell) -> [u8; 8]) -> Vec<u8> {
     let mut buf = vec![0u8; n * 8];
     for (i, c) in cells.iter().enumerate().take(n) {
         if cell_populated(c) {
@@ -323,8 +328,8 @@ fn write_fixed_buffer(n: usize, cells: &[Cell], encode: impl Fn(&Cell) -> [u8; 8
     buf
 }
 
-fn encode_var_column(n: usize, col: &[Cell]) -> Result<Vec<u8>> {
-    let present = |i: usize| cell_populated(&col[i]);
+fn encode_var_column(n: usize, col: &[&Cell]) -> Result<Vec<u8>> {
+    let present = |i: usize| cell_populated(col[i]);
     let bitmap = encode_null_bitmap(n, present);
     let mut offsets: Vec<u32> = Vec::with_capacity(n + 1);
     let mut values: Vec<u8> = Vec::new();
@@ -334,10 +339,10 @@ fn encode_var_column(n: usize, col: &[Cell]) -> Result<Vec<u8>> {
             offsets.push(*offsets.last().unwrap_or(&0));
             continue;
         }
-        match &col[i] {
+        match col[i] {
             Cell::Str(s) => values.extend_from_slice(s.as_bytes()),
             Cell::Binary(b) => values.extend_from_slice(b),
-            _ => offsets.push(*offsets.last().unwrap_or(&0)),
+            _ => {}
         }
         let end = values.len();
         if end > u32::MAX as usize {
@@ -353,11 +358,11 @@ fn encode_var_column(n: usize, col: &[Cell]) -> Result<Vec<u8>> {
     Ok(out)
 }
 
-fn encode_field_column(n: usize, col: &[Cell], sigil: u8) -> Result<Vec<u8>> {
+fn encode_field_column(n: usize, col: &[&Cell], sigil: u8) -> Result<Vec<u8>> {
     if is_var_sigil(sigil) {
         return encode_var_column(n, col);
     }
-    let present = |i: usize| cell_populated(&col[i]);
+    let present = |i: usize| cell_populated(col[i]);
     let bitmap = encode_null_bitmap(n, present);
     let values = match sigil {
         b'=' => write_fixed_buffer(n, col, |c| match c {
@@ -424,9 +429,9 @@ pub fn finish_columnar(keys: &[String], rows: &[RecordRow]) -> Result<Vec<u8>> {
     let mut data = Vec::new();
     let mut tail_entries: Vec<(u16, u64, u64)> = Vec::new();
     for fi in 0..keys.len() {
-        let col: Vec<Cell> = rows
+        let col: Vec<&Cell> = rows
             .iter()
-            .map(|r| r.cells.get(fi).cloned().unwrap_or(Cell::Absent))
+            .map(|r| r.cells.get(fi).unwrap_or(&Cell::Absent))
             .collect();
         let field_buf = encode_field_column(n, &col, sigils[fi])?;
         let offset = 32 + schema_bytes.len() as u64 + data.len() as u64;
@@ -539,9 +544,9 @@ pub(crate) fn encode_page(
     let n = rows.len();
     let mut body = Vec::new();
     for fi in 0..field_count {
-        let col: Vec<Cell> = rows
+        let col: Vec<&Cell> = rows
             .iter()
-            .map(|r| r.cells.get(fi).cloned().unwrap_or(Cell::Absent))
+            .map(|r| r.cells.get(fi).unwrap_or(&Cell::Absent))
             .collect();
         let sig = sigils.get(fi).copied().unwrap_or(b'=');
         body.extend_from_slice(&encode_field_column(n, &col, sig)?);

@@ -33,6 +33,9 @@ pub enum Layout {
     Pax,
 }
 
+/// Bytes per entry in the PAX tail index (see conformance `generate.rs`).
+const PAX_TAIL_ENTRY_BYTES: usize = 28;
+
 fn footer_size(flags: u16) -> usize {
     if flags & FLAG_PAX != 0 {
         28
@@ -254,7 +257,7 @@ impl<'a> Reader<'a> {
 
     fn pax_column_sector(&self, page_idx: usize, slot: usize) -> Result<&[u8]> {
         const MAGIC_PAGE: u32 = 0x4E58_5350;
-        let e = self.tail_start + page_idx * 28;
+        let e = self.tail_start + page_idx * PAX_TAIL_ENTRY_BYTES;
         let poff = u64::from_le_bytes(
             self.data
                 .get(e + 16..e + 24)
@@ -395,14 +398,14 @@ impl<'a> Reader<'a> {
     }
 
     fn pax_page_rec_start(&self, page_idx: usize) -> Option<u64> {
-        let e = self.tail_start + page_idx * 28;
+        let e = self.tail_start + page_idx * PAX_TAIL_ENTRY_BYTES;
         Some(u64::from_le_bytes(
             self.data.get(e + 4..e + 12)?.try_into().ok()?,
         ))
     }
 
     fn pax_page_rec_count(&self, page_idx: usize) -> Option<u32> {
-        let e = self.tail_start + page_idx * 28;
+        let e = self.tail_start + page_idx * PAX_TAIL_ENTRY_BYTES;
         Some(u32::from_le_bytes(
             self.data.get(e + 12..e + 16)?.try_into().ok()?,
         ))
@@ -525,10 +528,7 @@ pub struct Record<'data, 'reader> {
     offset: usize,
 }
 
-impl<'data, 'reader> Record<'data, 'reader>
-where
-    'reader: 'data,
-{
+impl<'data, 'reader> Record<'data, 'reader> {
     /// Resolve the byte offset of slot `s` within this object. Returns `None` if absent.
     fn resolve(&self, slot: usize) -> Option<usize> {
         resolve_slot(self.data, self.offset, slot)
@@ -608,7 +608,7 @@ where
     }
 
     /// Read a `&str` field (zero-copy slice into the buffer).
-    pub fn get_str(&self, key: &str) -> Option<&'data str> {
+    pub fn get_str(&self, key: &str) -> Option<&str> {
         let slot = self.reader.slot(key)?;
         match self.reader.layout {
             Layout::Columnar => {
@@ -635,7 +635,7 @@ where
 
     /// Walk a dot-notated path and read the leaf as `&str`.
     /// Example: `record.get_str_path("address.city")`
-    pub fn get_str_path(&self, dot_path: &str) -> Option<&'data str> {
+    pub fn get_str_path(&self, dot_path: &str) -> Option<&str> {
         let (leaf_off, data) = self.walk_path(dot_path)?;
         let len = u32::from_le_bytes(data.get(leaf_off..leaf_off + 4)?.try_into().ok()?) as usize;
         let bytes = data.get(leaf_off + 4..leaf_off + 4 + len)?;
