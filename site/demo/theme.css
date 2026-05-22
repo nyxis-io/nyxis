@@ -1290,16 +1290,10 @@ pre,
 /* ---- Pricing page ---- */
 .pricing-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
   gap: 14px;
   margin-bottom: 28px;
   align-items: stretch;
-}
-
-@media (max-width: 960px) {
-  .pricing-grid {
-    grid-template-columns: 1fr;
-  }
 }
 
 .pricing-tier {
@@ -1316,7 +1310,8 @@ pre,
   border-top: 3px solid var(--good);
 }
 
-.pricing-tier--growth {
+.pricing-tier--startup,
+.pricing-tier--enterprise {
   border-top: 3px solid var(--accent);
   background: linear-gradient(165deg, var(--panel) 0%, var(--panel-2) 100%);
 }
@@ -1355,9 +1350,14 @@ pre,
   font-variant-numeric: tabular-nums;
 }
 
-.pricing-tier--growth .pricing-tier__price .amount,
-.pricing-tier--principal .pricing-tier__price .amount {
+.pricing-tier--startup .pricing-tier__price .amount,
+.pricing-tier--enterprise .pricing-tier__price .amount {
   color: var(--accent);
+}
+
+.pricing-tier__price .amount--custom {
+  font-size: 1.65rem;
+  color: var(--warm);
 }
 
 .pricing-tier__price .period {

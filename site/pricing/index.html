@@ -5,18 +5,18 @@
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Nyxis — Commercial Pricing</title>
-<meta name="description" content="Transparent Nyxis open-core pricing: free BSL production tier, Enterprise Core at $3,500/year, and Principal Scale from $15,000/year for Arrow bridge, schema registry, and SIMD guard.">
+<meta name="description" content="Transparent Nyxis open-core pricing: free BSL production tier, Startup/Growth at $3,500/year, Enterprise Core at $15,000/year, and Principal custom quotes for hyper-scale workloads.">
 <link rel="canonical" href="https://nyxis.io/pricing/">
 <meta property="og:site_name" content="Nyxis">
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://nyxis.io/pricing/">
 <meta property="og:title" content="Nyxis — Commercial Pricing">
-<meta property="og:description" content="Transparent Nyxis open-core pricing: free BSL production tier, Enterprise Core at $3,500/year, and Principal Scale from $15,000/year for Arrow bridge, schema registry, and SIMD guard.">
+<meta property="og:description" content="Transparent Nyxis open-core pricing: free BSL production tier, Startup/Growth at $3,500/year, Enterprise Core at $15,000/year, and Principal custom quotes for hyper-scale workloads.">
 <meta property="og:image" content="https://nyxis.io/favicon.svg">
 <meta property="og:image:alt" content="Nyxis">
 <meta name="twitter:card" content="summary">
 <meta name="twitter:title" content="Nyxis — Commercial Pricing">
-<meta name="twitter:description" content="Transparent Nyxis open-core pricing: free BSL production tier, Enterprise Core at $3,500/year, and Principal Scale from $15,000/year for Arrow bridge, schema registry, and SIMD guard.">
+<meta name="twitter:description" content="Transparent Nyxis open-core pricing: free BSL production tier, Startup/Growth at $3,500/year, Enterprise Core at $15,000/year, and Principal custom quotes for hyper-scale workloads.">
 <meta name="twitter:image" content="https://nyxis.io/favicon.svg">
 <!-- Google tag (gtag.js) -->
 <script async src="https://www.googletagmanager.com/gtag/js?id=G-9TP221ZJ9Z"></script>
@@ -39,14 +39,14 @@
     <h1 class="page-title">Commercial pricing</h1>
     <p class="page-lead">
       Nyxis is infrastructure software with explicit legal boundaries — not opaque enterprise sales.
-      Qualify your tier in minutes: revenue and throughput gates for free production use, annual seats for
-      commercial clearance and proprietary performance extensions.
+      Stay on the free BSL tier when you qualify; otherwise map revenue and monthly throughput to
+      Startup/Growth, Enterprise Core, or a Principal custom contract.
     </p>
   </header>
 
   <div class="pricing-grid" role="list">
     <article class="pricing-tier pricing-tier--free" role="listitem">
-      <p class="pricing-tier__label">Tier 1</p>
+      <p class="pricing-tier__label">Free tier</p>
       <h2 class="pricing-tier__name">Ecosystem Open-Source</h2>
       <p class="pricing-tier__price"><span class="amount">$0</span></p>
       <p class="pricing-tier__target">
@@ -65,19 +65,46 @@
       </div>
     </article>
 
-    <article class="pricing-tier pricing-tier--growth" role="listitem">
-      <p class="pricing-tier__label">Tier 2</p>
-      <h2 class="pricing-tier__name">Enterprise Core</h2>
+    <article class="pricing-tier pricing-tier--startup" role="listitem">
+      <p class="pricing-tier__label">Package 1</p>
+      <h2 class="pricing-tier__name">Startup / Growth</h2>
       <p class="pricing-tier__price"><span class="amount">$3,500</span> <span class="period">/ year</span></p>
       <p class="pricing-tier__billing">Billed annually</p>
       <p class="pricing-tier__target">
-        High-growth startups and mid-market engineering teams exceeding open-source thresholds.
+        Growing companies and moderately sized data operations that need a commercial production license.
       </p>
+      <h3 class="pricing-tier__includes-title">Eligibility</h3>
+      <ul class="pricing-tier__includes">
+        <li>Gross annual revenue <strong>under $10M USD</strong> <em>and</em> Nyxis-processed production data <strong>under 1&nbsp;TB/month</strong>.</li>
+      </ul>
       <h3 class="pricing-tier__includes-title">Included</h3>
       <ul class="pricing-tier__includes">
-        <li>Commercial production license clearing all BSL&nbsp;1.1 revenue and throughput restrictions.</li>
-        <li>Commercial SLA for core specification bug fixes and compiler security patches.</li>
-        <li>Full access to <strong>Nyxis In-Memory Compactor Daemon</strong> (<code>nxs-compactd</code>) for background database sector defragmentation and online <code>.nxb</code> file repacking.</li>
+        <li>Commercial closed-source production license clearance.</li>
+        <li>Access to all core libraries and 10-language reference readers.</li>
+        <li>Email-based bug and incident reporting.</li>
+      </ul>
+      <div class="pricing-tier__cta">
+        <a class="btn btn-primary" href="mailto:licensing@nyxis.io?subject=Nyxis%20Startup%20%2F%20Growth%20license">Request license</a>
+      </div>
+    </article>
+
+    <article class="pricing-tier pricing-tier--enterprise" role="listitem">
+      <p class="pricing-tier__label">Package 2</p>
+      <h2 class="pricing-tier__name">Enterprise Core</h2>
+      <p class="pricing-tier__price"><span class="amount">$15,000</span> <span class="period">/ year</span></p>
+      <p class="pricing-tier__billing">Billed annually</p>
+      <p class="pricing-tier__target">
+        Established corporate architectures, high-volume IoT networks, or trading infrastructure.
+      </p>
+      <h3 class="pricing-tier__includes-title">Eligibility</h3>
+      <ul class="pricing-tier__includes">
+        <li>Gross annual revenue <strong>$10M–$100M USD</strong> <em>or</em> production data <strong>1–50&nbsp;TB/month</strong>.</li>
+      </ul>
+      <h3 class="pricing-tier__includes-title">Included</h3>
+      <ul class="pricing-tier__includes">
+        <li>Everything in Startup / Growth.</li>
+        <li><strong>Nyxis In-Memory Compactor Daemon</strong> (<code>nxs-compactd</code>) for background sector defragmentation and online <code>.nxb</code> repacking.</li>
+        <li>Dedicated Slack support channel with next-business-day SLA.</li>
       </ul>
       <div class="pricing-tier__cta">
         <a class="btn btn-primary" href="mailto:licensing@nyxis.io?subject=Nyxis%20Enterprise%20Core%20license">Request license</a>
@@ -85,23 +112,27 @@
     </article>
 
     <article class="pricing-tier pricing-tier--principal" role="listitem">
-      <p class="pricing-tier__label">Tier 3</p>
-      <h2 class="pricing-tier__name">Principal Scale</h2>
-      <p class="pricing-tier__price"><span class="amount">$15,000</span> <span class="period">/ year</span></p>
-      <p class="pricing-tier__billing">Starting tier · scaled by cluster volume</p>
+      <p class="pricing-tier__label">Package 3</p>
+      <h2 class="pricing-tier__name">Principal</h2>
+      <p class="pricing-tier__price"><span class="amount amount--custom">Custom quote</span></p>
+      <p class="pricing-tier__billing">Scaled by footprint and SLA</p>
       <p class="pricing-tier__target">
-        Large-scale enterprise data operations, database builders, and high-volume AI infrastructure.
+        Massive telemetry platforms, high-volume trading desks, and hyper-scale architectures.
       </p>
+      <h3 class="pricing-tier__includes-title">Eligibility</h3>
+      <ul class="pricing-tier__includes">
+        <li>Gross annual revenue <strong>over $100M USD</strong> <em>or</em> production data <strong>over 50&nbsp;TB/month</strong>.</li>
+      </ul>
       <h3 class="pricing-tier__includes-title">Included</h3>
       <ul class="pricing-tier__includes">
-        <li>Everything in Enterprise Core.</li>
-        <li><strong>Apache Arrow zero-copy memory bridge</strong> — instant columnar mapping via the Arrow C Data Interface for Snowflake, Polars, and DataFusion pipelines.</li>
+        <li>Unlimited data ingestion volume and server instances.</li>
+        <li><strong>Apache Arrow zero-copy memory bridge</strong> — columnar mapping via the Arrow C Data Interface for Snowflake, Polars, and DataFusion pipelines.</li>
         <li><strong>Distributed schema registry &amp; proxy</strong> (<code>nxs-registryd</code>) — centralized gRPC contract verification with automated schema drift resolution.</li>
-        <li><strong>Hardware-accelerated SIMD guard</strong> — AVX-512 and ARM NEON vectorized kernels for native parallel batch search across raw binary buffers.</li>
-        <li><strong>24/7/365</strong> direct architectural advisory channel.</li>
+        <li><strong>Hardware-accelerated SIMD guard</strong> — AVX-512 and ARM NEON vectorized kernels for parallel batch search across raw binary buffers.</li>
+        <li><strong>4-hour</strong> critical incident response SLA and legal indemnification.</li>
       </ul>
       <div class="pricing-tier__cta">
-        <a class="btn btn-primary" href="mailto:licensing@nyxis.io?subject=Nyxis%20Principal%20Scale%20evaluation">Contact licensing</a>
+        <a class="btn btn-primary" href="mailto:licensing@nyxis.io?subject=Nyxis%20Principal%20evaluation">Contact licensing</a>
         <a class="btn btn-secondary" href="/use-cases/">View use cases</a>
       </div>
     </article>
@@ -138,6 +169,22 @@
     </details>
 
     <details class="pricing-faq-item">
+      <summary>How do I choose between Startup, Enterprise Core, and Principal?</summary>
+      <div class="pricing-faq-body">
+        <p>
+          After you exceed the free BSL gates, pick the paid package that matches <strong>both</strong> your revenue band and monthly throughput:
+          <strong>Startup / Growth</strong> when you are under $10M revenue and under 1&nbsp;TB/month;
+          <strong>Enterprise Core</strong> when you are in the $10M–$100M revenue band or processing 1–50&nbsp;TB/month;
+          <strong>Principal</strong> when revenue exceeds $100M or throughput exceeds 50&nbsp;TB/month.
+        </p>
+        <p>
+          Enterprise extensions (compactor, Arrow bridge, schema registry, SIMD guard) align with these packages — see the tier cards above and
+          <a href="https://github.com/nyxis-io/nyxis/blob/main/COMMERCIAL.md" rel="noopener">COMMERCIAL.md</a>.
+        </p>
+      </div>
+    </details>
+
+    <details class="pricing-faq-item">
       <summary>Are our client applications bound by the BSL license?</summary>
       <div class="pricing-faq-body">
         <p>
@@ -153,9 +200,9 @@
       <summary>Which tier do I need if I only exceed one BSL gate?</summary>
       <div class="pricing-faq-body">
         <p>
-          Either gate triggers commercial licensing. You must comply with <strong>both</strong> the revenue cap and the
-          monthly throughput cap to remain on the free tier. Crossing either threshold moves you to Enterprise Core or
-          Principal Scale depending on scale and extension requirements.
+          Either gate triggers the need for a commercial license. You must comply with <strong>both</strong> the revenue cap and the
+          monthly throughput cap to remain on the free tier. Crossing either threshold moves you into Startup / Growth or higher,
+          depending on your revenue and monthly data volume.
         </p>
       </div>
     </details>
