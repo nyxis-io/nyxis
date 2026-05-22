@@ -257,6 +257,14 @@ func TestHandleRecord_NegativeIndex(t *testing.T) {
 	}
 }
 
+func TestHandleExportCSV_EmptyPath(t *testing.T) {
+	r := &Resolver{binDir: t.TempDir(), exeDir: "/nonexistent"}
+	out := handleExportCSV(context.Background(), r, "", "", "")
+	if !strings.Contains(out, "path is required") {
+		t.Errorf("expected path error, got: %s", out)
+	}
+}
+
 func TestHandleImport_BadFormat(t *testing.T) {
 	r := &Resolver{binDir: t.TempDir(), exeDir: "/nonexistent"}
 	out := handleImport(context.Background(), r, "in.yaml", "out.nxb", "yaml", "")
@@ -310,13 +318,13 @@ func TestReadHeader_Valid(t *testing.T) {
 	// bytes 32-35: recordCount = 7
 	// last 4 bytes: NXS! footer magic
 	buf := make([]byte, 40)
-	// NYXB magic
-	buf[0], buf[1], buf[2], buf[3] = 0x42, 0x53, 0x58, 0x4E
+	// NYXB magic: little-endian encoding of 0x4E595842 → bytes [0x42, 0x58, 0x59, 0x4E]
+	buf[0], buf[1], buf[2], buf[3] = 0x42, 0x58, 0x59, 0x4E
 	// tailPtr = 32 at bytes 16-23 (LE)
 	buf[16] = 32
 	// recordCount = 7 at offset 32
 	buf[32] = 7
-	// NXS! footer at last 4 bytes
+	// NXS! footer at last 4 bytes: 0x4E 0x58 0x53 0x21 (little-endian 0x2153584E)
 	buf[36], buf[37], buf[38], buf[39] = 0x4E, 0x58, 0x53, 0x21
 
 	f, err := os.CreateTemp(t.TempDir(), "*.nxb")
