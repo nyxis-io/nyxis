@@ -228,7 +228,9 @@ Immediately following the bitmask is the Offset Table.
 * Offsets are **relative to the first byte of the object header** (i.e., the `Magic` field).
 
 ### 5.4 Null Fields
-A `^` (Null) field has its bitmask bit set to `1` and an entry in the Offset Table. The offset points to a single `0x00` byte. Parsers **MUST** distinguish a missing bit (field absent/unknown) from a Null entry (field explicitly set to null).
+A `^` (Null) field has its bitmask bit set to `1` and an entry in the Offset Table. The Null field is **zero-width**: no payload bytes are emitted at the offset; the offset table entry is present solely to distinguish an explicitly-set Null from an absent field (whose bitmask bit is `0`). Parsers **MUST** distinguish a missing bitmask bit (field absent/unknown) from a Null entry (field explicitly set to null).
+
+> **Conformance note — Null encoding.** An earlier draft of this section stated "the offset points to a single `0x00` byte". That description was incorrect. The reference implementation (`rust/src/compiler.rs` and `rust/src/writer.rs`) encodes Null as zero-width: the bitmask bit is set and an offset-table slot is allocated, but zero payload bytes are written at that slot. Readers MUST NOT attempt to dereference the Null offset as a data byte; they MUST check the TypeManifest sigil (`^`, `0x5E`) or the calling context and return a Null sentinel without reading any payload bytes.
 
 ---
 
