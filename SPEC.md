@@ -107,14 +107,14 @@ A `.nxb` file consists of four segments in order:
 | :--- | :--- | :--- | :--- |
 | 0 | 4 | `Magic` | `0x4E595842` (`NYXB`) |
 | 4 | 2 | `Version` | `0x0101` (major=1, minor=1) |
-| 6 | 2 | `Flags` | Bit 0: Jumbo Offsets **or** `FLAG_COLUMNAR` (0x0001); Bit 1: Schema Embedded (0x0002); Bit 2: `FLAG_PAX` (0x0004); Bits 3–15: reserved. `FLAG_COLUMNAR` and `FLAG_PAX` are mutually exclusive and require Schema Embedded. See OLAP.md for columnar/PAX footers and tail-index layouts. |
+| 6 | 2 | `Flags` | Bit 0: Jumbo Offsets **or** `FLAG_COLUMNAR` (0x0001); Bit 1: Schema Embedded (0x0002); Bit 2: `FLAG_PAX` (0x0004); Bits 3–15: reserved. `FLAG_COLUMNAR` and `FLAG_PAX` are mutually exclusive and require Schema Embedded. See **Normative Annex A (OLAP.md)** for columnar/PAX footers and tail-index layouts. |
 
 > **Normative note — bit 0 disambiguation (v1.2).** Bit 0 carries two distinct meanings that are resolved by inspecting bit 1:
 >
 > | Bit 1 (0x0002) | Bit 0 (0x0001) | Interpretation |
 > | :--- | :--- | :--- |
 > | 0 | 1 | **Jumbo Row** mode — the Offset Table inside each NYXO object uses `uint32_t` entries instead of `uint16_t`, extending the maximum object size from 64 KB to 4 GB. |
-> | 1 | 1 | **Columnar layout** (`FLAG_COLUMNAR`) — the data sector and tail-index follow the OLAP.md columnar wire format. Jumbo Offsets semantics **do not apply**; the bit simply identifies the columnar layout. |
+> | 1 | 1 | **Columnar layout** (`FLAG_COLUMNAR`) — the data sector and tail-index follow the columnar wire format defined in Normative Annex A (OLAP.md). Jumbo Offsets semantics **do not apply**; the bit simply identifies the columnar layout. |
 > | 1 | 0 | Ordinary row layout with embedded schema and normal (`uint16_t`) offsets. |
 > | 0 | 0 | Ordinary row layout, no embedded schema (external schema required). |
 >
@@ -145,11 +145,11 @@ nxs compile --layout pax input.nxs                 # FLAG_PAX, default page size
 nxs compile --layout pax --page-size 1024 input.nxs
 ```
 
-`--layout` and `--page-size` MAY also be set via `@layout` / `@page-size` pragmas in the `.nxs` source (pragma overrides CLI default; CLI overrides row default). Full columnar and PAX wire layouts are normative in **OLAP.md**; this section records preamble interactions and streaming rules.
+`--layout` and `--page-size` MAY also be set via `@layout` / `@page-size` pragmas in the `.nxs` source (pragma overrides CLI default; CLI overrides row default). Full columnar and PAX wire layouts are normative in **Normative Annex A (OLAP.md)**; this section records preamble interactions and streaming rules.
 
 ### 4.3 Columnar and PAX layouts (v1.2)
 
-When `FLAG_COLUMNAR` (0x0001) or `FLAG_PAX` (0x0004) is set, the data sector and tail-index follow OLAP.md instead of row-oriented NYXO objects. Both flags require `FLAG_SCHEMA_EMBEDDED` (0x0002). `FLAG_COLUMNAR` and `FLAG_PAX` are mutually exclusive.
+When `FLAG_COLUMNAR` (0x0001) or `FLAG_PAX` (0x0004) is set, the data sector and tail-index follow Normative Annex A (OLAP.md) instead of row-oriented NYXO objects. Both flags require `FLAG_SCHEMA_EMBEDDED` (0x0002). `FLAG_COLUMNAR` and `FLAG_PAX` are mutually exclusive.
 
 | Flag | Value | Footer size (bytes) |
 | :--- | :--- | :--- |
@@ -159,7 +159,7 @@ When `FLAG_COLUMNAR` (0x0001) or `FLAG_PAX` (0x0004) is set, the data sector and
 
 **Columnar streaming.** Columnar files **MUST NOT** use Preamble `TailPtr == 0`. Writers and readers **MUST** reject `FLAG_COLUMNAR` with `TailPtr == 0` using `ERR_INCOMPATIBLE_FLAGS`.
 
-**Optional page CRC.** `FLAG_PAGE_CRC` (0x0008, preamble bit 3) enables a 4-byte CRC32 per PAX page (see OLAP.md §4.2). Writers **MUST** leave this bit clear unless per-page integrity is required. Readers **MAY** verify CRC when the bit is set.
+**Optional page CRC.** `FLAG_PAGE_CRC` (0x0008, preamble bit 3) enables a 4-byte CRC32 per PAX page (see Normative Annex A §4.2 / OLAP.md §4.2). Writers **MUST** leave this bit clear unless per-page integrity is required. Readers **MAY** verify CRC when the bit is set.
 
 ### 4.4 Schema Evolution
 
@@ -194,7 +194,7 @@ Until step 4 completes, the file is **unsealed**: `TailPtr == 0` and `MagicFoote
 #### 4.5.2 Reader (poll while unsealed)
 
 1. If `FLAG_PAX` and Preamble `TailPtr == 0`, treat the file as a stream (no random-access tail-index yet).
-2. Scan forward from the end of the Schema Header for `PageMagic` (`0x4E585350`, `NXSP`). A page is **complete** when `PageLength` bytes are available starting at that offset (length includes header through `PageLength` field per OLAP.md §4.2).
+2. Scan forward from the end of the Schema Header for `PageMagic` (`0x4E585350`, `NXSP`). A page is **complete** when `PageLength` bytes are available starting at that offset (length includes header through `PageLength` field per Normative Annex A §4.2 / OLAP.md §4.2).
 3. Process complete pages in order; partial trailing bytes belong to an in-progress page.
 4. When `MagicFooter` (`NXS!`) is present at EOF and Preamble `TailPtr` is non-zero (or the PAX footer’s `TailIndexOffset` resolves in-bounds), the file is **sealed** — use the PAX tail-index for cross-page record lookup and column scan.
 
@@ -326,7 +326,7 @@ Circular links (a chain of `&` references that resolves back to its origin) **MU
 | `ERR_INVALID_FLAGS` | Both `FLAG_COLUMNAR` and `FLAG_PAX` set |
 | `ERR_INCOMPATIBLE_FLAGS` | Invalid flag combination (e.g. `FLAG_COLUMNAR` with Preamble `TailPtr == 0`) |
 | `ERR_UNSUPPORTED_LAYOUT` | Reader does not implement the requested layout |
-| `ERR_UNSUPPORTED_FIELD_TYPE` | Field type not supported in columnar/PAX initial release (see OLAP.md §Q3) |
+| `ERR_UNSUPPORTED_FIELD_TYPE` | Field type not supported in columnar/PAX initial release (see Normative Annex A §Q3 / OLAP.md §Q3) |
 | `ERR_INVALID_PAGE_MAGIC` | Expected `NXSP` at page boundary |
 | `ERR_PAGE_CRC_MISMATCH` | PAX page CRC32 does not match (only when `FLAG_PAGE_CRC` is set) |
 
