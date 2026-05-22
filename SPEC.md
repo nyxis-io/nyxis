@@ -38,6 +38,11 @@ Every value **MUST** be prefixed with a Sigil to define its machine representati
 | `!` | **Macro** | Compile-time formula | (Resolved to base type) |
 | `^` | **Null** | Explicit absent value | No payload (bitmask bit set, zero-width) |
 
+> **Normative note — Keyword type (`$`, v1.2).** The Keyword sigil encodes a dictionary-interned symbol as a `uint16_t` index (little-endian) into the Schema Header's key-name dictionary (StringPool). This avoids repeating the full string for frequently repeated symbolic values. Implementation status:
+> - **Binary encoding**: `uint16_t` dict index, valid range `[0, KeyCount)`.
+> - **`get_keyword` is not implemented** in the current Rust reader; accessing a `$`-typed field in columnar or PAX layout returns `Err(NxsError::UnsupportedFieldType)`. Row-layout NYXO objects do not yet decode the index to a string name either.
+> - **Full round-trip support** (compiler emission + reader materialisation to string) is planned for a future release.
+
 ### 3.2 String Literals and Escape Sequences
 String values (sigil `"`) are enclosed in double-quote characters. The following escape sequences **MUST** be supported:
 
