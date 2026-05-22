@@ -388,6 +388,7 @@ columnar/
 pax/
   flat8_dense_p256_1000.nxb    # 1000 records, page_size=256, dense
   flat8_sparse_10pct_p256.nxb  # 1000 records, 10% population, page_size=256
+  flat8_strings_p128_300.nxb   # 300 records, page_size=128, string `name` column
   pax_streaming_unsealed.nxb   # Unsealed PAX (TailPtr=0, 3 pages, no footer) — batch open → ERR_BAD_MAGIC
   pax_invalid_page_magic.nxb   # Corrupt page boundary — must return ERR_INVALID_PAGE_MAGIC
 ```
@@ -432,7 +433,7 @@ Variable-length strings in columnar layout require the offsets+values sub-buffer
 - **v1.2b:** Full string support with 32-bit offsets. Document the Arrow offset-width difference; bridge code handles the conversion.
 - **v1.2c:** Full string support with 64-bit offsets (Arrow-compatible). 8 bytes per record per string field regardless of string length — expensive for short strings.
 
-Recommendation: **v1.2a** for initial release. Numerics cover the charts/aggregations use case. String support in a follow-up once the numeric path is benchmarked and stable.
+**Shipped (Phase 3):** Full string/binary support with **32-bit offsets** (v1.2b). Arrow bridge converts to i64 offsets where needed. Numeric-only PAX streaming pages in Workload D remain the documented TTFR subset.
 
 **Q4: Keyword (`$`) fields in columnar layout**
 
@@ -462,24 +463,24 @@ Recommendation: include `FLAG_PAGE_CRC` as an optional flag, disabled by default
 
 **Success criterion:** Workload C columnar `.nxb` scan within 2× Arrow IPC on the same data. **Met** (107 µs vs 104 µs P50 at 1M records, macOS dev).
 
-### Phase 2: PAX layout — **in progress**
+### Phase 2: PAX layout — **done (core)**
 
 - [x] PAX page structure and page-level streaming protocol (SPEC.md §4.5, OLAP.md §4.5)
 - [x] Compiler `--layout pax` and `--page-size` flags
 - [x] C driver PAX read path: page iteration, within-page field buffers (sealed files)
 - [x] Conformance vectors: `pax_flat8_dense_p256_1000`, `pax_flat8_sparse_10pct_p256`, `pax_streaming_unsealed`, `pax_invalid_page_magic`
-- [ ] PAX streaming writer: page-level flush, seal on close (reference writer batch-seals today)
-- [ ] Workload D variant: PAX streaming TTFR vs row-oriented TTFR
-- [ ] Benchmark: Workload E mixed workload (random access + column scan) on PAX vs row vs columnar
+- [x] PAX streaming writer: `PaxStreamWriter` / `PaxStreamReader` (`nyxis/rust/src/pax_stream.rs`); incremental flush in `stream_d` harness
+- [x] Workload D variant: PAX streaming TTFR vs row (see BENCHMARK.md §Workload D — PAX TTFR)
+- [x] Benchmark: Workload E mixed workload (`make -C bench run-e-mixed`, `bench_pax_mixed`)
 
-**Success criterion:** PAX mixed workload (100 random accesses + 1 full column scan) outperforms row-oriented on the column scan component and stays within 2× row-oriented on the random access component. **Pending** Workload E publication (see BENCHMARK.md §Workload E).
+**Success criterion:** PAX mixed workload (100 random accesses + 1 full column scan) outperforms row-oriented on the column scan component and stays within 2× row-oriented on the random access component. **Met** at **1M** on macOS arm64 (BENCHMARK.md §Workload E): PAX col-scan P50 **9.3 ms** vs row **10.7 ms**; random-access P50 **10 µs** vs row **11 µs**. Linux x86_64 publication still pending.
 
-### Phase 3: String support in columnar (~2 weeks after Phase 2)
+### Phase 3: String support in columnar — **done (core)**
 
-- Offsets + values sub-buffer for string and binary fields in columnar and PAX
-- Arrow projection: handle offset-width difference for string fields
-- Conformance vectors: `columnar/flat8_strings`
-- Update BENCHMARK.md with string-inclusive columnar results
+- [x] Offsets + values sub-buffer for string (`"`) and binary (`<`) fields in columnar and PAX (`layout.rs`, C/Go/JS readers)
+- [x] Arrow projection: `VarColumnView` + u32-vs-i64 offset note (`rust/src/arrow_project.rs`)
+- [x] Conformance vectors: `columnar_flat8_strings_100` (OLAP §7.2 `flat8_strings_100`)
+- [ ] Update BENCHMARK.md with string-inclusive columnar benchmark results (conformance stub only)
 
 ### Phase 4: Driver ports (~ongoing, parallel to Phases 2–3)
 
@@ -499,10 +500,10 @@ The columnar and PAX layouts ship when:
 3. Compiler emits correct `FLAG_COLUMNAR` and `FLAG_PAX` files for numeric schemas
 4. All conformance vectors pass in C driver
 5. Workload C re-run shows columnar `.nxb` scan within **2× Arrow IPC** on dense numeric data, using the open-core AVX2/NEON dense fast path in `col_reduce` (runtime CPU feature detection). ARM NEON tuning and AVX-512 multi-accumulator paths remain under `nyxis-simd-guard`.
-6. PAX mixed workload benchmark published with honest results including the TTFR tradeoff vs row-oriented
+6. PAX mixed workload benchmark published with honest results including the TTFR tradeoff vs row-oriented — **met** at 1M macOS arm64 (BENCHMARK.md §Workload E + §Workload D PAX TTFR); Linux x86_64 pending
 7. `nxs_col_buffer` returns a pointer suitable for direct use as chart library input (verified with one real chart integration — Chart.js or Recharts in the browser demo)
-8. String fields return `ERR_UNSUPPORTED_FIELD_TYPE` in columnar/PAX with a clear error message pointing to the roadmap
-9. BENCHMARK.md updated with columnar and PAX workload results
+8. String/binary fields readable in columnar/PAX (Phase 3); keyword (`$`) columnar uses u16 index arrays per Q4
+9. BENCHMARK.md updated with columnar and PAX workload results (Workload E + PAX TTFR published; string-inclusive scan TBD)
 10. Use-cases page updated with the layout selection guide from §5.4
 
 ---

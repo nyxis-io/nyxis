@@ -654,29 +654,46 @@ _Publication TTFR: **n=1000** trials, **flush_every=100** (batched flush), D2 fi
 
 _**throughput**: sustained rec/s from first complete record to last while the writer appends (flush_every=100). Smoke throughput (~200 rec/s) is omitted from publication._
 
+**Workload D — PAX streaming TTFR** (macOS arm64 dev, `page_size=256`, numeric flat-8 subset)
+
+| Variant | P50 | P95 | P99 | Notes |
+| --- | --- | --- | --- | --- |
+| row (`nxs`, first NYXO) | 142 µs | 237 µs | 437 µs | Publication n=1000 trials, flush_every=100 |
+| PAX first complete page (`nxs_pax`, 10k fixture) | 3706 µs | 11437 µs | 12648 µs | 200 trials; TTFR = 256 records → one `NXSP` page |
+| PAX first complete page (`nxs_pax`, **1M** fixture) | 3714 µs | 9583 µs | 12585 µs | Same page_size; TTFR independent of total file size |
+
+_Reproduce: `make -C bench run-d-pax-ttfr BENCH_RECORDS_D=1000000`. PAX TTFR scales with `page_size`, not total records (OLAP.md §4.5). Linux x86_64 pending._
+
 <a id="workload-e"></a>
 
-### Workload E: PAX mixed access (placeholder)
+### Workload E: PAX mixed access
 
-**Status:** Not yet published — Phase 2 benchmark gate (OLAP.md §9).
+**Status:** Published (macOS arm64 dev, flat-8 numeric schema, `page_size=4096`). **Publication scale: n=1,000,000.** Linux x86_64 pending.
 
-Workload E measures the reporting-dashboard pattern on a sealed flat-8 dataset (~1M records, page size 4096 unless noted):
+Per trial: open sealed file → **100** pseudo-random `get_f64("score")` → one `col_sum_f64("score")`. Driver: Rust `Reader` / `bench_pax_mixed` (200 samples after 20 warmup).
 
-1. **100 random record reads** (all fields of record `i`) — compare PAX vs row layout.
-2. **One full-column scan** (`sum` over `score` f64) — compare PAX vs row vs columnar.
+**1M records — P50 (µs)**
 
-Success criterion (OLAP.md): PAX column-scan component faster than row-oriented; random access within **2×** row-oriented.
+| Layout | random access | col scan | mixed total | file size |
+| --- | --- | --- | --- | --- |
+| row | 11 | 10,671 | 10,683 | 66.0 MB |
+| columnar | 0 | 103 | 104 | 32.5 MB |
+| pax | 10 | 9,315 | 9,327 | 32.5 MB |
 
-**Planned run commands** (after `bench` harness adds `--workload E`):
+**OLAP gate (1M):** PAX col-scan **9.3 ms** vs row **10.7 ms** (pass). Random access **10 µs** vs row **11 µs** (within 2×). Columnar col-scan **103 µs** — fastest for dense numeric scan.
+
+**10k smoke (dev sanity)**
+
+| Layout | random access P50 | col scan P50 | mixed P50 |
+| --- | --- | --- | --- |
+| row | 1 | 104 | 106 |
+| columnar | 1 | 1 | 2 |
+| pax | 1 | 36 | 38 |
 
 ```bash
-cd nyxis && bash bench/scripts/setup_venv.sh
-make -C bench matrix --workload E --records 1000000 --layout pax --page-size 4096
-make -C bench matrix --workload E --records 1000000 --layout row
-make -C bench matrix --workload E --records 1000000 --layout columnar
+cd nyxis && make -C bench run-e-mixed BENCH_E_RECORDS=1000000
+make -C bench run-e-mixed BENCH_E_RECORDS=10000   # quick smoke
 ```
-
-PAX streaming TTFR (first complete page vs row TTFR) remains under **Workload D** with a future `--layout pax` variant; see SPEC.md §4.5 for the page-fill tradeoff (~10 ms first page at `PAGE_SIZE=256` vs 142 µs row TTFR).
 
 ### Honest positioning (macOS dev, 10k records)
 
