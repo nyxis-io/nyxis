@@ -625,7 +625,7 @@ mod tests {
 
     #[test]
     fn complete_page_end_varlen_string_columns() {
-        use crate::layout::{Cell, RecordRow, finish_pax};
+        use crate::layout::{finish_pax, Cell, RecordRow};
         // Build a PAX file with string columns (variable-length encoding).
         let keys = vec!["id".to_string(), "name".to_string(), "score".to_string()];
         let rows: Vec<RecordRow> = (0..50usize)
