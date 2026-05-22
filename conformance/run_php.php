@@ -12,6 +12,7 @@ use Nxs\Reader as NxsReader;
 use Nxs\NxsException;
 
 const MAGIC_LIST_V = 0x4E59584C;
+const SIGIL_LIST   = 0x4C;
 
 function approxEq(float $a, float $b): bool
 {
@@ -80,37 +81,49 @@ function resolveSlotRaw(string $bytes, int $objOffset, int $slot): int
     return $objOffset + $rel;
 }
 
-function getFieldValue(string $bytes, int $tailStart, int $ri, int $slot, int $sigil): mixed
+function getFieldValue(Nxs\NxsObject $obj, NxsReader $reader, string $key): mixed
 {
-    $abs = unpack('Qv', $bytes, $tailStart + $ri * 10 + 2)['v'];
-    $off = resolveSlotRaw($bytes, (int)$abs, $slot);
-    if ($off < 0) return PHP_INT_MAX; // sentinel for absent
+    $slot = $reader->slotOf($key);
+    if ($slot < 0) {
+        return PHP_INT_MAX;
+    }
 
-    // Check list
-    if ($off + 4 <= strlen($bytes)) {
-        $maybeMagic = unpack('Vv', $bytes, $off)['v'];
-        if ($maybeMagic === MAGIC_LIST_V) {
-            return readList($bytes, $off);
+    $sigils = $reader->sigils();
+    $sigil  = $sigils[$slot] ?? 0;
+
+    if ($sigil === SIGIL_LIST) {
+        if ($reader->layout() !== 'row') {
+            return PHP_INT_MAX;
         }
+        $bytes = $reader->rawBytes();
+        $ref   = new ReflectionClass($obj);
+        $offProp = $ref->getProperty('offset');
+        $offProp->setAccessible(true);
+        $objOff = $offProp->getValue($obj);
+        $fieldOff = resolveSlotRaw($bytes, $objOff, $slot);
+        if ($fieldOff < 0) {
+            return PHP_INT_MAX;
+        }
+        return readList($bytes, $fieldOff);
     }
 
-    switch ($sigil) {
-        case 0x3D: // = int
-            return unpack('qv', $bytes, $off)['v'];
-        case 0x7E: // ~ float
-            return unpack('ev', $bytes, $off)['v'];
-        case 0x3F: // ? bool
-            return ord($bytes[$off]) !== 0;
-        case 0x22: // " str
-            $len = unpack('Vv', $bytes, $off)['v'];
-            return substr($bytes, $off + 4, $len);
-        case 0x40: // @ time
-            return unpack('qv', $bytes, $off)['v'];
-        case 0x5E: // ^ null
-            return null;
-        default:
-            return unpack('qv', $bytes, $off)['v'] ?? null;
+    if ($sigil === ord('"')) {
+        return $obj->getStr($key);
     }
+    if ($sigil === ord('?')) {
+        return $obj->getBool($key);
+    }
+    if ($sigil === 0x7E) {
+        return $obj->getF64($key);
+    }
+    if ($sigil === ord('=') || $sigil === ord('@')) {
+        return $obj->getI64($key);
+    }
+    if ($sigil === ord('^')) {
+        return null;
+    }
+
+    return $obj->getI64($key);
 }
 
 function valuesMatch(mixed $actual, mixed $expected): bool
@@ -118,14 +131,17 @@ function valuesMatch(mixed $actual, mixed $expected): bool
     if ($expected === null) return $actual === null || $actual === 0 || $actual === false;
     if (is_bool($expected)) return $actual === $expected;
     if (is_int($expected) || is_float($expected)) {
-        if (!is_numeric($actual)) return false;
+        if (!is_int($actual) && !is_float($actual)) return false;
         return approxEq((float)$actual, (float)$expected);
     }
-    if (is_string($expected)) return $actual === $expected;
+    if (is_string($expected)) {
+        return is_string($actual) && $actual === $expected;
+    }
     if (is_array($expected)) {
-        if (!is_array($actual) || count($actual) !== count($expected)) return false;
-        foreach ($expected as $i => $e) {
-            if (!valuesMatch($actual[$i] ?? null, $e)) return false;
+        if (!is_array($actual)) return false;
+        if (count($actual) !== count($expected)) return false;
+        foreach ($expected as $i => $exp) {
+            if (!valuesMatch($actual[$i] ?? null, $exp)) return false;
         }
         return true;
     }
@@ -153,56 +169,24 @@ function runPositive(string $conformanceDir, string $name, array $expected): voi
         }
     }
 
-    // Access raw bytes and sigils through reflection or re-read
-    // Since we need sigils + raw bytes for list support, use the raw approach
-    $refClass = new \ReflectionClass($reader);
-    $tailProp = $refClass->getProperty('tailStart');
-    $tailProp->setAccessible(true);
-    $tailStart = $tailProp->getValue($reader);
-
-    $keysProp = $refClass->getProperty('keys');
-    $keysProp->setAccessible(true);
-    $allKeys = $keysProp->getValue($reader);
-
-    $kiProp = $refClass->getProperty('keyIndex');
-    $kiProp->setAccessible(true);
-    $keyIndex = $kiProp->getValue($reader);
-
     foreach ($expected['records'] as $ri => $expRec) {
+        $obj = $reader->record($ri);
         foreach ($expRec as $key => $expVal) {
-            if (!array_key_exists($key, $keyIndex)) {
-                throw new \RuntimeException("rec[$ri].$key: key not in schema");
+            if (!array_key_exists($key, $expRec)) {
+                continue;
             }
-            $slot  = $keyIndex[$key];
-            // sigil — use 0x22 (str) as default; actual sigil detection via reader
-            // We can't easily get sigils out of PHP Reader, so use positional decoding
-            // from the reader's typed accessors
-            $actual = PHP_INT_MAX;
-            if ($expVal === null) { continue; }
-            if (is_bool($expVal)) {
-                $actual = $reader->record($ri)->getBool($key);
-            } elseif (is_string($expVal)) {
-                $actual = $reader->record($ri)->getStr($key);
-            } elseif (is_float($expVal)) {
-                // Try float first, then int
-                $fv = $reader->record($ri)->getF64($key);
-                $iv = $reader->record($ri)->getI64($key);
-                // Pick whichever decodes to the right value
-                $actual = (approxEq((float)$fv, $expVal)) ? $fv : (float)$iv;
-            } elseif (is_int($expVal)) {
-                $iv = $reader->record($ri)->getI64($key);
-                $actual = $iv;
-            } elseif (is_array($expVal)) {
-                // List — use raw resolution
-                $abs = unpack('Qv', $bytes, $tailStart + $ri * 10 + 2)['v'];
-                // resolve slot offset
-                $off = resolveSlotRaw($bytes, (int)$abs, $slot);
-                if ($off < 0) {
-                    throw new \RuntimeException("rec[$ri].$key: list field absent");
+            $actual = getFieldValue($obj, $reader, $key);
+            if ($expVal === null) {
+                if ($actual !== null && $actual !== 0 && $actual !== false && $actual !== '') {
+                    throw new \RuntimeException(
+                        "rec[$ri].$key: expected null, got " . json_encode($actual)
+                    );
                 }
-                $actual = readList($bytes, $off);
+                continue;
             }
-
+            if ($actual === PHP_INT_MAX) {
+                throw new \RuntimeException("rec[$ri].$key: field absent");
+            }
             if (!valuesMatch($actual, $expVal)) {
                 throw new \RuntimeException(
                     "rec[$ri].$key: expected " . json_encode($expVal) . ", got " . json_encode($actual)
@@ -254,7 +238,7 @@ foreach ($files as $jsonFile) {
         echo "  PASS  $name\n";
         $passed++;
     } catch (\Throwable $e) {
-        fwrite(STDERR, "  FAIL  $name — {$e->getMessage()}\n");
+        echo "  FAIL  $name: {$e->getMessage()}\n";
         $failed++;
     }
 }

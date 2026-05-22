@@ -106,6 +106,15 @@ def get_field_value(obj, reader, key)
   when 0x22
     v = obj.get_str(key)
     v.nil? ? :absent : v
+  when 0x4C
+    if reader.layout == :row
+      off = obj.send(:field_offset, key)
+      return :absent if off.nil?
+
+      data = reader.data
+      return read_list(data, off) if off + 4 <= data.bytesize && data.unpack1("@#{off}L<") == MAGIC_LIST
+    end
+    :absent
   when 0x40
     v = obj.get_i64(key)
     v.nil? ? :absent : v
