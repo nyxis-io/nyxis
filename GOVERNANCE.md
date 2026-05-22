@@ -6,7 +6,11 @@ This document defines the formal engineering architecture, licensing boundaries,
 
 ## 1. Executive Summary & Brand Realignment
 
-**Nyxis** (pronounced *"NIX-iss"*, derived from the Greek *νύξις*, meaning "surgical piercing") is an ultra-low-latency, memory-aligned binary data serialization contract and codec infrastructure. It replaces the legacy, congested brand identity "Nexus Standard" to eliminate naming collisions with decades of historical academic, scientific, and phylogenetic data formats.
+**Nyxis** (pronounced *"NIX-iss"*, derived from the Greek *νύξις*, meaning "surgical piercing") is an ultra-low-latency, memory-aligned binary data serialization contract and codec infrastructure.
+
+> **Historical note — rebrand from "Nexus Standard":** Prior to the v1.0 release (May 2026), the project operated under the working title **"Nexus Standard"**. That name was retired to eliminate naming collisions with decades of pre-existing academic, scientific, and phylogenetic data formats that use the same identifier. All magic bytes, file extensions, and package names use the Nyxis brand exclusively from v1.0 onward; any internal references to "Nexus Standard" in legacy documents or comments refer to the same codebase under its former name.
+
+It replaces the legacy, congested brand identity "Nexus Standard" to eliminate naming collisions with decades of historical academic, scientific, and phylogenetic data formats.
 
 ### Core Metaphor & Value Proposition
 
