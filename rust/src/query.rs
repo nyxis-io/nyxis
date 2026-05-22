@@ -245,14 +245,38 @@ impl<'a> Reader<'a> {
         }
     }
 
-    /// Zero-copy slice of a column's value buffer (columnar only).
+    /// Zero-copy slice of a column's dense numeric value buffer (columnar/PAX).
     pub fn col_buffer(&self, key: &str) -> Option<&[u8]> {
-        if self.layout != Layout::Columnar {
+        if self.layout == Layout::Row {
             return None;
         }
         let slot = self.slot(key)?;
+        if is_var_sigil(self.key_sigils.get(slot).copied().unwrap_or(0)) {
+            return None;
+        }
         let (_, vals) = self.col_field_parts(slot).ok()?;
         Some(vals)
+    }
+
+    /// Zero-copy string/binary column (`offsets` + `values`); columnar/PAX only.
+    pub fn col_var_buffer(
+        &self,
+        key: &str,
+    ) -> Result<crate::arrow_project::VarColumnView<'_>> {
+        if self.layout != Layout::Columnar {
+            return Err(NxsError::UnsupportedFieldType);
+        }
+        let slot = self.slot(key).ok_or(NxsError::OutOfBounds)?;
+        if !is_var_sigil(self.key_sigils.get(slot).copied().unwrap_or(0)) {
+            return Err(NxsError::UnsupportedFieldType);
+        }
+        let (bm, offsets, values) = self.col_field_var_parts(slot)?;
+        Ok(crate::arrow_project::VarColumnView {
+            null_bitmap: bm,
+            offsets,
+            values,
+            record_count: self.record_count,
+        })
     }
 
     fn pax_column_sector(&self, page_idx: usize, slot: usize) -> Result<&[u8]> {

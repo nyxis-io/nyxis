@@ -617,7 +617,7 @@ cd nyxis/bench/harness/rust && cargo run --release -- \
 | columnar | 13 | 14,313 | 31.3 MB |
 | pax | 30 | 26,593 | 31.3 MB |
 
-Columnar/PAX files are ~**47% smaller** than row (contiguous offsets+values vs per-record strings). Full-column walk times are similar row vs columnar at 1M because the benchmark uses the unified `Record::get_str` API (not a separate zero-copy var-buffer iterator). PAX adds page lookup overhead on both access patterns.
+Columnar/PAX files are ~**47% smaller** than row (contiguous offsets+values vs per-record strings). Full-column walk via `Record::get_str` is similar row vs columnar at 1M; use **`col_var_buffer` / `Reader::col_var_buffer`** for zero-copy bulk scans over the offset+values blobs (see `bench_columnar_strings` JSON field `str_var_scan_us`). PAX adds page lookup overhead on both access patterns.
 
 **100k smoke — P50 (µs):** row 3 / 1518 · columnar 1 / 1362 · pax 5 / 2302.
 
