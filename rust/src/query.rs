@@ -679,7 +679,10 @@ impl<'data, 'reader> Record<'data, 'reader> {
 
     /// Navigate all but the last path segment, returning (leaf_offset, data).
     fn walk_path(&self, dot_path: &str) -> Option<(usize, &'data [u8])> {
-        let mut parts = dot_path.splitn(8, '.'); // cap depth at 8
+        // Use plain split('.') so arbitrarily deep paths work correctly.
+        // Previously splitn(8, '.') silently concatenated segments 8+ into the 8th
+        // key string, causing incorrect lookups with no error for paths > 8 segments.
+        let mut parts = dot_path.split('.');
         let mut obj_offset = self.offset;
         let data = self.data;
         let mut part = parts.next()?;
@@ -1419,6 +1422,29 @@ mod tests {
         assert_eq!(rec.get_i64("id"), Some(3));
         assert!((rec.get_f64("score").unwrap() - 88.0).abs() < 1e-9);
         assert_eq!(rec.get_bool("active"), Some(true));
+    }
+
+    #[test]
+    fn walk_path_deep_segments_returns_none_not_wrong_key() {
+        // Before the fix, splitn(8, '.') would concatenate segments 8+ into "seg8.seg9..."
+        // and try to look up a key with a literal dot in its name — returning None silently
+        // rather than traversing correctly. With plain split('.') every segment is looked
+        // up individually, so a path with 9 non-existent segments correctly returns None.
+        let data = make_nxb();
+        let r = Reader::new(&data).unwrap();
+        let rec = r.record(0).unwrap();
+
+        // 9-segment path — all segments non-existent, must return None (not garbage)
+        let deep = "a.b.c.d.e.f.g.h.i"; // 9 segments
+        assert_eq!(rec.get_str_path(deep), None);
+        assert_eq!(rec.get_i64_path(deep), None);
+
+        // 10-segment path
+        let deeper = "a.b.c.d.e.f.g.h.i.j"; // 10 segments
+        assert_eq!(rec.get_str_path(deeper), None);
+
+        // Existing single-level key at depth 1 must still work
+        assert_eq!(rec.get_str_path("username"), Some("alice"));
     }
 
     #[test]
