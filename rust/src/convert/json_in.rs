@@ -7,12 +7,14 @@
 //! stdin input is spilled to a `tempfile::NamedTempFile` before pass 1 so that
 //! both passes can rewind. `--schema` skips pass 1 entirely (no spill needed).
 
-use super::{ConflictPolicy, ImportArgs, ImportReport, InferredSchema};
+use super::{ImportArgs, ImportReport, InferredSchema};
+#[cfg(test)]
+use super::ConflictPolicy;
 use crate::convert::infer;
 use crate::error::{NxsError, Result};
 use crate::writer::{NxsWriter, Schema, Slot};
 use serde_json::Value;
-use std::io::{Read, Seek, SeekFrom, Write};
+use std::io::{Read, Write};
 
 /// Pass 1 — consume a reader, produce an `InferredSchema`.
 pub fn infer_schema<R: Read>(reader: R, args: &ImportArgs) -> Result<InferredSchema> {

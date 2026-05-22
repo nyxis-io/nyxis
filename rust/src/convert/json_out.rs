@@ -6,7 +6,7 @@
 //!
 //! Binary (`<`) fields: base64 (default) | hex | skip.
 
-use super::{BinaryEncoding, ExportArgs, ExportFormat as _, ExportReport};
+use super::{BinaryEncoding, ExportArgs, ExportReport};
 use crate::decoder::{self, DecodedValue};
 use crate::error::{NxsError, Result};
 use base64::Engine as _;

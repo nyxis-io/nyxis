@@ -11,7 +11,7 @@
 
 use crate::decoder::{decode, decode_record_at, DecodedValue};
 use crate::error::{NxsError, Result};
-use crate::wal::{SpanWal, MAGIC_WAL};
+use crate::wal::SpanWal;
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};

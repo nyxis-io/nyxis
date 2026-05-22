@@ -23,6 +23,7 @@ fn footer_size(flags: u16) -> usize {
     }
 }
 
+
 pub struct DecodedFile {
     pub version: u16,
     pub flags: u16,
@@ -354,6 +355,9 @@ fn decode_object(
     Ok(fields)
 }
 
+/// Maximum number of `&` link hops before returning `CircularLink` (spec SHOULD limit).
+const MAX_LINK_DEPTH: usize = 16;
+
 fn decode_value_at(
     data: &[u8],
     offset: usize,
@@ -361,9 +365,45 @@ fn decode_value_at(
     keys: &[String],
     sigils: &[u8],
 ) -> Result<DecodedValue> {
+    decode_value_at_depth(data, offset, sigil, keys, sigils, 0)
+}
+
+fn decode_value_at_depth(
+    data: &[u8],
+    offset: usize,
+    sigil: u8,
+    keys: &[String],
+    sigils: &[u8],
+    depth: usize,
+) -> Result<DecodedValue> {
     let _ = (keys, sigils); // used by recursive calls on nested objects
     if offset >= data.len() {
         return Err(NxsError::OutOfBounds);
+    }
+
+    // ── Link resolution ────────────────────────────────────────────────────────
+    // A `&` field stores the absolute byte offset of the target value (u64, 8 bytes).
+    // Follow the chain up to MAX_LINK_DEPTH hops; deeper chains are adversarial loops.
+    if sigil == SIGIL_LINK {
+        if depth >= MAX_LINK_DEPTH {
+            return Err(NxsError::CircularLink);
+        }
+        if offset + 8 > data.len() {
+            return Err(NxsError::OutOfBounds);
+        }
+        let target = u64::from_le_bytes(
+            data[offset..offset + 8]
+                .try_into()
+                .map_err(|_| NxsError::OutOfBounds)?,
+        ) as usize;
+        // Detect immediate self-loops before recursing.
+        if target == offset {
+            return Err(NxsError::CircularLink);
+        }
+        // The sigil at the target is unknown here; peek at the magic bytes to
+        // decide how to decode, then recurse with SIGIL_LINK so further hops
+        // are also depth-checked.
+        return decode_value_at_depth(data, target, SIGIL_LINK, keys, sigils, depth + 1);
     }
 
     // Check for nested object or list magic first

@@ -99,7 +99,7 @@ test-all: test-rust test-js test-py test-go test-ruby test-php test-c test-swift
 # ── Rust ──────────────────────────────────────────────────────────────────────
 
 lint-rust:
-	cd rust && cargo fmt --check && cargo clippy --lib --bin nxs --bin bench --bin gen_fixtures -- -D warnings -A dead_code -A unused_imports -A clippy::empty_line_after_doc_comments -A clippy::collapsible_if -A clippy::single_match -A clippy::manual_is_multiple_of -A clippy::manual_div_ceil -A clippy::same_item_push -A clippy::new_without_default -A clippy::len_without_is_empty
+	cd rust && cargo fmt --check && cargo clippy --lib --bin nxs --bin bench --bin gen_fixtures -- -D warnings -A clippy::empty_line_after_doc_comments -A clippy::collapsible_if -A clippy::single_match -A clippy::manual_is_multiple_of -A clippy::manual_div_ceil -A clippy::same_item_push -A clippy::new_without_default -A clippy::len_without_is_empty
 
 fix-rust:
 	cd rust && cargo fmt

@@ -777,6 +777,7 @@ pub fn eq<'k, V>(key: &'k str, value: V) -> crate::query::Eq<'k, V> {
 /// Helper: resolve the byte offset of a field for Row layout, or read directly for
 /// Columnar/PAX layout using the reader's column buffers.
 /// Returns `None` if the field is absent or the layout doesn't support direct resolution.
+#[allow(dead_code)]
 fn row_field_offset(data: &[u8], reader: &Reader<'_>, off: usize, slot: usize) -> Option<usize> {
     // For Row layout `off` is the byte offset to a NYXO object.
     // For Columnar/PAX `off` is the record index — row-oriented slot resolution is invalid.
