@@ -74,9 +74,10 @@ Each harness emits one JSON object per measurement (stdout):
 NXS runs with the repo only. Other formats need code generators + Python packages:
 
 ```bash
-# Recommended: Python 3.11–3.12 venv (3.14 + Homebrew pip can break on pyexpat)
-python3.12 -m venv .venv-bench && source .venv-bench/bin/activate
-pip install -r bench/generators/requirements.txt
+# Required: Python 3.11 or 3.12 only (pyarrow<18 has no cp313 wheels; 3.14 breaks pip on macOS)
+# Ubuntu: sudo apt install python3.12 python3.12-venv
+bash bench/scripts/setup_venv.sh   # or: PYTHON=python3.12 bash bench/scripts/setup_venv.sh
+source .venv-bench/bin/activate
 
 bash bench/generators/codegen.sh   # protoc required; flatc optional; capnp optional
 # brew install protobuf flatbuffers capnproto
