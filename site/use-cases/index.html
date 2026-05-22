@@ -305,16 +305,57 @@
         workflow — individual record boundaries, git-diffable source, and de-compile back to plain text for debugging.
       </p>
 
-      <h3>Layout selection</h3>
+      <h3 id="layout-selection">Layout selection</h3>
       <p>
         The NXS compiler emits one of three layouts based on a <code>--layout</code> flag or inline
-        <code>@layout</code> pragma. Choose based on your access pattern:
+        <code>@layout</code> pragma (see <a href="https://github.com/nyxis-io/nyxis/blob/main/OLAP.md#54-layout-selection-guide">OLAP.md §5.4</a>).
+        Choose based on your access pattern:
       </p>
       <table class="parity-matrix">
         <thead>
           <tr>
+            <th>Use case</th>
             <th>Layout</th>
-            <th>Best for</th>
+            <th>Rationale</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Virtual scroll, record viewer</td>
+            <td><code>row</code></td>
+            <td>O(1) record access, lowest TTFR</td>
+          </tr>
+          <tr>
+            <td>OLAP, charts, aggregations</td>
+            <td><code>columnar</code></td>
+            <td>Contiguous field buffers; Arrow bridge; <code>nxs_col_buffer</code> for charts</td>
+          </tr>
+          <tr>
+            <td>Reporting (scroll + charts)</td>
+            <td><code>pax</code></td>
+            <td>Column scan + row access per page; page-level streaming (<a href="../BENCHMARK.md#workload-e">Workload E</a>)</td>
+          </tr>
+          <tr>
+            <td>Streaming ingest, log tailing</td>
+            <td><code>row</code></td>
+            <td>Lowest TTFR; native v1.1 streaming</td>
+          </tr>
+          <tr>
+            <td>Audit log, append-only ledger</td>
+            <td><code>row</code></td>
+            <td>WAL mode, crash-resilient sealing</td>
+          </tr>
+          <tr>
+            <td>Large export, offline analysis</td>
+            <td><code>columnar</code></td>
+            <td>Minimum dense numeric scan; string columns use offsets+values (<a href="../BENCHMARK.md#workload-c">Workload C</a> strings)</td>
+          </tr>
+        </tbody>
+      </table>
+      <table class="parity-matrix" style="margin-top: 1rem;">
+        <thead>
+          <tr>
+            <th>Layout</th>
             <th>Trade-off</th>
             <th>Status</th>
           </tr>
@@ -322,21 +363,18 @@
         <tbody>
           <tr>
             <td><code>row</code> (default)</td>
-            <td>Streaming ingest, virtual scroll, random record access, log tailing</td>
-            <td>Dense scan 112× slower than Arrow</td>
+            <td>Dense numeric scan 112× slower than Arrow IPC</td>
             <td>Stable v1.1</td>
           </tr>
           <tr>
             <td><code>columnar</code></td>
-            <td>Charts, OLAP aggregations, export pipelines</td>
-            <td>No native streaming; random record access slower than row</td>
-            <td>v1.2, stable</td>
+            <td>Batch seal before first aggregate; no native row streaming</td>
+            <td>v1.2 stable (numeric + string/binary)</td>
           </tr>
           <tr>
             <td><code>pax</code></td>
-            <td>Reporting dashboards, mixed scroll + charts</td>
-            <td>Higher TTFR than row (page fill before first record); scan slightly slower than columnar</td>
-            <td>v1.2, stable (sealed read; streaming writer in progress)</td>
+            <td>TTFR ~3.7&nbsp;ms first page at <code>page_size=256</code> vs ~142&nbsp;µs row (<a href="../BENCHMARK.md#workload-d">Workload D</a>)</td>
+            <td>v1.2 stable (sealed + streaming writer)</td>
           </tr>
         </tbody>
       </table>

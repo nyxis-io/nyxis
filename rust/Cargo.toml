@@ -50,6 +50,10 @@ name = "bench_pax_mixed"
 path = "src/bin/bench_pax_mixed.rs"
 
 [[bin]]
+name = "bench_columnar_strings"
+path = "src/bin/bench_columnar_strings.rs"
+
+[[bin]]
 name = "profile_columnar"
 path = "src/bin/profile_columnar.rs"
 
