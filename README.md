@@ -304,4 +304,4 @@ Production use outside of these parameters requires a commercial license. See [C
 
 ## Status
 
-**Stable (v1.1).** The spec now supports streamable sealed `.nxb` files: writers can emit schema and record bytes before the final Tail-Index is known, then seal with `FooterTailPtr + MagicFooter`. The `conformance/` directory contains vectors validated by runners in this repo (Rust) and in [nyxis-drivers](https://github.com/nyxis-io/nyxis-drivers) (JS, Python, Go, Ruby, PHP, C, Swift, Kotlin, C#).
+**Stable (v1.2).** The spec now supports Columnar and PAX layouts (`FLAG_COLUMNAR`, `FLAG_PAX`) for OLAP workloads, PAX page-level streaming, and per-page CRC (`FLAG_PAGE_CRC`). See [OLAP.md](./OLAP.md) for the full columnar/PAX wire layout. The `conformance/` directory contains vectors validated by runners in this repo (Rust) and in [nyxis-drivers](https://github.com/nyxis-io/nyxis-drivers) (JS, Python, Go, Ruby, PHP, C, Swift, Kotlin, C#).

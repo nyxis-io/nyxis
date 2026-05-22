@@ -2,10 +2,10 @@ This is the formal, exhaustive specification for the **Nyxis (NXS)**. This docum
 
 ---
 
-# RFC 001: The Nyxis (NXS) Specification v1.1
+# RFC 001: The Nyxis (NXS) Specification v1.2
 
 **Date:** April 30, 2026
-**Status:** Stable (v1.1)
+**Status:** Stable (v1.2)
 **Editors:** Micael Malta
 **MIME Types:** `application/nxb` (Binary), `application/nxs` (Text)
 
