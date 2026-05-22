@@ -3,6 +3,7 @@ context
 
 # Rust
 rust/target
+rust/target-wasm/
 # rust/Cargo.lock is intentionally committed for reproducible builds
 
 # Generated fixtures (regenerate with: make fixtures)
