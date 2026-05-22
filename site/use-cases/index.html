@@ -7,18 +7,18 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Nyxis — High-Throughput System Topologies &amp; Use Cases</title>
   <meta name="description"
-    content="Production topologies for the Nyxis zero-copy serialization protocol: mmap .nxb ingestion, streamable v1.1 sealing, append-only WALs, Arrow bridges, and multi-terabyte data-grid deployments.">
+    content="Production topologies for the Nyxis zero-copy serialization protocol: mmap .nxb ingestion, streamable v1.2 sealing, row/columnar/PAX layouts, append-only WALs, Arrow bridges, and multi-terabyte data-grid deployments.">
   <link rel="canonical" href="https://nyxis.io/use-cases/">
   <meta property="og:site_name" content="Nyxis">
   <meta property="og:type" content="website">
   <meta property="og:url" content="https://nyxis.io/use-cases/">
   <meta property="og:title" content="Nyxis — High-Throughput System Topologies &amp; Use Cases">
-  <meta property="og:description" content="Production topologies for the Nyxis zero-copy serialization protocol: mmap .nxb ingestion, streamable v1.1 sealing, append-only WALs, Arrow bridges, and multi-terabyte data-grid deployments.">
+  <meta property="og:description" content="Production topologies for the Nyxis zero-copy serialization protocol: mmap .nxb ingestion, streamable v1.2 sealing, row/columnar/PAX layouts, append-only WALs, Arrow bridges, and multi-terabyte data-grid deployments.">
   <meta property="og:image" content="https://nyxis.io/favicon.svg">
   <meta property="og:image:alt" content="Nyxis">
   <meta name="twitter:card" content="summary">
   <meta name="twitter:title" content="Nyxis — High-Throughput System Topologies &amp; Use Cases">
-  <meta name="twitter:description" content="Production topologies for the Nyxis zero-copy serialization protocol: mmap .nxb ingestion, streamable v1.1 sealing, append-only WALs, Arrow bridges, and multi-terabyte data-grid deployments.">
+  <meta name="twitter:description" content="Production topologies for the Nyxis zero-copy serialization protocol: mmap .nxb ingestion, streamable v1.2 sealing, row/columnar/PAX layouts, append-only WALs, Arrow bridges, and multi-terabyte data-grid deployments.">
   <meta name="twitter:image" content="https://nyxis.io/favicon.svg">
   <!-- Google tag (gtag.js) -->
   <script async src="https://www.googletagmanager.com/gtag/js?id=G-9TP221ZJ9Z"></script>
@@ -58,7 +58,7 @@
       <ol start="2">
         <li><a href="#bimodal">Bimodal standard (<code>.nxs</code> / <code>.nxb</code>)</a></li>
         <li><a href="#bounds">Technical performance bounds &amp; protocol parity</a></li>
-        <li><a href="#streaming">Streamable ingest &amp; WAL sealing (v1.1)</a></li>
+        <li><a href="#streaming">Streamable ingest &amp; WAL sealing (v1.2)</a></li>
       </ol>
       <p class="use-case-toc-act">Act III — Production topologies</p>
       <ol start="5">
@@ -169,7 +169,7 @@
             <li>Constant-time open (header + tail-index only)</li>
             <li>Random access by record index and field key</li>
             <li>Interned dictionary keys — sparse presence bitmasks</li>
-            <li>v1.1 streamable sealing — records before the tail-index is final</li>
+            <li>v1.2 streamable sealing — records before the tail-index is final</li>
           </ul>
         </div>
       </div>
@@ -359,7 +359,7 @@
           <tr>
             <td>Streaming ingest, log tailing</td>
             <td><code>row</code></td>
-            <td>Lowest TTFR; native v1.1 streaming</td>
+            <td>Lowest TTFR; native v1.2 streamable row</td>
           </tr>
           <tr>
             <td>Audit log, append-only ledger</td>
@@ -385,7 +385,7 @@
           <tr>
             <td><code>row</code> (default)</td>
             <td>Dense numeric scan 112× slower than Arrow IPC</td>
-            <td>Stable v1.1</td>
+            <td>Stable v1.2</td>
           </tr>
           <tr>
             <td><code>columnar</code></td>
@@ -408,14 +408,14 @@
     </section>
 
     <section class="landing-section" id="streaming">
-      <h2>Streamable ingest &amp; WAL sealing (v1.1)</h2>
+      <h2>Streamable ingest &amp; WAL sealing (v1.2)</h2>
       <p class="story-bridge">
         Batch <code>mmap</code> is the read path; streaming and append-only WALs are how live systems <em>produce</em>
         those
         files without rebuilding indexes on every write — the bridge from protocol theory to the topologies in Act III.
       </p>
       <p class="page-lead" style="margin-top: 0;">
-        NXS v1.1 files stream records to readers before the file is sealed. On the frozen macOS dev run (10k flat-8,
+        Streamable row <code>.nxb</code> files (v1.2) deliver records to readers before the segment is sealed. On the frozen macOS dev run (10k flat-8,
         n=1000, batched flush): NXS <strong>142&nbsp;µs TTFR P50</strong> (437&nbsp;µs P99) vs Protobuf 214&nbsp;µs / Cap'n Proto 209&nbsp;µs —
         see <a href="../BENCHMARK.md#workload-d">Workload&nbsp;D</a>. Sustained throughput ~25k rec/s while the writer appends; a 100k-row report fully streams in ~4&nbsp;s after the first row.
         After sealing, the same file supports O(1) random access via the tail-index — no second pass, no re-indexing.
@@ -476,7 +476,7 @@
     <p class="use-case-group">Ingest &amp; edge</p>
 
     <article class="use-case" id="reporting-streaming">
-      <p class="use-case-tier use-case-tier--oss">Open core · streamable v1.1 · <a href="../BENCHMARK.md#workload-d">Workload D</a></p>
+      <p class="use-case-tier use-case-tier--oss">Open core · streamable v1.2 · <a href="../BENCHMARK.md#workload-d">Workload D</a></p>
       <h2>Live reporting &amp; streaming ingest</h2>
 
       <h3>The high-scale bottleneck</h3>
@@ -656,7 +656,7 @@
     </article>
 
     <article class="use-case" id="reporting">
-      <p class="use-case-tier use-case-tier--oss">Open core · row + columnar · streaming v1.1</p>
+      <p class="use-case-tier use-case-tier--oss">Open core · row + columnar · streaming v1.2</p>
       <h2>Large report and data export viewers</h2>
 
       <h3>The high-scale bottleneck</h3>
@@ -671,7 +671,7 @@
       <p>The report server selects a layout based on the query type:</p>
       <ul>
         <li>
-          <strong>Record view requests</strong> (virtual scroll, row-level search): row layout with v1.1 streaming.
+          <strong>Record view requests</strong> (virtual scroll, row-level search): row layout with v1.2 streamable sealing.
           The server writes rows as they generate; the browser renders each record as it arrives via
           <code>NxsStreamReader</code> before the report completes.
         </li>
@@ -810,7 +810,7 @@
     </article>
 
     <article class="use-case" id="crash-wal">
-      <p class="use-case-tier use-case-tier--oss">Open core · streamable WAL · v1.1</p>
+      <p class="use-case-tier use-case-tier--oss">Open core · streamable WAL · v1.2</p>
       <h2>Crash-resilient database ledgers &amp; append-only transcripts</h2>
 
       <h3>The high-scale bottleneck</h3>
@@ -822,7 +822,7 @@
       <h3>The Nyxis topology</h3>
       <p>
         Append-only WAL mode with strict 8-byte alignment means partial writes land at predictable boundaries.
-        Streamable v1.1 sealing writes the footer tail pointer only on clean completion, so readers can identify sealed
+        Streamable v1.2 sealing writes the footer tail pointer only on clean completion, so readers can identify sealed
         vs in-progress segments via TailPtr and MagicFooter presence. Formal recovery semantics for partial NYXO frames
         are under specification.
       </p>
@@ -836,7 +836,7 @@
       <p class="use-case-cta">
         <a class="btn btn-secondary" href="/demo/wal.html">WAL demo</a>
         <a class="btn btn-secondary" href="https://github.com/nyxis-io/nyxis/blob/main/SPEC.md" rel="noopener">Spec
-          v1.1</a>
+          v1.2</a>
       </p>
     </article>
 
