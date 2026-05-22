@@ -7,9 +7,9 @@
 //! stdin input is spilled to a `tempfile::NamedTempFile` before pass 1 so that
 //! both passes can rewind. `--schema` skips pass 1 entirely (no spill needed).
 
-use super::{ImportArgs, ImportReport, InferredSchema};
 #[cfg(test)]
 use super::ConflictPolicy;
+use super::{ImportArgs, ImportReport, InferredSchema};
 use crate::convert::infer;
 use crate::error::{NxsError, Result};
 use crate::writer::{NxsWriter, Schema, Slot};

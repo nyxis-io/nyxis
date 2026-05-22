@@ -23,7 +23,6 @@ fn footer_size(flags: u16) -> usize {
     }
 }
 
-
 pub struct DecodedFile {
     pub version: u16,
     pub flags: u16,
