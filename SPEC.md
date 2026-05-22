@@ -108,6 +108,17 @@ A `.nxb` file consists of four segments in order:
 | 0 | 4 | `Magic` | `0x4E595842` (`NYXB`) |
 | 4 | 2 | `Version` | `0x0101` (major=1, minor=1) |
 | 6 | 2 | `Flags` | Bit 0: Jumbo Offsets **or** `FLAG_COLUMNAR` (0x0001); Bit 1: Schema Embedded (0x0002); Bit 2: `FLAG_PAX` (0x0004); Bits 3–15: reserved. `FLAG_COLUMNAR` and `FLAG_PAX` are mutually exclusive and require Schema Embedded. See OLAP.md for columnar/PAX footers and tail-index layouts. |
+
+> **Normative note — bit 0 disambiguation (v1.2).** Bit 0 carries two distinct meanings that are resolved by inspecting bit 1:
+>
+> | Bit 1 (0x0002) | Bit 0 (0x0001) | Interpretation |
+> | :--- | :--- | :--- |
+> | 0 | 1 | **Jumbo Row** mode — the Offset Table inside each NYXO object uses `uint32_t` entries instead of `uint16_t`, extending the maximum object size from 64 KB to 4 GB. |
+> | 1 | 1 | **Columnar layout** (`FLAG_COLUMNAR`) — the data sector and tail-index follow the OLAP.md columnar wire format. Jumbo Offsets semantics **do not apply**; the bit simply identifies the columnar layout. |
+> | 1 | 0 | Ordinary row layout with embedded schema and normal (`uint16_t`) offsets. |
+> | 0 | 0 | Ordinary row layout, no embedded schema (external schema required). |
+>
+> A reader MUST NOT interpret bit 0 as Jumbo Offsets when bit 1 is also set. Conversely, a reader MUST NOT interpret bit 0 as `FLAG_COLUMNAR` when bit 1 is clear. Writers that set `FLAG_COLUMNAR` MUST also set bit 1 (`FLAG_SCHEMA_EMBEDDED`); the combination is validated by `ERR_INCOMPATIBLE_FLAGS` when `FLAG_COLUMNAR` appears without `FLAG_SCHEMA_EMBEDDED`.
 | 8 | 8 | `DictHash` | 64-bit MurmurHash3 of the Schema Header bytes |
 | 16 | 8 | `TailPtr` | Absolute byte offset to the Tail-Index; `0` means streamable v1.1 and the final footer carries the Tail-Index offset |
 | 24 | 8 | `Reserved` | MUST be `0x00` |
