@@ -1,14 +1,9 @@
+use crate::consts::{
+    FLAG_SCHEMA_EMBEDDED, MAGIC_FILE, MAGIC_FOOTER, MAGIC_LIST, MAGIC_OBJ, VERSION,
+};
 use crate::error::{NxsError, Result};
 use crate::parser::{Field, Value};
 use std::collections::HashMap;
-
-// Magic constants from spec
-const MAGIC_FILE: u32 = 0x4E595842; // NYXB
-const MAGIC_OBJ: u32 = 0x4E59584F; // NYXO
-const MAGIC_LIST: u32 = 0x4E59584C; // NYXL
-const MAGIC_FOOTER: u32 = 0x2153584E; // NXS!
-const VERSION: u16 = 0x0101;
-const FLAG_SCHEMA_EMBEDDED: u16 = 0b0000_0000_0000_0010;
 
 // Sigil bytes
 const SIGIL_INT: u8 = b'=';

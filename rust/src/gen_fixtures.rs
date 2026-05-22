@@ -1,5 +1,6 @@
 #![allow(dead_code, unused_imports, unused_variables)]
 mod compiler;
+mod consts;
 mod decoder;
 /// Generates matching .nxb and .json fixtures for the JS benchmark.
 /// Usage: cargo run --release --bin gen_fixtures -- <out_dir> [sizes...]
