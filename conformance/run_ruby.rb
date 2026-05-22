@@ -77,37 +77,43 @@ def resolve_slot_raw(data, obj_offset, slot)
   obj_offset + rel
 end
 
-def get_field_value(data, reader, tail_start, ri, slot, sigil_byte)
-  # Get abs offset from tail index
-  abs = data.unpack1("@#{tail_start + ri * 10 + 2}Q<")
-  off = resolve_slot_raw(data, abs, slot)
-  return :absent if off.nil?
+def get_field_value(obj, reader, key)
+  slot = reader.key_index[key]
+  return :absent if slot.nil?
 
-  # Check for list magic
-  if off + 4 <= data.bytesize
-    maybe_magic = data.unpack1("@#{off}L<")
-    if maybe_magic == MAGIC_LIST
-      return read_list(data, off)
+  if reader.layout == :row
+    off = obj.send(:field_offset, key)
+    return :absent if off.nil?
+
+    data = reader.data
+    if off + 4 <= data.bytesize
+      maybe_magic = data.unpack1("@#{off}L<")
+      return read_list(data, off) if maybe_magic == MAGIC_LIST
     end
   end
 
-  case sigil_byte
-  when 0x3D  # = int
-    data.unpack1("@#{off}q<")
-  when 0x7E  # ~ float
-    data.unpack1("@#{off}E")
-  when 0x3F  # ? bool
-    data.getbyte(off) != 0
-  when 0x22  # " str
-    len = data.unpack1("@#{off}L<")
-    data[off + 4, len].force_encoding("UTF-8")
-  when 0x40  # @ time
-    data.unpack1("@#{off}q<")
-  when 0x5E  # ^ null
+  sigil = reader.key_sigils[slot] || 0x3D
+  case sigil
+  when 0x3D
+    v = obj.get_i64(key)
+    v.nil? ? :absent : v
+  when 0x7E
+    v = obj.get_f64(key)
+    v.nil? ? :absent : v
+  when 0x3F
+    v = obj.get_bool(key)
+    v.nil? ? :absent : v
+  when 0x22
+    v = obj.get_str(key)
+    v.nil? ? :absent : v
+  when 0x40
+    v = obj.get_i64(key)
+    v.nil? ? :absent : v
+  when 0x5E
     nil
   else
-    # try i64
-    data.unpack1("@#{off}q<") rescue nil
+    v = obj.get_i64(key)
+    v.nil? ? :absent : v
   end
 end
 
@@ -144,20 +150,14 @@ def run_positive(conformance_dir, name, expected)
     end
   end
 
-  tail_start = reader.instance_variable_get(:@tail_start)
-  sigils     = reader.instance_variable_get(:@key_sigils)
-  key_index  = reader.key_index
-
   expected["records"].each_with_index do |exp_rec, ri|
+    obj = reader.record(ri)
     exp_rec.each do |key, exp_val|
-      slot = key_index[key]
-      raise "rec[#{ri}].#{key}: key not in schema" if slot.nil?
+      raise "rec[#{ri}].#{key}: key not in schema" if reader.key_index[key].nil?
 
-      sigil = sigils[slot] || 0x3D
-      actual = get_field_value(data, reader, tail_start, ri, slot, sigil)
+      actual = get_field_value(obj, reader, key)
 
       if exp_val.nil?
-        # null — accept nil or absent
         next
       end
       if actual == :absent
@@ -195,17 +195,7 @@ entries = Dir[File.join(conformance_dir, "*.expected.json")]
 passed = 0
 failed = 0
 
-def layout_vector?(name)
-  name.start_with?("columnar_") || name.start_with?("pax_")
-end
-
 entries.each do |name|
-  if layout_vector?(name)
-    puts "  SKIP  #{name} (columnar/PAX not implemented)"
-    passed += 1
-    next
-  end
-
   json_path = File.join(conformance_dir, "#{name}.expected.json")
   expected  = JSON.parse(File.read(json_path))
   is_negative = expected.key?("error")
