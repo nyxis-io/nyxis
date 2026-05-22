@@ -311,7 +311,7 @@ func TestReadHeader_Valid(t *testing.T) {
 	// last 4 bytes: NXS! footer magic
 	buf := make([]byte, 40)
 	// NYXB magic
-	buf[0], buf[1], buf[2], buf[3] = 0x42, 0x53, 0x58, 0x4E
+	buf[0], buf[1], buf[2], buf[3] = 0x42, 0x58, 0x59, 0x4E // NYXB in little-endian
 	// tailPtr = 32 at bytes 16-23 (LE)
 	buf[16] = 32
 	// recordCount = 7 at offset 32
