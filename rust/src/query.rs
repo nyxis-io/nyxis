@@ -14,7 +14,9 @@
 //! ```
 
 use crate::error::{NxsError, Result};
-use crate::layout::{col_var_parts, column_sector_len, is_var_sigil, null_bitmap_bytes, var_str_at};
+use crate::layout::{
+    col_var_parts, column_sector_len, is_var_sigil, null_bitmap_bytes, var_str_at,
+};
 
 // ── Format constants ──────────────────────────────────────────────────────────
 use crate::consts::{
