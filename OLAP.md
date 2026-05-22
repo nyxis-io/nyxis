@@ -488,13 +488,14 @@ Recommendation: include `FLAG_PAGE_CRC` as an optional flag, disabled by default
 - [x] Conformance vectors: `columnar_flat8_strings_100` (OLAP §7.2 `flat8_strings_100`)
 - [x] Update BENCHMARK.md with string-inclusive benchmark (`make -C bench run-c-strings`, `bench_columnar_strings`)
 
-### Phase 4: Driver ports (~ongoing, parallel to Phases 2–3)
+### Phase 4: Driver ports — **done**
 
 - [x] Go driver: columnar and PAX read paths (`colSumF64`, `colGetStr`, sealed PAX pages)
 - [x] JavaScript: `colBuffer()` / `colGetStr()` (WASM + report demo Chart.js integration)
 - [x] Rust: columnar and PAX read paths (`query.rs`, `bench_pax_mixed`, `bench_columnar_strings`)
 - [x] C driver: columnar/PAX + `nxs_col_buffer` (conformance + site demo)
-- [x] Python C extension: `col_buffer`, `col_sum_f64`, `col_numpy_f64` (links `c/nxs.c`; `build_ext.sh`)
+- [x] Python: C extension (`col_buffer`, `col_var_buffer`, layout-aware `record`/`get_*`; conformance via `build_ext.sh`)
+- [x] Kotlin, Swift, C#, Ruby, PHP: columnar/PAX read paths + conformance (`columnar_*` / `pax_*` vectors)
 
 ---
 
