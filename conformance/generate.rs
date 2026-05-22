@@ -744,6 +744,61 @@ fn make_pax_dense_1000() -> Vector {
     }
 }
 
+const FOOTER_PAX_BYTES: usize = 28;
+const PAX_TAIL_ENTRY_BYTES: usize = 24;
+
+fn make_pax_streaming_unsealed() -> (Vec<u8>, String) {
+    let keys = vec![
+        "id".to_string(),
+        "score".to_string(),
+        "active".to_string(),
+        "ts".to_string(),
+    ];
+    let rows_data: Vec<layout::RecordRow> = (0..768)
+        .map(|i| layout::RecordRow {
+            cells: vec![
+                layout::Cell::I64(i as i64),
+                layout::Cell::F64(i as f64 * 0.5),
+                layout::Cell::Bool(i % 2 == 0),
+                layout::Cell::Time(i as i64 * 1_000_000),
+            ],
+        })
+        .collect();
+    let mut nxb = layout::finish_pax(&keys, &rows_data, 256).expect("pax");
+    let page_count = 3usize;
+    let tail_len = page_count * PAX_TAIL_ENTRY_BYTES + FOOTER_PAX_BYTES;
+    nxb.truncate(nxb.len().saturating_sub(tail_len));
+    nxb[16..24].copy_from_slice(&0u64.to_le_bytes());
+    (nxb, r#"{"error":"ERR_BAD_MAGIC"}"#.to_string())
+}
+
+fn make_pax_invalid_page_magic() -> (Vec<u8>, String) {
+    let keys = vec![
+        "id".to_string(),
+        "score".to_string(),
+        "active".to_string(),
+        "ts".to_string(),
+    ];
+    let rows_data: Vec<layout::RecordRow> = (0..256)
+        .map(|i| layout::RecordRow {
+            cells: vec![
+                layout::Cell::I64(i as i64),
+                layout::Cell::F64(i as f64 * 0.5),
+                layout::Cell::Bool(i % 2 == 0),
+                layout::Cell::Time(i as i64 * 1_000_000),
+            ],
+        })
+        .collect();
+    let mut nxb = layout::finish_pax(&keys, &rows_data, 256).expect("pax");
+    let fo = nxb.len() - FOOTER_PAX_BYTES;
+    let tail_ptr = u64::from_le_bytes(nxb[fo..fo + 8].try_into().unwrap()) as usize;
+    let poff = u64::from_le_bytes(nxb[tail_ptr + 16..tail_ptr + 24].try_into().unwrap()) as usize;
+    if poff + 4 <= nxb.len() {
+        nxb[poff..poff + 4].copy_from_slice(&0xFFu32.to_le_bytes());
+    }
+    (nxb, r#"{"error":"ERR_INVALID_PAGE_MAGIC"}"#.to_string())
+}
+
 fn make_pax_sparse_1000() -> Vector {
     let keys = vec![
         "id".to_string(),
@@ -859,6 +914,23 @@ fn main() {
         &inv_stream_json,
     )
     .unwrap();
+
+    let (pax_unsealed, pax_unsealed_json) = make_pax_streaming_unsealed();
+    fs::write(out_path.join("pax_streaming_unsealed.nxb"), &pax_unsealed).unwrap();
+    fs::write(
+        out_path.join("pax_streaming_unsealed.expected.json"),
+        &pax_unsealed_json,
+    )
+    .unwrap();
+
+    let (pax_bad_page, pax_bad_page_json) = make_pax_invalid_page_magic();
+    fs::write(out_path.join("pax_invalid_page_magic.nxb"), &pax_bad_page).unwrap();
+    fs::write(
+        out_path.join("pax_invalid_page_magic.expected.json"),
+        &pax_bad_page_json,
+    )
+    .unwrap();
+    println!("  wrote pax_streaming_unsealed + pax_invalid_page_magic (PAX streaming)");
 
     println!(
         "\nAll conformance vectors written to: {}",

@@ -13,6 +13,8 @@ use std::time::{Duration, Instant};
 use capnp::message::{Builder, ReaderOptions};
 use capnp::serialize;
 use clap::Parser;
+use nyxis::layout::{Cell, RecordRow};
+use nyxis::pax_stream::{PaxStreamReader, PaxStreamWriter};
 use nyxis::stream_reader::{complete_nyxo_end, StreamReader};
 use nyxis::writer::{write_stream_file_footer, write_stream_file_header, NxsWriter, Schema, Slot};
 use prost::Message;
@@ -51,6 +53,9 @@ struct Args {
     flush_every: usize,
     #[arg(long, default_value = "nxs,proto,capnp")]
     formats: String,
+    /// PAX page size for `nxs_pax` TTFR (OLAP reporting use case: 256).
+    #[arg(long, default_value_t = 256)]
+    page_size: u32,
     #[arg(long)]
     json: Option<PathBuf>,
     /// Break down seal into tail-index write vs fsync; include synthetic sync sizes.
@@ -202,6 +207,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 poll_us,
                 throughput_n(&args, records.len()),
             )?),
+            "nxs_pax" => out.push(run_nxs_pax_d2(
+                &records,
+                args.runs,
+                args.page_size,
+                flush_every,
+                poll_us,
+            )?),
             "proto" => out.push(run_proto_d2(
                 &records,
                 args.runs,
@@ -235,6 +247,7 @@ fn emit_harness_jsonl(results: &[FormatResult]) {
     for r in results {
         let fmt = match r.format.as_str() {
             "flatbuffers" => "fb",
+            "nxs_pax" => "nxs_pax",
             other => other,
         };
         let base = serde_json::json!({
@@ -250,7 +263,13 @@ fn emit_harness_jsonl(results: &[FormatResult]) {
             let mut row = base.clone();
             if let Some(obj) = row.as_object_mut() {
                 // Publication TTFR: n≥1000 trials, batched flush (flush_every≥100).
-                let metric = if r.runs >= 1000 && r.flush_every >= 100 {
+                let metric = if r.variant == "d2_pax" {
+                    if r.runs >= 1000 && r.flush_every >= 100 {
+                        "ttfr_pax"
+                    } else {
+                        "ttfr_pax_smoke"
+                    }
+                } else if r.runs >= 1000 && r.flush_every >= 100 {
                     "ttfr"
                 } else {
                     "ttfr_smoke"
@@ -497,6 +516,45 @@ fn poll_capnp_ttfr(
             let t0 = start_reader.load(Ordering::Acquire);
             if t0 != 0 {
                 return monotonic_ns().saturating_sub(t0);
+            }
+        }
+        thread::sleep(Duration::from_micros(poll_us));
+    }
+}
+
+const PAX_NUMERIC_KEYS: [&str; 6] = ["id", "age", "balance", "active", "score", "created_at"];
+fn flat8_to_pax_row(r: &Flat8Record) -> RecordRow {
+    RecordRow {
+        cells: vec![
+            Cell::I64(r.id),
+            Cell::I64(r.age),
+            Cell::F64(r.balance),
+            Cell::Bool(r.active),
+            Cell::F64(r.score),
+            Cell::Time(r.created_at),
+        ],
+    }
+}
+
+fn poll_pax_ttfr(
+    path: &PathBuf,
+    start_reader: Arc<AtomicU64>,
+    deadline: Instant,
+    poll_us: u64,
+) -> u64 {
+    let mut inc = IncrementalReader::new();
+    loop {
+        if Instant::now() > deadline {
+            eprintln!("stream_d: pax reader timed out waiting for first complete page");
+            return 0;
+        }
+        let buf = inc.poll(path);
+        if let Ok(sr) = PaxStreamReader::open(buf) {
+            if sr.has_complete_page() && sr.get_f64_complete(0, "score").is_some() {
+                let t0 = start_reader.load(Ordering::Acquire);
+                if t0 != 0 {
+                    return monotonic_ns().saturating_sub(t0);
+                }
             }
         }
         thread::sleep(Duration::from_micros(poll_us));
@@ -898,6 +956,95 @@ fn synthetic_sync_p50(bytes: usize) -> Result<u64, Box<dyn std::error::Error>> {
         samples.push((monotonic_ns().saturating_sub(t0)) / 1000);
     }
     Ok(percentile(samples, 0.50))
+}
+
+fn run_nxs_pax_d2(
+    records: &[Flat8Record],
+    runs: usize,
+    page_size: u32,
+    flush_every: usize,
+    poll_us: u64,
+) -> Result<FormatResult, Box<dyn std::error::Error>> {
+    let page_size = page_size.max(1);
+    let ttfr_records = page_size as usize;
+    let keys: Vec<String> = PAX_NUMERIC_KEYS.iter().map(|s| (*s).to_string()).collect();
+    let mut ttfr_samples = Vec::with_capacity(runs);
+    let trial_dir = tempfile::tempdir()?;
+
+    for trial in 0..runs {
+        let path = trial_dir.path().join(format!("ttfr_pax_{trial}.nxb"));
+        let start_ns = Arc::new(AtomicU64::new(0));
+        let path_reader = path.clone();
+        let start_reader = Arc::clone(&start_ns);
+        let deadline = Instant::now() + Duration::from_secs(30);
+
+        // Sigils fixed for numeric flat-8 subset (id/age =, balance/score ~, active ?, ts @).
+        let sigils = [b'=', b'=', b'~', b'?', b'~', b'@'];
+        let mut pax_w = PaxStreamWriter::new(keys.clone(), sigils.to_vec(), page_size)?;
+
+        let mut file = OpenOptions::new()
+            .create(true)
+            .write(true)
+            .truncate(true)
+            .open(&path)?;
+        let _data_start = pax_w.write_stream_header(&mut file)?;
+
+        let reader = thread::spawn(move || {
+            poll_pax_ttfr(&path_reader, start_reader, deadline, poll_us)
+        });
+
+        let mut flushed = 0usize;
+        for (i, r) in records.iter().take(ttfr_records).enumerate() {
+            if i == 0 {
+                start_ns.store(monotonic_ns(), Ordering::Release);
+            }
+            pax_w.push_record(flat8_to_pax_row(r))?;
+            pax_w.write_data_sector_since(&mut file, flushed)?;
+            flushed = pax_w.data_sector_len();
+            if i == 0 || (i + 1) % flush_every == 0 {
+                file.flush()?;
+                file.sync_data()?;
+            }
+        }
+
+        let ttfr_ns = reader.join().unwrap();
+        if ttfr_ns == 0 {
+            return Err(format!("nxs_pax TTFR trial {trial} failed (timeout)").into());
+        }
+        ttfr_samples.push(ttfr_ns / 1000);
+        if (trial + 1) % 10 == 0 || trial + 1 == runs {
+            eprintln!(
+                "stream_d: nxs_pax ttfr {}/{} done (page_size={})",
+                trial + 1,
+                runs,
+                page_size
+            );
+        }
+    }
+
+    Ok(FormatResult {
+        format: "nxs_pax".into(),
+        variant: "d2_pax".into(),
+        mechanism: "PAX page seal (NXSP); first record after full page",
+        streaming_native: true,
+        flush_every,
+        records: records.len(),
+        ttfr_records_per_trial: ttfr_records,
+        runs,
+        ttfr_us: if runs > 0 {
+            Some(percentiles(ttfr_samples))
+        } else {
+            None
+        },
+        p99_note: p99_note_for_runs(runs),
+        seal_us_p50: None,
+        seal_records: None,
+        throughput_rec_per_s_p50: None,
+        footnote: Some(
+            "PAX TTFR = time to first complete page (page_size records). Compare to row \
+             `nxs` TTFR (first NYXO). Numeric-only flat-8 subset (no strings in PAX pages).",
+        ),
+    })
 }
 
 fn run_nxs_d2(

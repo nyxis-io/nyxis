@@ -263,7 +263,7 @@ fn encode_field_column(n: usize, col: &[Cell], sigil: u8) -> Result<Vec<u8>> {
     Ok(out)
 }
 
-fn sigils_for_keys(keys: &[String], rows: &[RecordRow]) -> Vec<u8> {
+pub(crate) fn sigils_for_keys(keys: &[String], rows: &[RecordRow]) -> Vec<u8> {
     keys.iter()
         .enumerate()
         .map(|(fi, _)| {
@@ -395,7 +395,7 @@ pub fn finish_pax(keys: &[String], rows: &[RecordRow], page_size: u32) -> Result
     Ok(out)
 }
 
-fn encode_page(
+pub(crate) fn encode_page(
     page_index: u32,
     record_start: u64,
     record_count: u32,

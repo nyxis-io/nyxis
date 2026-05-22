@@ -196,8 +196,23 @@ pub fn decode(data: &[u8]) -> Result<DecodedFile> {
 
     let data_sector_start = pos;
 
-    // Decode root object (first record)
-    let root_fields = if pos < data.len() {
+    if flags & FLAG_PAX != 0 {
+        const MAGIC_PAGE: u32 = 0x4E58_5350;
+        if pos + 4 > data.len() {
+            return Err(NxsError::OutOfBounds);
+        }
+        if u32::from_le_bytes(
+            data[pos..pos + 4]
+                .try_into()
+                .map_err(|_| NxsError::OutOfBounds)?,
+        ) != MAGIC_PAGE
+        {
+            return Err(NxsError::InvalidPageMagic);
+        }
+    }
+
+    // Decode root object (first record) — row layout only
+    let root_fields = if flags & FLAG_PAX == 0 && pos < data.len() {
         decode_object(data, pos, &keys, &key_sigils).unwrap_or_default()
     } else {
         Vec::new()

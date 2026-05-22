@@ -23,7 +23,8 @@ FORMATS_OTHER := proto capnp
 STREAM_D := $(BENCH)/harness/stream_d/target/release/bench-stream-d
 
 .PHONY: all gen codegen transcode-nxs transcode-formats transcode harness \
-        run run-b run-c run-a run-d run-d-smoke run-d-ttfr run-d-throughput quick ci matrix bench-cold results results-1m results-1m-fast \
+        run run-b run-c run-a run-d run-d-smoke run-d-ttfr run-d-pax-ttfr run-d-throughput \
+        run-e-mixed quick ci matrix bench-cold results results-1m results-1m-fast \
         setup-venv render-tables render-all freeze-benchmark verdicts clean
 
 all: gen transcode harness
@@ -168,6 +169,30 @@ run-d-ttfr: $(STREAM_D)
 	  --json $(DATA_JSON)/workload_B_$(BENCH_RECORDS_D).json
 
 # Throughput only (batched flush, 10k rows) — fast complement to full run-d
+# Phase 2: PAX streaming TTFR vs row (page_size=256, numeric flat-8 subset)
+run-d-pax-ttfr: BENCH_RECORDS_D ?= 10000
+run-d-pax-ttfr: $(STREAM_D)
+	@test -f $(DATA_JSON)/workload_B_$(BENCH_RECORDS_D).json || \
+	  $(MAKE) gen BENCH_RECORDS=$(BENCH_RECORDS_D)
+	@echo "=== row-oriented TTFR (1 record) ==="
+	$(STREAM_D) --records $(BENCH_RECORDS_D) --runs 200 --ttfr-records 1 \
+	  --seal-records 0 --flush-every 100 --formats nxs \
+	  --json $(DATA_JSON)/workload_B_$(BENCH_RECORDS_D).json
+	@echo "=== PAX streaming TTFR (first complete page, page_size=256) ==="
+	$(STREAM_D) --records $(BENCH_RECORDS_D) --runs 200 --seal-records 0 \
+	  --flush-every 100 --page-size 256 --formats nxs_pax \
+	  --json $(DATA_JSON)/workload_B_$(BENCH_RECORDS_D).json
+
+BENCH_PAX_MIXED := $(abspath $(ROOT)/rust/target/release/bench_pax_mixed)
+
+$(BENCH_PAX_MIXED):
+	cd $(ROOT)/rust && cargo build --release --bin bench_pax_mixed
+
+# Workload E: mixed random access + column scan (row / columnar / PAX)
+run-e-mixed: BENCH_E_RECORDS ?= 10000
+run-e-mixed: $(BENCH_PAX_MIXED)
+	$(BENCH_PAX_MIXED) $(BENCH_E_RECORDS) 100 4096
+
 run-d-throughput: BENCH_RECORDS_D ?= 10000
 run-d-throughput: $(STREAM_D)
 	@test -f $(DATA_JSON)/workload_B_$(BENCH_RECORDS_D).json || \

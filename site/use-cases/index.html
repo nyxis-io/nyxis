@@ -298,7 +298,7 @@
         scan at 11.7&nbsp;ms — 112× difference on dense uniform data. This is the expected architectural result for
         columnar vs row-oriented formats on scan-heavy workloads. NXS <strong>columnar layout</strong> closes this gap to
         at parity on Apple Silicon (107&nbsp;µs) using SIMD vectorization. For pure analytical workloads, use the
-        <strong>Arrow bridge</strong>. For mixed streaming + analytics workloads, use NXS PAX layout (in development).
+        <strong>Arrow bridge</strong>. For mixed streaming + analytics workloads, use NXS <strong>PAX layout</strong> — page-level streaming with columnar pages for chart scan and row access within each page (see <a href="../BENCHMARK.md#workload-e">Workload E</a>).
       </p>
       <p>
         Nyxis remains a <strong>sparse-friendly transport format</strong> with bimodal <code>.nxs</code> ↔ <code>.nxb</code>
@@ -336,12 +336,13 @@
             <td><code>pax</code></td>
             <td>Reporting dashboards, mixed scroll + charts</td>
             <td>Higher TTFR than row (page fill before first record); scan slightly slower than columnar</td>
-            <td>v1.2, in development</td>
+            <td>v1.2, stable (sealed read; streaming writer in progress)</td>
           </tr>
         </tbody>
       </table>
       <p class="use-case-footnote">
-        Compiler: <code>nxs compile --layout columnar report.nxs</code> or inline <code>@layout columnar</code>.
+        Compiler: <code>nxs compile --layout columnar report.nxs</code>,
+        <code>nxs compile --layout pax --page-size 1024 report.nxs</code>, or inline <code>@layout pax</code>.
         C writer: <code>NXS_LAYOUT_COLUMNAR</code> on <code>nxs_writer_open</code> for server-side pivot.
         <a href="/demo/report.html">See columnar vs row on a real dataset →</a>
       </p>

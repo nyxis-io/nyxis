@@ -162,6 +162,14 @@ if [ "${BENCH_D:-1}" != "0" ]; then
   run make -C bench run-d-ttfr BENCH_RECORDS_D="$BENCH_RECORDS_D"
   echo "Workload D → run-d-throughput (batched flush, publication throughput)" | tee -a "$LOG"
   run make -C bench run-d-throughput BENCH_RECORDS_D="$BENCH_RECORDS_D"
+  echo "Workload D → run-d-pax-ttfr (PAX page TTFR vs row)" | tee -a "$LOG"
+  run make -C bench run-d-pax-ttfr BENCH_RECORDS_D="$BENCH_RECORDS_D"
+fi
+
+if [ "${BENCH_E:-1}" != "0" ]; then
+  BENCH_E_RECORDS="${BENCH_E_RECORDS:-$BENCH_RECORDS}"
+  echo "Workload E → run-e-mixed (row/columnar/PAX, n=$BENCH_E_RECORDS)" | tee -a "$LOG"
+  run make -C bench run-e-mixed BENCH_E_RECORDS="$BENCH_E_RECORDS"
 fi
 
 if [ -z "${SKIP_REPORT:-}" ]; then

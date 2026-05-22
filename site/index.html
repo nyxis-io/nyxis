@@ -24,7 +24,7 @@
       memory-mapped <code>.nxb</code> you query by tail-index, without <code>JSON.parse()</code> or full-file decode passes.
       <strong>Row layout:</strong> 142&nbsp;µs time-to-first-record (streaming, P50).
       <strong>Columnar layout:</strong> at parity with Arrow IPC on dense scan (Apple Silicon).
-      <strong>PAX layout:</strong> both, in the same file (Phase 2, in development).
+      <strong>PAX layout:</strong> mixed scroll + column scan in one file (v1.2; page streaming per SPEC §4.5).
       v1.1 adds <strong>streamable sealing</strong>: emit schema and records incrementally, then seal the tail-index when the segment is complete.
     </p>
     <div class="landing-actions">
@@ -96,10 +96,10 @@ Chart rendering · OLAP · export pipelines<br>
 <a href="/demo/report.html">Try on your CSV →</a></p>
     </div>
     <div class="bimodal-col">
-      <h3>PAX (<code>.nxb</code>) — coming</h3>
+      <h3>PAX (<code>.nxb</code>)</h3>
       <p class="layout-metric">Pages stream as they fill; sealed file supports both access patterns in one artifact.</p>
       <p class="layout-use">Reporting dashboards · mixed scroll + charts<br>
-Phase 2 — in development</p>
+<a href="../BENCHMARK.md#workload-e">Workload E</a> (mixed access) — publication pending</p>
     </div>
   </div>
 </section>
