@@ -1,31 +1,31 @@
 use std::io::Write;
 
-/// NxsWriter — optimized direct-to-buffer .nxb emitter.
+/// NxsWriter — optimized direct-to-buffer `.nxb` emitter.
 ///
-/// Design:
-///   1. Schema is precompiled once — keys map to u16 slot IDs.
-///   2. Writes go directly into a growing `Vec<u8>` with back-patching.
-///   3. No per-field allocations; no HashMap lookup on the hot path.
+/// Precompile a [`Schema`] once, then write records with slot-indexed typed
+/// methods; call [`NxsWriter::finish`] to obtain the complete `.nxb` bytes.
 ///
-/// Usage:
-///   let schema = Schema::new(&["id", "username", "score", "active"]);
-///   let mut w = NxsWriter::new(&schema);
-///   w.begin_object();
-///   w.write_i64(Slot(0), 42);
-///   w.write_str(Slot(1), "alice");
-///   w.write_f64(Slot(2), 9.5);
-///   w.write_bool(Slot(3), true);
-///   w.end_object();
-///   let bytes = w.finish();
+/// # Example
+///
+/// ```
+/// use nxs::writer::{Schema, NxsWriter, Slot};
+/// let schema = Schema::new(&["id", "score"]);
+/// let mut w = NxsWriter::new(&schema);
+/// w.begin_object();
+/// w.write_i64(Slot(0), 42);
+/// w.write_f64(Slot(1), 9.5);
+/// w.end_object();
+/// let bytes = w.finish();
+/// ```
 use crate::consts::{
     FLAG_SCHEMA_EMBEDDED, MAGIC_FILE, MAGIC_FOOTER, MAGIC_LIST, MAGIC_OBJ, VERSION,
 };
 
-/// A field slot — an index into the Schema's key list.
+/// A field slot — an index into the [`Schema`]'s key list; used by all typed write methods.
 #[derive(Copy, Clone, Debug)]
 pub struct Slot(pub u16);
 
-/// Precompiled schema shared across all objects in a file.
+/// Precompiled schema shared across all objects in a file; build once, reuse for every record.
 pub struct Schema {
     keys: Vec<String>,
     /// Precomputed LEB128 bitmask size (one per possible present-bit count)
@@ -83,6 +83,7 @@ pub struct NxsWriter<'a> {
 }
 
 impl<'a> NxsWriter<'a> {
+    /// Create a new writer for the given schema.
     pub fn new(schema: &'a Schema) -> Self {
         let n = schema.keys.len();
         NxsWriter {
@@ -106,6 +107,7 @@ impl<'a> NxsWriter<'a> {
         }
     }
 
+    /// Open a new object frame; must be paired with [`NxsWriter::end_object`].
     #[inline]
     pub fn begin_object(&mut self) {
         // Record top-level object start offsets (for the tail-index)
@@ -146,6 +148,7 @@ impl<'a> NxsWriter<'a> {
         }
     }
 
+    /// Close the current object frame and back-patch its length and offset table.
     #[inline]
     pub fn end_object(&mut self) {
         let frame = self.frames.pop().expect("end_object without begin_object");
@@ -229,8 +232,7 @@ impl<'a> NxsWriter<'a> {
         &self.slot_sigils
     }
 
-    /// Finish and return the complete .nxb file bytes.
-    /// The tail-index contains one entry per top-level object written.
+    /// Seal the file and return the complete `.nxb` bytes; one tail-index entry per top-level object.
     pub fn finish(self) -> Vec<u8> {
         debug_assert!(self.frames.is_empty(), "unclosed objects");
 
@@ -304,6 +306,7 @@ impl<'a> NxsWriter<'a> {
         frame.slot_offsets.push((slot_u16, self.buf.len() as u32));
     }
 
+    /// Write a signed 64-bit integer field.
     #[inline]
     pub fn write_i64(&mut self, slot: Slot, v: i64) {
         self.mark_slot_sigil(slot, b'=');
@@ -311,6 +314,7 @@ impl<'a> NxsWriter<'a> {
         self.buf.extend_from_slice(&v.to_le_bytes());
     }
 
+    /// Write a 64-bit float field.
     #[inline]
     pub fn write_f64(&mut self, slot: Slot, v: f64) {
         self.mark_slot_sigil(slot, b'~');
@@ -318,6 +322,7 @@ impl<'a> NxsWriter<'a> {
         self.buf.extend_from_slice(&v.to_le_bytes());
     }
 
+    /// Write a boolean field.
     #[inline]
     pub fn write_bool(&mut self, slot: Slot, v: bool) {
         self.mark_slot_sigil(slot, b'?');
@@ -326,6 +331,7 @@ impl<'a> NxsWriter<'a> {
         self.buf.extend_from_slice(&[0u8; 7]);
     }
 
+    /// Write a nanosecond-precision Unix timestamp field.
     #[inline]
     pub fn write_time(&mut self, slot: Slot, unix_ns: i64) {
         self.mark_slot_sigil(slot, b'@');
@@ -333,6 +339,7 @@ impl<'a> NxsWriter<'a> {
         self.buf.extend_from_slice(&unix_ns.to_le_bytes());
     }
 
+    /// Write an explicit null field (present in the object but carrying no value).
     #[inline]
     pub fn write_null(&mut self, slot: Slot) {
         self.mark_slot_sigil(slot, b'^');
@@ -342,6 +349,7 @@ impl<'a> NxsWriter<'a> {
         self.buf.extend_from_slice(&[0u8; 7]);
     }
 
+    /// Write a UTF-8 string field.
     #[inline]
     pub fn write_str(&mut self, slot: Slot, v: &str) {
         self.mark_slot_sigil(slot, b'"');
@@ -357,6 +365,7 @@ impl<'a> NxsWriter<'a> {
         }
     }
 
+    /// Write a raw binary field.
     #[inline]
     pub fn write_bytes(&mut self, slot: Slot, data: &[u8]) {
         self.mark_slot_sigil(slot, b'<');

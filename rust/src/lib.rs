@@ -1,3 +1,22 @@
+//! `nxs` — the Nyxis binary format library.
+//!
+//! Compiles `.nxs` source text to `.nxb` binary files and provides a zero-copy
+//! query reader for those files.
+//!
+//! # Quick start
+//!
+//! ```no_run
+//! // Compile .nxs source to bytes
+//! let bytes = nxs::compile_source("r0 { id: =1 score: ~9.5 }").unwrap();
+//!
+//! // Query the result
+//! use nxs::query::{Reader, eq};
+//! let reader = Reader::new(&bytes).unwrap();
+//! for rec in reader.where_pred(eq("id", 1i64)) {
+//!     println!("{:?}", rec.get_f64("score"));
+//! }
+//! ```
+
 #![allow(clippy::new_without_default)]
 #![allow(clippy::len_without_is_empty)]
 #![allow(clippy::manual_is_multiple_of)]
