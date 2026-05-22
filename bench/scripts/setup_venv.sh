@@ -5,21 +5,24 @@ ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 VENV="${VENV:-$ROOT/.venv-bench}"
 PY="${PYTHON:-}"
 
+py_ok() {
+  command -v "$1" >/dev/null 2>&1 \
+    && "$1" -c 'import sys; exit(0 if (3, 11) <= sys.version_info[:2] <= (3, 13) else 1)' 2>/dev/null
+}
+
 if [ -z "$PY" ]; then
-  for c in python3.12 python3.11; do
-    if command -v "$c" >/dev/null 2>&1; then
+  for c in python3.12 python3.13 python3.11 python3; do
+    if py_ok "$c"; then
       PY="$c"
       break
     fi
   done
 fi
-if [ -n "$PY" ]; then
-  "$PY" -c "import sys; assert (3, 11) <= sys.version_info[:2] <= (3, 12)" 2>/dev/null || PY=
+if [ -n "$PY" ] && ! py_ok "$PY"; then
+  PY=
 fi
 [ -n "$PY" ] || {
-  echo "need python3.11 or 3.12 (pyarrow has no cp313 wheel under pyarrow<18)" >&2
-  echo "  Ubuntu: sudo apt install python3.12 python3.12-venv" >&2
-  echo "  then: rm -rf .venv-bench && PYTHON=python3.12 bash bench/scripts/setup_venv.sh" >&2
+  echo "need python3.11, 3.12, or 3.13 (pyarrow>=18; 3.14+ not supported here)" >&2
   exit 1
 }
 
