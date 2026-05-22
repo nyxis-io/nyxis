@@ -1,6 +1,9 @@
 /// Minimal .nxb decoder — reads the preamble and walks the root object,
 /// returning a flat list of (key_index, value_bytes) for inspection.
-use crate::consts::{FLAG_COLUMNAR, FLAG_PAX, MAGIC_FILE, MAGIC_FOOTER, MAGIC_LIST, MAGIC_OBJ};
+use crate::consts::{
+    FLAG_COLUMNAR, FLAG_PAX, MAGIC_FILE, MAGIC_FOOTER, MAGIC_LIST, MAGIC_OBJ, SIGIL_BINARY,
+    SIGIL_BOOL, SIGIL_FLOAT, SIGIL_INT, SIGIL_LINK, SIGIL_NULL, SIGIL_STR, SIGIL_TIME,
+};
 use crate::error::{NxsError, Result};
 
 fn validate_preamble_flags(flags: u16) -> Result<()> {
@@ -19,16 +22,6 @@ fn footer_size(flags: u16) -> usize {
         12
     }
 }
-
-// Sigil bytes
-const SIGIL_INT: u8 = b'='; // 0x3D
-const SIGIL_FLOAT: u8 = b'~'; // 0x7E
-const SIGIL_BOOL: u8 = b'?'; // 0x3F
-const SIGIL_STR: u8 = b'"'; // 0x22
-const SIGIL_TIME: u8 = b'@'; // 0x40
-const SIGIL_BINARY: u8 = b'<'; // 0x3C
-const SIGIL_LINK: u8 = b'&'; // 0x26
-const SIGIL_NULL: u8 = b'^'; // 0x5E
 
 pub struct DecodedFile {
     pub version: u16,

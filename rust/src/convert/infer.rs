@@ -12,16 +12,12 @@
 //!   - fallback is always string
 
 use super::{ConflictPolicy, InferredKey, InferredSchema};
+use crate::consts::{SIGIL_BINARY, SIGIL_STR};
+pub use crate::consts::{SIGIL_BOOL, SIGIL_FLOAT, SIGIL_INT, SIGIL_NULL, SIGIL_TIME};
 use crate::error::{NxsError, Result};
 
-// NXS sigil bytes
-pub const SIGIL_INT: u8 = b'=';
-pub const SIGIL_FLOAT: u8 = b'~';
-pub const SIGIL_BOOL: u8 = b'?';
-pub const SIGIL_TIME: u8 = b'@';
-pub const SIGIL_HEX: u8 = b'<';
-pub const SIGIL_NULL: u8 = b'^';
-pub const SIGIL_STRING: u8 = b'"';
+pub const SIGIL_HEX: u8 = SIGIL_BINARY;
+pub const SIGIL_STRING: u8 = SIGIL_STR;
 
 /// Per-key state maintained during pass 1.
 #[derive(Debug, Default, Clone)]
