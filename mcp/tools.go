@@ -184,6 +184,9 @@ func handleExportJSON(ctx context.Context, resolver *Resolver, path string, pret
 
 // handleExportCSV exports a .nxb file as CSV.
 func handleExportCSV(ctx context.Context, resolver *Resolver, path, columns, delimiter string) string {
+	if path == "" {
+		return (&ToolError{Code: 1, Message: "path is required"}).JSON()
+	}
 	args := []string{"--to", "csv"}
 	if columns != "" {
 		args = append(args, "--columns", columns)
