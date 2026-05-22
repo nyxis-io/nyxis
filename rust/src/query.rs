@@ -14,6 +14,7 @@
 //! ```
 
 use crate::error::{NxsError, Result};
+use crate::layout::{col_var_parts, column_sector_len, is_var_sigil, var_str_at};
 
 // ── Format constants (local; avoids re-exporting decoder internals) ───────────
 
@@ -31,6 +32,9 @@ pub enum Layout {
     Columnar,
     Pax,
 }
+
+/// Bytes per entry in the PAX tail index (see conformance `generate.rs`).
+const PAX_TAIL_ENTRY_BYTES: usize = 28;
 
 fn footer_size(flags: u16) -> usize {
     if flags & FLAG_PAX != 0 {
@@ -251,63 +255,9 @@ impl<'a> Reader<'a> {
         Some(vals)
     }
 
-    fn pax_get_f64(&self, record_index: usize, slot: usize) -> Option<f64> {
-        let mut lo = 0i32;
-        let mut hi = self.page_count().saturating_sub(1) as i32;
-        let mut page_idx: Option<usize> = None;
-        while lo <= hi {
-            let mid = ((lo + hi) / 2) as usize;
-            let start = self.pax_page_rec_start(mid)?;
-            let count = self.pax_page_rec_count(mid)?;
-            if (record_index as u64) < start {
-                hi = mid as i32 - 1;
-            } else if record_index >= start as usize + count as usize {
-                lo = mid as i32 + 1;
-            } else {
-                page_idx = Some(mid);
-                break;
-            }
-        }
-        let pi = page_idx?;
-        let local = record_index - self.pax_page_rec_start(pi)? as usize;
-        let (bm, vals) = self.pax_page_field_parts(pi, slot).ok()?;
-        if !col_bit(bm, local) {
-            return None;
-        }
-        let off = local * 8;
-        Some(f64::from_le_bytes(vals.get(off..off + 8)?.try_into().ok()?))
-    }
-
-    fn page_count(&self) -> usize {
-        if self.layout != Layout::Pax {
-            return 0;
-        }
-        let tp = self.tail_start;
-        if tp + 4 > self.data.len() {
-            return 0;
-        }
-        // page count stored in footer; re-read from footer
-        let fo = self.data.len() - footer_size(FLAG_PAX);
-        u32::from_le_bytes(self.data[fo + 16..fo + 20].try_into().unwrap_or([0; 4])) as usize
-    }
-
-    fn pax_page_rec_start(&self, page_idx: usize) -> Option<u64> {
-        let e = self.tail_start + page_idx * 28;
-        Some(u64::from_le_bytes(
-            self.data.get(e + 4..e + 12)?.try_into().ok()?,
-        ))
-    }
-
-    fn pax_page_rec_count(&self, page_idx: usize) -> Option<u32> {
-        let e = self.tail_start + page_idx * 28;
-        Some(u32::from_le_bytes(
-            self.data.get(e + 12..e + 16)?.try_into().ok()?,
-        ))
-    }
-
-    fn pax_page_field_parts(&self, page_idx: usize, slot: usize) -> Result<(&[u8], &[u8])> {
+    fn pax_column_sector(&self, page_idx: usize, slot: usize) -> Result<&[u8]> {
         const MAGIC_PAGE: u32 = 0x4E58_5350;
-        let e = self.tail_start + page_idx * 28;
+        let e = self.tail_start + page_idx * PAX_TAIL_ENTRY_BYTES;
         let poff = u64::from_le_bytes(
             self.data
                 .get(e + 16..e + 24)
@@ -326,6 +276,11 @@ impl<'a> Reader<'a> {
         {
             return Err(NxsError::InvalidPageMagic);
         }
+        let rc = u32::from_le_bytes(
+            self.data[poff + 16..poff + 20]
+                .try_into()
+                .map_err(|_| NxsError::OutOfBounds)?,
+        ) as usize;
         let field_count = u16::from_le_bytes(
             self.data[poff + 20..poff + 22]
                 .try_into()
@@ -334,38 +289,176 @@ impl<'a> Reader<'a> {
         if slot >= field_count {
             return Err(NxsError::OutOfBounds);
         }
-        let rc = u32::from_le_bytes(
-            self.data[poff + 16..poff + 20]
-                .try_into()
-                .map_err(|_| NxsError::OutOfBounds)?,
-        ) as usize;
         let mut body = poff + 24;
-        for _ in 0..slot {
-            let bm_len = null_bitmap_bytes(rc);
-            body += bm_len + rc * 8;
+        for fi in 0..slot {
+            let sig = self.key_sigils.get(fi).copied().unwrap_or(b'=');
+            let slen = column_sector_len(&self.data[body..], rc, sig)?;
+            body += slen;
         }
-        let bm_len = null_bitmap_bytes(rc);
-        if body + bm_len + rc * 8 > self.data.len() {
+        let sig = self.key_sigils.get(slot).copied().unwrap_or(b'=');
+        let slen = column_sector_len(&self.data[body..], rc, sig)?;
+        if body + slen > self.data.len() {
             return Err(NxsError::OutOfBounds);
         }
-        Ok((
-            &self.data[body..body + bm_len],
-            &self.data[body + bm_len..body + bm_len + rc * 8],
+        Ok(&self.data[body..body + slen])
+    }
+
+    fn pax_page_field_var_parts(
+        &self,
+        page_idx: usize,
+        slot: usize,
+    ) -> Result<(&[u8], &[u8], &[u8])> {
+        let sector = self.pax_column_sector(page_idx, slot)?;
+        let rc = self
+            .pax_page_rec_count(page_idx)
+            .ok_or(NxsError::OutOfBounds)? as usize;
+        col_var_parts(sector, rc)
+    }
+
+    fn pax_locate_record(&self, record_index: usize) -> Option<(usize, usize)> {
+        let mut lo = 0i32;
+        let mut hi = self.page_count().saturating_sub(1) as i32;
+        while lo <= hi {
+            let mid = ((lo + hi) / 2) as usize;
+            let start = self.pax_page_rec_start(mid)?;
+            let count = self.pax_page_rec_count(mid)?;
+            if (record_index as u64) < start {
+                hi = mid as i32 - 1;
+            } else if record_index >= start as usize + count as usize {
+                lo = mid as i32 + 1;
+            } else {
+                let local = record_index - start as usize;
+                return Some((mid, local));
+            }
+        }
+        None
+    }
+
+    fn pax_get_f64(&self, record_index: usize, slot: usize) -> Option<f64> {
+        let (pi, local) = self.pax_locate_record(record_index)?;
+        if is_var_sigil(*self.key_sigils.get(slot)?) {
+            return None;
+        }
+        let (bm, vals) = self.pax_page_field_parts(pi, slot).ok()?;
+        if !col_bit(bm, local) {
+            return None;
+        }
+        let off = local * 8;
+        Some(f64::from_le_bytes(vals.get(off..off + 8)?.try_into().ok()?))
+    }
+
+    fn pax_get_i64(&self, record_index: usize, slot: usize) -> Option<i64> {
+        let (pi, local) = self.pax_locate_record(record_index)?;
+        if is_var_sigil(*self.key_sigils.get(slot)?) {
+            return None;
+        }
+        let (bm, vals) = self.pax_page_field_parts(pi, slot).ok()?;
+        if !col_bit(bm, local) {
+            return None;
+        }
+        let off = local * 8;
+        Some(i64::from_le_bytes(vals.get(off..off + 8)?.try_into().ok()?))
+    }
+
+    fn pax_get_bool(&self, record_index: usize, slot: usize) -> Option<bool> {
+        let (pi, local) = self.pax_locate_record(record_index)?;
+        if is_var_sigil(*self.key_sigils.get(slot)?) {
+            return None;
+        }
+        let (bm, vals) = self.pax_page_field_parts(pi, slot).ok()?;
+        if !col_bit(bm, local) {
+            return None;
+        }
+        Some(vals.get(local * 8)? != &0)
+    }
+
+    fn pax_get_str(&self, record_index: usize, slot: usize) -> Option<&str> {
+        let (pi, local) = self.pax_locate_record(record_index)?;
+        if self.key_sigils.get(slot).copied() != Some(b'"') {
+            return None;
+        }
+        let (bm, offsets, values) = self.pax_page_field_var_parts(pi, slot).ok()?;
+        if !col_bit(bm, local) {
+            return None;
+        }
+        var_str_at(offsets, values, local)
+    }
+
+    fn page_count(&self) -> usize {
+        if self.layout != Layout::Pax {
+            return 0;
+        }
+        let tp = self.tail_start;
+        if tp + 4 > self.data.len() {
+            return 0;
+        }
+        // page count stored in footer; re-read from footer
+        let fo = self.data.len() - footer_size(FLAG_PAX);
+        u32::from_le_bytes(self.data[fo + 16..fo + 20].try_into().unwrap_or([0; 4])) as usize
+    }
+
+    fn pax_page_rec_start(&self, page_idx: usize) -> Option<u64> {
+        let e = self.tail_start + page_idx * PAX_TAIL_ENTRY_BYTES;
+        Some(u64::from_le_bytes(
+            self.data.get(e + 4..e + 12)?.try_into().ok()?,
         ))
     }
 
+    fn pax_page_rec_count(&self, page_idx: usize) -> Option<u32> {
+        let e = self.tail_start + page_idx * PAX_TAIL_ENTRY_BYTES;
+        Some(u32::from_le_bytes(
+            self.data.get(e + 12..e + 16)?.try_into().ok()?,
+        ))
+    }
+
+    fn pax_page_field_parts(&self, page_idx: usize, slot: usize) -> Result<(&[u8], &[u8])> {
+        let sector = self.pax_column_sector(page_idx, slot)?;
+        let rc = self
+            .pax_page_rec_count(page_idx)
+            .ok_or(NxsError::OutOfBounds)? as usize;
+        let bm_len = null_bitmap_bytes(rc);
+        if sector.len() < bm_len {
+            return Err(NxsError::OutOfBounds);
+        }
+        let vals_end = bm_len + rc * 8;
+        if sector.len() < vals_end {
+            return Err(NxsError::OutOfBounds);
+        }
+        Ok((&sector[..bm_len], &sector[bm_len..vals_end]))
+    }
+
+    /// Variable-length column parts (null bitmap, u32 offsets, values) for columnar layout.
+    pub fn col_field_var_parts(&self, slot: usize) -> Result<(&[u8], &[u8], &[u8])> {
+        let off = *self.col_buf_off.get(slot).ok_or(NxsError::OutOfBounds)? as usize;
+        let len = *self.col_buf_len.get(slot).ok_or(NxsError::OutOfBounds)? as usize;
+        if off + len > self.data.len() {
+            return Err(NxsError::OutOfBounds);
+        }
+        col_var_parts(&self.data[off..off + len], self.record_count)
+    }
+
     fn col_field_parts(&self, slot: usize) -> Result<(&[u8], &[u8])> {
+        if self
+            .key_sigils
+            .get(slot)
+            .copied()
+            .map(is_var_sigil)
+            .unwrap_or(false)
+        {
+            return Err(NxsError::UnsupportedFieldType);
+        }
         let off = *self.col_buf_off.get(slot).ok_or(NxsError::OutOfBounds)? as usize;
         let len = *self.col_buf_len.get(slot).ok_or(NxsError::OutOfBounds)? as usize;
         if off + len > self.data.len() {
             return Err(NxsError::OutOfBounds);
         }
         let bm_len = null_bitmap_bytes(self.record_count);
-        if len < bm_len {
+        let vals_len = self.record_count * 8;
+        if len < bm_len.saturating_add(vals_len) {
             return Err(NxsError::OutOfBounds);
         }
         let sector = &self.data[off..off + len];
-        Ok((&sector[..bm_len], &sector[bm_len..]))
+        Ok((&sector[..bm_len], &sector[bm_len..bm_len + vals_len]))
     }
 
     /// Number of top-level records in the file.
@@ -444,16 +537,36 @@ impl<'data, 'reader> Record<'data, 'reader> {
     /// Read an `i64` field.
     pub fn get_i64(&self, key: &str) -> Option<i64> {
         let slot = self.reader.slot(key)?;
-        let off = self.resolve(slot)?;
-        Some(i64::from_le_bytes(
-            self.data.get(off..off + 8)?.try_into().ok()?,
-        ))
+        match self.reader.layout {
+            Layout::Columnar => {
+                if is_var_sigil(*self.reader.key_sigils.get(slot)?) {
+                    return None;
+                }
+                let ri = self.offset;
+                let (bm, vals) = self.reader.col_field_parts(slot).ok()?;
+                if !col_bit(bm, ri) {
+                    return None;
+                }
+                let off = ri * 8;
+                Some(i64::from_le_bytes(vals.get(off..off + 8)?.try_into().ok()?))
+            }
+            Layout::Pax => self.reader.pax_get_i64(self.offset, slot),
+            Layout::Row => {
+                let off = self.resolve(slot)?;
+                Some(i64::from_le_bytes(
+                    self.data.get(off..off + 8)?.try_into().ok()?,
+                ))
+            }
+        }
     }
 
     /// Read an `f64` field.
     pub fn get_f64(&self, key: &str) -> Option<f64> {
         let slot = self.reader.slot(key)?;
         if self.reader.layout == Layout::Columnar {
+            if is_var_sigil(*self.reader.key_sigils.get(slot)?) {
+                return None;
+            }
             let ri = self.offset;
             let (bm, vals) = self.reader.col_field_parts(slot).ok()?;
             if !col_bit(bm, ri) {
@@ -474,22 +587,55 @@ impl<'data, 'reader> Record<'data, 'reader> {
     /// Read a `bool` field.
     pub fn get_bool(&self, key: &str) -> Option<bool> {
         let slot = self.reader.slot(key)?;
-        let off = self.resolve(slot)?;
-        Some(*self.data.get(off)? != 0)
+        match self.reader.layout {
+            Layout::Columnar => {
+                if is_var_sigil(*self.reader.key_sigils.get(slot)?) {
+                    return None;
+                }
+                let ri = self.offset;
+                let (bm, vals) = self.reader.col_field_parts(slot).ok()?;
+                if !col_bit(bm, ri) {
+                    return None;
+                }
+                Some(vals.get(ri * 8)? != &0)
+            }
+            Layout::Pax => self.reader.pax_get_bool(self.offset, slot),
+            Layout::Row => {
+                let off = self.resolve(slot)?;
+                Some(*self.data.get(off)? != 0)
+            }
+        }
     }
 
     /// Read a `&str` field (zero-copy slice into the buffer).
-    pub fn get_str(&self, key: &str) -> Option<&'data str> {
+    pub fn get_str(&self, key: &str) -> Option<&str> {
         let slot = self.reader.slot(key)?;
-        let off = self.resolve(slot)?;
-        let len = u32::from_le_bytes(self.data.get(off..off + 4)?.try_into().ok()?) as usize;
-        let bytes = self.data.get(off + 4..off + 4 + len)?;
-        std::str::from_utf8(bytes).ok()
+        match self.reader.layout {
+            Layout::Columnar => {
+                if self.reader.key_sigils.get(slot).copied() != Some(b'"') {
+                    return None;
+                }
+                let ri = self.offset;
+                let (bm, offsets, values) = self.reader.col_field_var_parts(slot).ok()?;
+                if !col_bit(bm, ri) {
+                    return None;
+                }
+                var_str_at(offsets, values, ri)
+            }
+            Layout::Pax => self.reader.pax_get_str(self.offset, slot),
+            Layout::Row => {
+                let off = self.resolve(slot)?;
+                let len =
+                    u32::from_le_bytes(self.data.get(off..off + 4)?.try_into().ok()?) as usize;
+                let bytes = self.data.get(off + 4..off + 4 + len)?;
+                std::str::from_utf8(bytes).ok()
+            }
+        }
     }
 
     /// Walk a dot-notated path and read the leaf as `&str`.
     /// Example: `record.get_str_path("address.city")`
-    pub fn get_str_path(&self, dot_path: &str) -> Option<&'data str> {
+    pub fn get_str_path(&self, dot_path: &str) -> Option<&str> {
         let (leaf_off, data) = self.walk_path(dot_path)?;
         let len = u32::from_le_bytes(data.get(leaf_off..leaf_off + 4)?.try_into().ok()?) as usize;
         let bytes = data.get(leaf_off + 4..leaf_off + 4 + len)?;

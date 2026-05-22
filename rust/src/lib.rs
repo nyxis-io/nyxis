@@ -12,6 +12,7 @@
 #![allow(clippy::large_enum_variant)]
 #![allow(clippy::single_match)]
 
+pub mod arrow_project;
 pub mod col_reduce;
 pub mod compiler;
 pub mod convert;
@@ -27,6 +28,7 @@ pub mod stream_reader;
 pub mod wal;
 pub mod writer;
 
+pub use arrow_project::VarColumnView;
 pub use pax_stream::{
     complete_page_end, PaxPageMeta, PaxPageView, PaxStreamReader, PaxStreamWriter,
 };
