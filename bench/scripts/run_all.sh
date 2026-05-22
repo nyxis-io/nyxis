@@ -98,6 +98,17 @@ if [ -x "$HR" ] && [ "$BENCH_RECORDS" -ge 100000 ]; then
   run "$HR" --workload C --format nxs --records "$BENCH_RECORDS" \
     --metric scan --layout columnar --data-dir bench/data/bin
 fi
+# C harness: columnar scan + open for all record counts (displaces Python 8ms row scan in summary)
+if [ -x "$HC" ]; then
+  run "$HC" --workload C --format nxs --records "$BENCH_RECORDS" \
+    --metric scan \
+    --path "bench/data/bin/workload_C_nxs_columnar_${BENCH_RECORDS}.nxb" \
+    --data-dir bench/data/bin
+  run_open "$HC" --workload C --format nxs --records "$BENCH_RECORDS" \
+    --metric open \
+    --path "bench/data/bin/workload_C_nxs_columnar_${BENCH_RECORDS}.nxb" \
+    --data-dir bench/data/bin
+fi
 run "${HARNESS_PY[@]}" --workload C --format arrow --records "$BENCH_RECORDS" \
   --metric distinct --data-dir bench/data/bin
 

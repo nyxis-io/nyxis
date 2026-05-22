@@ -126,6 +126,16 @@ run-c: gen transcode harness
 	      $(HARNESS_PY) --workload C --format $$fmt --records $(BENCH_RECORDS) --metric $$met --data-dir $(DATA_BIN) 2>/dev/null || true; \
 	  done; \
 	done
+	@if [ -n "$(HARNESS_C)" ] && [ -x "$(HARNESS_C)" ]; then \
+	  $(HARNESS_C) --workload C --format nxs --records $(BENCH_RECORDS) \
+	    --metric scan \
+	    --path $(DATA_BIN)/workload_C_nxs_columnar_$(BENCH_RECORDS).nxb \
+	    --data-dir $(DATA_BIN); \
+	  $(HARNESS_C) --workload C --format nxs --records $(BENCH_RECORDS) \
+	    --metric open \
+	    --path $(DATA_BIN)/workload_C_nxs_columnar_$(BENCH_RECORDS).nxb \
+	    --data-dir $(DATA_BIN); \
+	fi
 
 run-a: gen transcode harness
 	@for pop in 0.10 0.25 0.50 0.90; do \
