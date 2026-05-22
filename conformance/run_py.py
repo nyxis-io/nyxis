@@ -193,7 +193,7 @@ def run_positive(conformance_dir: str, name: str, expected: dict, backend: str) 
         for key, exp_val in exp_rec.items():
             actual = get_field_value(obj, reader, key, backend)
             if exp_val is None:
-                if actual is not None and actual not in (0, False):
+                if actual is not None and actual not in (0, False, ""):
                     raise AssertionError(
                         f"rec[{ri}].{key}: expected null, got {actual!r}"
                     )

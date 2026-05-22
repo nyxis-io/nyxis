@@ -4,20 +4,14 @@
 //! Phase 2: PAX pages with per-page column groups (`FLAG_PAX`).
 //! Phase 3: variable-length string/binary columns (u32 offsets + values tail).
 
+// Re-export shared constants so callers that `use crate::layout::…` still compile.
+pub use crate::consts::{
+    FLAG_COLUMNAR, FLAG_PAX, FLAG_SCHEMA_EMBEDDED, MAGIC_FILE, MAGIC_FOOTER, MAGIC_PAGE, VERSION,
+};
 use crate::error::{NxsError, Result};
 use crate::parser::{Field, Value};
 use crate::writer::{build_schema, murmur3_64, NxsWriter};
 use std::collections::HashMap;
-
-/// Columnar layout (OLAP §2). Combined with [`FLAG_SCHEMA_EMBEDDED`] on write.
-pub const FLAG_COLUMNAR: u16 = 0x0001;
-/// PAX layout — bit 2 so it does not alias schema-embedded (`0x0002`).
-pub const FLAG_PAX: u16 = 0x0004;
-pub const FLAG_SCHEMA_EMBEDDED: u16 = 0x0002;
-pub const MAGIC_FILE: u32 = 0x4E59_5842;
-pub const MAGIC_FOOTER: u32 = 0x2153_584E;
-pub const MAGIC_PAGE: u32 = 0x4E58_5350; // NXSP
-pub const VERSION: u16 = 0x0101;
 
 const FOOTER_ROW: usize = 12;
 const FOOTER_COLUMNAR: usize = 20;

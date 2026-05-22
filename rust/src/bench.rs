@@ -1,5 +1,6 @@
 #![allow(dead_code, unused_imports, unused_variables)]
 mod compiler;
+mod consts;
 mod decoder;
 /// NXS vs JSON vs XML vs CSV benchmark + WAL span ingestion benchmark
 /// Measures: output byte size and serialization/deserialization throughput.

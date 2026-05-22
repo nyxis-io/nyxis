@@ -16,14 +16,10 @@
 use crate::error::{NxsError, Result};
 use crate::layout::{col_var_parts, column_sector_len, is_var_sigil, var_str_at};
 
-// ── Format constants (local; avoids re-exporting decoder internals) ───────────
-
-const MAGIC_FILE: u32 = 0x4E59_5842; // NYXB
-const MAGIC_OBJ: u32 = 0x4E59_584F; // NYXO
-const MAGIC_FOOTER: u32 = 0x2153_584E;
-const FLAG_SCHEMA_EMBEDDED: u16 = 0x0002;
-const FLAG_COLUMNAR: u16 = 0x0001;
-const FLAG_PAX: u16 = 0x0004;
+// ── Format constants ──────────────────────────────────────────────────────────
+use crate::consts::{
+    FLAG_COLUMNAR, FLAG_PAX, FLAG_SCHEMA_EMBEDDED, MAGIC_FILE, MAGIC_FOOTER, MAGIC_OBJ,
+};
 
 /// Data-sector layout (OLAP.md).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
