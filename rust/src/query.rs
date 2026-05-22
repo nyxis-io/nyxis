@@ -53,8 +53,7 @@ fn col_bit(bm: &[u8], rec: usize) -> bool {
 
 // ── Reader ────────────────────────────────────────────────────────────────────
 
-/// A zero-copy reader for a .nxb buffer.
-/// Parses the preamble and schema on construction; record data is accessed lazily.
+/// Zero-copy reader for a `.nxb` buffer; supports row, columnar, and PAX layouts.
 pub struct Reader<'a> {
     data: &'a [u8],
     keys: Vec<String>,
@@ -68,7 +67,7 @@ pub struct Reader<'a> {
 }
 
 impl<'a> Reader<'a> {
-    /// Validate the file header and build the schema index.
+    /// Validate the file header, detect layout, and build the schema index.
     pub fn new(data: &'a [u8]) -> Result<Self> {
         if data.len() < 32 {
             return Err(NxsError::OutOfBounds);
