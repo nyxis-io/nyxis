@@ -1,5 +1,12 @@
-# NXS Columnar & PAX Layout — Technical Specification
+# Normative Annex A — NXS Columnar & PAX Layout
 
+> **Status of this document:** This file is **Normative Annex A** to `SPEC.md` v1.2.
+> Implementations that support `FLAG_COLUMNAR` (0x0001) or `FLAG_PAX` (0x0004) MUST
+> comply with the wire formats defined here. Sections in SPEC.md v1.2 that defer to
+> "OLAP.md" refer to this annex.
+
+**Annex:** A (Normative)  
+**Applies to:** SPEC.md v1.2 and later  
 **Status:** Draft v0.1  
 **Scope:** Wire format extensions for columnar and PAX layouts; compiler flags; driver read paths  
 **Depends on:** NXS SPEC.md v1.1, existing preamble reserved flags field  
