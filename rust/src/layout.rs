@@ -292,7 +292,8 @@ pub fn records_from_fields(fields: &[Field]) -> Result<(Vec<String>, Vec<RecordR
     Ok((key_order, rows))
 }
 
-fn null_bitmap_bytes(n: usize) -> usize {
+/// Round `n` bits up to the nearest multiple of 8 bytes (64 bits).
+pub(crate) fn null_bitmap_bytes(n: usize) -> usize {
     let raw = (n + 7) / 8;
     ((raw + 7) / 8) * 8
 }
