@@ -332,7 +332,7 @@ double nxs_col_min_f64(nxs_reader_t *r, const char *field);
 double nxs_col_max_f64(nxs_reader_t *r, const char *field);
 int64_t nxs_col_sum_i64(nxs_reader_t *r, const char *field);
 
-// Column buffer direct access (columnar and PAX only)
+// Column buffer direct access (columnar layout only; PAX uses nxs_page_col_buffer per page)
 // Dense numeric: raw f64/i64 value buffer for zero-copy chart rendering
 const void* nxs_col_buffer(nxs_reader_t *r, const char *field, size_t *out_len);
 const uint8_t* nxs_col_null_bitmap(nxs_reader_t *r, const char *field, size_t *out_len);

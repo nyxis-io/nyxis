@@ -245,9 +245,9 @@ impl<'a> Reader<'a> {
         }
     }
 
-    /// Zero-copy slice of a column's dense numeric value buffer (columnar/PAX).
+    /// Zero-copy slice of a column's dense numeric value buffer (columnar only).
     pub fn col_buffer(&self, key: &str) -> Option<&[u8]> {
-        if self.layout == Layout::Row {
+        if self.layout != Layout::Columnar {
             return None;
         }
         let slot = self.slot(key)?;
@@ -258,11 +258,8 @@ impl<'a> Reader<'a> {
         Some(vals)
     }
 
-    /// Zero-copy string/binary column (`offsets` + `values`); columnar/PAX only.
-    pub fn col_var_buffer(
-        &self,
-        key: &str,
-    ) -> Result<crate::arrow_project::VarColumnView<'_>> {
+    /// Zero-copy string/binary column (`offsets` + `values`); columnar only.
+    pub fn col_var_buffer(&self, key: &str) -> Result<crate::arrow_project::VarColumnView<'_>> {
         if self.layout != Layout::Columnar {
             return Err(NxsError::UnsupportedFieldType);
         }
