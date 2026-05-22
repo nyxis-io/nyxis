@@ -1,7 +1,6 @@
 /**
  * Report layout demo — your CSV, row vs columnar .nxb, real chart from col_buffer.
  */
-import { parseCsv } from "/bench/bench-run.js";
 import { NxsReader } from "/sdk/nxs.js";
 import { NxsWriter } from "/sdk/nxs_writer.js";
 import { compileNxsColumnar } from "/sdk/nxs_compile.js";
@@ -234,6 +233,77 @@ function benchMs(fn) {
   return (performance.now() - t0) / ITERS;
 }
 
+const NUMERIC_EMPTY = new Set(["—", "–", "-", "n/a", "na", "null"]);
+
+/** Strip quotes, thousands separators, and currency markers for type inference / coercion. */
+function parseNumericCell(raw) {
+  if (raw === "" || raw == null) return null;
+  let s = String(raw).trim();
+  if (NUMERIC_EMPTY.has(s.toLowerCase())) return null;
+  if (s.length >= 2 && s.startsWith('"') && s.endsWith('"')) s = s.slice(1, -1).trim();
+  s = s.replace(/,/g, "").replace(/^\$/, "").replace(/%$/, "");
+  if (s === "") return null;
+  const n = Number(s);
+  return Number.isFinite(n) ? n : null;
+}
+
+/**
+ * RFC 4180-style CSV (quoted fields, commas inside quotes). Used for user uploads;
+ * bench parseCsv stays minimal for benchmark fixtures.
+ * @returns {{ headers: string[], rows: object[] }}
+ */
+function parseCsvQuoted(text) {
+  const rows = [];
+  let row = [];
+  let field = "";
+  let inQuotes = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (inQuotes) {
+      if (c === '"') {
+        if (text[i + 1] === '"') {
+          field += '"';
+          i++;
+        } else {
+          inQuotes = false;
+        }
+      } else {
+        field += c;
+      }
+    } else if (c === '"') {
+      inQuotes = true;
+    } else if (c === ",") {
+      row.push(field);
+      field = "";
+    } else if (c === "\n" || (c === "\r" && text[i + 1] === "\n")) {
+      row.push(field);
+      field = "";
+      if (row.length > 1 || row[0] !== "") rows.push(row);
+      row = [];
+      if (c === "\r") i++;
+    } else {
+      field += c;
+    }
+  }
+  if (field.length > 0 || row.length > 0) {
+    row.push(field);
+    if (row.length > 1 || row[0] !== "") rows.push(row);
+  }
+  if (rows.length < 2) throw new Error("Need a header row and at least one data row");
+  const headers = rows[0].map((h) => h.trim());
+  const out = [];
+  for (let r = 1; r < rows.length; r++) {
+    const cells = rows[r];
+    if (cells.length === 1 && cells[0] === "") continue;
+    const obj = {};
+    for (let c = 0; c < headers.length; c++) {
+      obj[headers[c]] = cells[c] ?? "";
+    }
+    out.push(obj);
+  }
+  return { headers, rows: out };
+}
+
 function inferColumnType(values) {
   let seenNum = 0;
   let seenInt = 0;
@@ -246,8 +316,8 @@ function inferColumnType(values) {
       seenBool++;
       continue;
     }
-    const n = Number(s);
-    if (!Number.isFinite(n)) {
+    const n = parseNumericCell(raw);
+    if (n == null) {
       seenStr++;
       continue;
     }
@@ -288,10 +358,16 @@ function nxsValue(type, raw) {
   if (raw === "" || raw == null) return null;
   const s = String(raw).trim();
   switch (type) {
-    case "int":
-      return { sigil: "=", text: String(Math.trunc(Number(s))) };
-    case "float":
-      return { sigil: "~", text: String(Number(s)) };
+    case "int": {
+      const n = parseNumericCell(raw);
+      if (n == null) return null;
+      return { sigil: "=", text: String(Math.trunc(n)) };
+    }
+    case "float": {
+      const n = parseNumericCell(raw);
+      if (n == null) return null;
+      return { sigil: "~", text: String(n) };
+    }
     case "bool":
       return { sigil: "?", text: s === "true" ? "true" : "false" };
     default:
@@ -307,6 +383,31 @@ function columnarKeys(headers, types) {
   }
   if (types.region_id) out.push("region_id");
   return out;
+}
+
+/** NXS source keys must be identifiers (no spaces, &, parens, leading digits). */
+function toNxsIdent(name) {
+  let s = String(name).replace(/[^a-zA-Z0-9_-]+/g, "_");
+  s = s.replace(/^_+|_+$/g, "");
+  if (!s || !/^[a-zA-Z_]/.test(s)) s = `c_${s || "x"}`;
+  return s;
+}
+
+/** @param {string[]} keys @returns {Map<string, string>} */
+function buildNxsKeyMap(keys) {
+  const origToSafe = new Map();
+  const used = new Set();
+  for (const k of keys) {
+    let safe = toNxsIdent(k);
+    if (used.has(safe)) {
+      let n = 2;
+      while (used.has(`${safe}_${n}`)) n++;
+      safe = `${safe}_${n}`;
+    }
+    used.add(safe);
+    origToSafe.set(k, safe);
+  }
+  return origToSafe;
 }
 
 /**
@@ -337,14 +438,18 @@ function coerceNumericRows(rows, headers, types) {
       const t = types[h];
       const raw = r[h];
       if (raw === "" || raw == null) continue;
-      if (t === "int") r[h] = Math.trunc(Number(raw));
-      else if (t === "float") r[h] = Number(raw);
-      else if (t === "bool") r[h] = String(raw).trim() === "true";
+      if (t === "int") {
+        const n = parseNumericCell(raw);
+        if (n != null) r[h] = Math.trunc(n);
+      } else if (t === "float") {
+        const n = parseNumericCell(raw);
+        if (n != null) r[h] = n;
+      } else if (t === "bool") r[h] = String(raw).trim() === "true";
     }
   }
 }
 
-function buildColumnarNxsSource(rows, keys, types) {
+function buildColumnarNxsSource(rows, keys, types, keyMap) {
   const lines = [];
   const lim = Math.min(rows.length, MAX_COLUMNAR_ROWS);
   for (let i = 0; i < lim; i++) {
@@ -354,7 +459,8 @@ function buildColumnarNxsSource(rows, keys, types) {
       if (t === "string") continue;
       const cell = nxsValue(t, rows[i][k]);
       if (!cell) continue;
-      parts.push(`${k}: ${cell.sigil}${cell.text}`);
+      const nxsKey = keyMap.get(k) ?? toNxsIdent(k);
+      parts.push(`${nxsKey}: ${cell.sigil}${cell.text}`);
     }
     lines.push(`r${i} { ${parts.join(" ")} }`);
   }
@@ -371,8 +477,10 @@ async function buildColumnarBytes(rows, headers, types, regionCodes) {
   if (keys.length === 0) {
     throw new Error("No numeric columns for columnar layout");
   }
-  const src = buildColumnarNxsSource(rows, keys, types);
-  return compileNxsColumnar(src);
+  const keyMap = buildNxsKeyMap(keys);
+  const src = buildColumnarNxsSource(rows, keys, types, keyMap);
+  const bytes = await compileNxsColumnar(src);
+  return { bytes, keyMap };
 }
 
 function aggregateByRegionFromBuffers(regionIdBuf, revenueBuf, regionNames, topN = 12) {
@@ -600,6 +708,7 @@ export async function runReportFromRecords(headers, rows, types, opts = {}) {
   const rowBuildMs = performance.now() - tBuild0;
 
   let colBytes = null;
+  let colKeyMap = null;
   let colBuildMs = 0;
   let colBuildNote = "";
   if (rows.length <= MAX_COLUMNAR_ROWS) {
@@ -607,11 +716,14 @@ export async function runReportFromRecords(headers, rows, types, opts = {}) {
       `Compiling columnar .nxb (${rows.length.toLocaleString()} rows, WASM)…`,
     );
     const t1 = performance.now();
-    colBytes = await buildColumnarBytes(rows, headers, types, regionCodes);
+    const built = await buildColumnarBytes(rows, headers, types, regionCodes);
+    colBytes = built.bytes;
+    colKeyMap = built.keyMap;
     colBuildMs = performance.now() - t1;
   } else {
     colBuildNote = `Columnar compile capped at ${MAX_COLUMNAR_ROWS.toLocaleString()} rows`;
   }
+  const colMetricKey = colKeyMap?.get(metricKey) ?? metricKey;
 
   const wasm = await loadWasm("/bench/wasm/nxs_reducers.wasm");
   const rowReader = new NxsReader(rowBytes.buffer.slice(rowBytes.byteOffset, rowBytes.byteOffset + rowBytes.byteLength));
@@ -655,12 +767,12 @@ export async function runReportFromRecords(headers, rows, types, opts = {}) {
 
   results.ops.sum = {
     row: benchMs(() => rowReader.sumF64(metricKey)),
-    columnar: colReader ? benchMs(() => colReader.colSumF64(metricKey)) : null,
+    columnar: colReader ? benchMs(() => colReader.colSumF64(colMetricKey)) : null,
   };
 
   results.ops.random = {
     row: benchMs(() => rowReader.record(mid).getF64(metricKey)),
-    columnar: colReader ? benchMs(() => colReader.colGetF64(metricKey, mid)) : null,
+    columnar: colReader ? benchMs(() => colReader.colGetF64(colMetricKey, mid)) : null,
   };
 
   const canvas = document.getElementById("report-chart");
@@ -679,13 +791,13 @@ export async function runReportFromRecords(headers, rows, types, opts = {}) {
   ) {
     const tChart0 = performance.now();
     const ridBuf = colReader.colBuffer("region_id");
-    const revBuf = colReader.colBuffer(metricKey);
+    const revBuf = colReader.colBuffer(colMetricKey);
     const agg = aggregateByRegionFromBuffers(ridBuf, revBuf, regionNames);
     results.chartMs = performance.now() - tChart0;
     renderChart(canvas, agg.labels, agg.data, metricKey);
   } else if (canvas && colReader) {
     const tChart0 = performance.now();
-    const { values, count } = colReader.colBuffer(metricKey);
+    const { values, count } = colReader.colBuffer(colMetricKey);
     results.chartMs = performance.now() - tChart0;
     renderLineFromColBuffer(canvas, values, count, metricKey);
   }
@@ -698,11 +810,7 @@ export async function runReportFromRecords(headers, rows, types, opts = {}) {
  * @param {{ metricKey?: string, regionKey?: string }} opts
  */
 export async function runReportDemo(csvText, opts = {}) {
-  const lines = csvText.trim().split("\n");
-  if (lines.length < 2) throw new Error("Need a header row and at least one data row");
-
-  const headers = lines[0].split(",").map((h) => h.trim());
-  const rows = parseCsv(csvText).filter((r) => r && Object.keys(r).length);
+  const { headers, rows } = parseCsvQuoted(csvText.trim());
   const { types } = buildSchema(rows, headers);
   return runReportFromRecords(headers, rows, types, {
     ...opts,
