@@ -244,7 +244,11 @@ fn encode_value(v: &Value) -> Result<Vec<u8>> {
             Ok(b)
         }
         Value::Null => {
-            Ok(vec![0x00u8]) // single null byte per spec
+            // Null is zero-width: the bitmask bit and offset-table slot are sufficient
+            // to distinguish explicit Null from an absent field.  No payload bytes are
+            // emitted.  (An earlier draft of the spec incorrectly said "offset points
+            // to a single 0x00 byte" — see SPEC.md §5.4 conformance note.)
+            Ok(vec![])
         }
         Value::Object(fields) => {
             // Nested object: recursively compile with a fresh compiler that shares the parent dict
