@@ -63,7 +63,7 @@ impl Compiler {
         let tail_index = self.encode_tail_index(32 + schema_bytes.len() as u64, tail_ptr);
         let dict_hash = murmur3_64(&schema_bytes);
 
-        let preamble = self.encode_preamble(dict_hash, 0, FLAG_SCHEMA_EMBEDDED);
+        let preamble = self.encode_preamble(dict_hash, FLAG_SCHEMA_EMBEDDED);
 
         let mut out = Vec::new();
         out.extend_from_slice(&preamble);
@@ -73,13 +73,15 @@ impl Compiler {
         Ok(out)
     }
 
-    fn encode_preamble(&self, dict_hash: u64, tail_ptr: u64, flags: u16) -> Vec<u8> {
+    fn encode_preamble(&self, dict_hash: u64, flags: u16) -> Vec<u8> {
         let mut b = Vec::with_capacity(32);
         b.extend_from_slice(&MAGIC_FILE.to_le_bytes()); // 0..4
         b.extend_from_slice(&VERSION.to_le_bytes()); // 4..6
         b.extend_from_slice(&flags.to_le_bytes()); // 6..8
         b.extend_from_slice(&dict_hash.to_le_bytes()); // 8..16
-        b.extend_from_slice(&tail_ptr.to_le_bytes()); // 16..24
+        // v1.1 streamable format always writes tail_ptr=0 here; the actual
+        // tail pointer is stored in the footer FooterTailPtr field instead.
+        b.extend_from_slice(&0u64.to_le_bytes()); // 16..24 tail_ptr (always 0)
         b.extend_from_slice(&0u64.to_le_bytes()); // 24..32 reserved
         b
     }
