@@ -480,14 +480,15 @@ Recommendation: include `FLAG_PAGE_CRC` as an optional flag, disabled by default
 - [x] Offsets + values sub-buffer for string (`"`) and binary (`<`) fields in columnar and PAX (`layout.rs`, C/Go/JS readers)
 - [x] Arrow projection: `VarColumnView` + u32-vs-i64 offset note (`rust/src/arrow_project.rs`)
 - [x] Conformance vectors: `columnar_flat8_strings_100` (OLAP §7.2 `flat8_strings_100`)
-- [ ] Update BENCHMARK.md with string-inclusive columnar benchmark results (conformance stub only)
+- [x] Update BENCHMARK.md with string-inclusive benchmark (`make -C bench run-c-strings`, `bench_columnar_strings`)
 
 ### Phase 4: Driver ports (~ongoing, parallel to Phases 2–3)
 
-- Go driver: columnar and PAX read paths (Go already has `SumF64Fast` — columnar should be straightforward)
-- Python C extension: expose `nxs_col_buffer` as numpy-compatible array
-- JavaScript WASM: `colBuffer()` returning `Float64Array` / `BigInt64Array` for direct chart library consumption
-- Rust: columnar and PAX read paths
+- [x] Go driver: columnar and PAX read paths (`colSumF64`, `colGetStr`, sealed PAX pages)
+- [x] JavaScript: `colBuffer()` / `colGetStr()` (WASM + report demo Chart.js integration)
+- [x] Rust: columnar and PAX read paths (`query.rs`, `bench_pax_mixed`, `bench_columnar_strings`)
+- [x] C driver: columnar/PAX + `nxs_col_buffer` (conformance + site demo)
+- [ ] Python C extension: expose `nxs_col_buffer` as numpy-compatible array
 
 ---
 
@@ -501,10 +502,10 @@ The columnar and PAX layouts ship when:
 4. All conformance vectors pass in C driver
 5. Workload C re-run shows columnar `.nxb` scan within **2× Arrow IPC** on dense numeric data, using the open-core AVX2/NEON dense fast path in `col_reduce` (runtime CPU feature detection). ARM NEON tuning and AVX-512 multi-accumulator paths remain under `nyxis-simd-guard`.
 6. PAX mixed workload benchmark published with honest results including the TTFR tradeoff vs row-oriented — **met** at 1M macOS arm64 (BENCHMARK.md §Workload E + §Workload D PAX TTFR); Linux x86_64 pending
-7. `nxs_col_buffer` returns a pointer suitable for direct use as chart library input (verified with one real chart integration — Chart.js or Recharts in the browser demo)
+7. `nxs_col_buffer` returns a pointer suitable for direct use as chart library input — **met** via Chart.js in `site/demo/report.html` (`colBuffer` → `Float64Array` bar/line charts)
 8. String/binary fields readable in columnar/PAX (Phase 3); keyword (`$`) columnar uses u16 index arrays per Q4
-9. BENCHMARK.md updated with columnar and PAX workload results (Workload E + PAX TTFR published; string-inclusive scan TBD)
-10. Use-cases page updated with the layout selection guide from §5.4
+9. BENCHMARK.md updated with columnar and PAX workload results (Workload E at 1M + PAX TTFR + string-inclusive `C-strings`)
+10. Use-cases page updated with the layout selection guide from §5.4 — **met** (`site/use-cases/index.html#layout-selection`)
 
 ---
 

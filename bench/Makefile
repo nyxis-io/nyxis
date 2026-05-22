@@ -24,7 +24,7 @@ STREAM_D := $(BENCH)/harness/stream_d/target/release/bench-stream-d
 
 .PHONY: all gen codegen transcode-nxs transcode-formats transcode harness \
         run run-b run-c run-a run-d run-d-smoke run-d-ttfr run-d-pax-ttfr run-d-throughput \
-        run-e-mixed quick ci matrix bench-cold results results-1m results-1m-fast \
+        run-e-mixed run-c-strings quick ci matrix bench-cold results results-1m results-1m-fast \
         setup-venv render-tables render-all freeze-benchmark verdicts clean
 
 all: gen transcode harness
@@ -192,6 +192,11 @@ $(BENCH_PAX_MIXED):
 run-e-mixed: BENCH_E_RECORDS ?= 10000
 run-e-mixed: $(BENCH_PAX_MIXED)
 	$(BENCH_PAX_MIXED) $(BENCH_E_RECORDS) 100 4096
+
+run-c-strings: BENCH_C_STRINGS_RECORDS ?= 100000
+run-c-strings:
+	cd $(ROOT)/rust && cargo run --release --bin bench_columnar_strings -- \
+	  $(BENCH_C_STRINGS_RECORDS) 100 4096
 
 run-d-throughput: BENCH_RECORDS_D ?= 10000
 run-d-throughput: $(STREAM_D)

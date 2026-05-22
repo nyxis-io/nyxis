@@ -607,7 +607,25 @@ cd nyxis/bench/harness/rust && cargo run --release -- \
   --data-dir ../../data/bin
 ```
 
-**String-inclusive columnar (Phase 3):** Conformance vector `columnar_flat8_strings_100` (100 records, `id` / `name` / `score` with `name` = `user_{i}`) validates offsets+values string columns in columnar layout. Workload C publication with string fields (scan + size vs Arrow) is **TBD**.
+**String-inclusive layouts (Phase 3)** — schema `id` (i64) · `name` (str, `user_{i}`) · `score` (f64). Per trial: **100** random `get_str("name")` + full-column walk (sum of `name` byte lengths over all records). Driver: `bench_columnar_strings`. macOS arm64 dev.
+
+**1M records — P50 (µs)**
+
+| Layout | random `get_str` | full name walk | file size |
+| --- | --- | --- | --- |
+| row | 13 | 15,024 | 58.0 MB |
+| columnar | 13 | 14,313 | 31.3 MB |
+| pax | 30 | 26,593 | 31.3 MB |
+
+Columnar/PAX files are ~**47% smaller** than row (contiguous offsets+values vs per-record strings). Full-column walk times are similar row vs columnar at 1M because the benchmark uses the unified `Record::get_str` API (not a separate zero-copy var-buffer iterator). PAX adds page lookup overhead on both access patterns.
+
+**100k smoke — P50 (µs):** row 3 / 1518 · columnar 1 / 1362 · pax 5 / 2302.
+
+```bash
+make -C bench run-c-strings BENCH_C_STRINGS_RECORDS=1000000
+```
+
+Conformance: `columnar_flat8_strings_100`, `pax_flat8_strings_p128_300` (C/Go/JS drivers).
 
 
 **Workload C — Protobuf (post-parse reference)**
