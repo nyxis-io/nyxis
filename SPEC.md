@@ -1,5 +1,7 @@
 This is the formal, exhaustive specification for the **Nyxis (NXS)**. This document is designed to be the "Ground Truth" for developers implementing NXS compilers, parsers, and runtime engines.
 
+**Spec License:** This specification document and all conformance vectors in `conformance/` are licensed under [Creative Commons Attribution 4.0 International (CC BY 4.0)](https://creativecommons.org/licenses/by/4.0/). Anyone may implement the NXS wire format for any purpose, including commercial products, without a license from Micael Malta, provided they attribute this spec. This grant is irrevocable and independent of the BSL that governs the Rust tooling in this repository.
+
 ---
 
 # RFC 001: The Nyxis (NXS) Specification v1.2

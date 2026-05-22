@@ -296,7 +296,7 @@ Add to `.claude/settings.json`:
 
 ## Licensing
 
-Nyxis is published under the **Business Source License 1.1 (BSL)**. It is completely free for development, testing, and production environments for organizations with less than $1M in annual revenue or processing under 100GB of data per month.
+Nyxis is published under the **Business Source License 1.1 (BSL)**. It is completely free for development, testing, and production environments for organizations with less than $5M in annual revenue or processing under 10TB of data per month.
 
 Production use outside of these parameters requires a commercial license. See [COMMERCIAL.md](./COMMERCIAL.md) for pricing packages, enterprise support tiers, and proprietary data connectors, or contact **licensing@nyxis.io**.
 
