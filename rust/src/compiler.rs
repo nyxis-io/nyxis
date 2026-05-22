@@ -79,8 +79,8 @@ impl Compiler {
         b.extend_from_slice(&VERSION.to_le_bytes()); // 4..6
         b.extend_from_slice(&flags.to_le_bytes()); // 6..8
         b.extend_from_slice(&dict_hash.to_le_bytes()); // 8..16
-        // v1.1 streamable format always writes tail_ptr=0 here; the actual
-        // tail pointer is stored in the footer FooterTailPtr field instead.
+                                                       // v1.1 streamable format always writes tail_ptr=0 here; the actual
+                                                       // tail pointer is stored in the footer FooterTailPtr field instead.
         b.extend_from_slice(&0u64.to_le_bytes()); // 16..24 tail_ptr (always 0)
         b.extend_from_slice(&0u64.to_le_bytes()); // 24..32 reserved
         b
