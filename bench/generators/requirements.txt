@@ -3,4 +3,5 @@
 protobuf>=7.34
 flatbuffers>=24.3.25
 pycapnp>=2.0
-pyarrow>=15.0,<18
+# 18+ ships manylinux cp313 wheels; 15–17 fall back to a failing source build on 3.13
+pyarrow>=18.0,<21
