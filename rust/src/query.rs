@@ -14,7 +14,7 @@
 //! ```
 
 use crate::error::{NxsError, Result};
-use crate::layout::{col_var_parts, column_sector_len, is_var_sigil, var_str_at};
+use crate::layout::{col_var_parts, column_sector_len, is_var_sigil, null_bitmap_bytes, var_str_at};
 
 // ── Format constants ──────────────────────────────────────────────────────────
 use crate::consts::{
@@ -40,11 +40,6 @@ fn footer_size(flags: u16) -> usize {
     } else {
         12
     }
-}
-
-fn null_bitmap_bytes(n: usize) -> usize {
-    let raw = (n + 7) / 8;
-    (raw + 7) & !7
 }
 
 fn col_bit(bm: &[u8], rec: usize) -> bool {
