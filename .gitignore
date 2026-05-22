@@ -8,6 +8,7 @@ rust/target-wasm/
 
 # Generated fixtures (regenerate with: make fixtures)
 site/bench/fixtures/
+bench/fixtures/
 # Makefile fallback when js/fixtures is not writable (e.g. root-owned deploy tree)
 out/fixtures/
 
