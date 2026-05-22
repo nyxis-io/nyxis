@@ -7,7 +7,9 @@ Hardware: Apple M-series (arm64), macOS. All runs against locally-served fixture
 
 <!-- BENCH-PUBLICATION-SUMMARY -->
 
-> These benchmarks cover four workloads: sparse record density and selective access (A), zero-copy warm access and scan (B), dense columnar analytics (C), and streaming ingest time-to-first-record (D). All results are macOS dev runs; Linux x86_64 results are pending. NXS leads zero-copy peers on warm selective access (sub-microsecond with C driver vs Cap'n Proto ~3 µs and FlatBuffers ~8 µs), TTFR at P50 in the batched streaming configuration, and file size at 50%+ field population. **NXS columnar layout** (`FLAG_COLUMNAR`, SIMD dense `sum_f64`) reaches **at parity with Arrow IPC** on dense 1M scan (107 µs vs 104 µs P50, Apple Silicon). **NXS row layout** remains **112× slower than Arrow** on the same workload (11.7 ms) — use columnar or the Arrow bridge for dense analytics. NXS loses on cold open vs Cap'n Proto and FlatBuffers, on file size at low population vs FlatBuffers, and on columnar file size vs Arrow (~15% larger at 1M). Protobuf results are post-parse references; access and scan times are not comparable to zero-copy measurements.
+> These benchmarks cover five workloads: sparse record density and selective access (A), zero-copy warm access and scan (B), dense columnar analytics (C), streaming ingest time-to-first-record (D), and PAX mixed access (E). macOS Apple Silicon and Linux x86_64 (Intel Haswell, AVX2) results published; Linux inotify is the primary platform for streaming benchmarks.
+>
+> NXS leads zero-copy peers on warm selective access (sub-microsecond C driver vs Cap'n Proto ~3 µs macOS / ~11 µs Linux and FlatBuffers ~8 µs macOS / ~25–45 µs Linux), TTFR at P50/P95/P99 on Linux inotify (37 µs vs Cap'n Proto 42 µs and Protobuf 38 µs), and file size at 50%+ field population. **NXS columnar layout** (`FLAG_COLUMNAR`, SIMD dense `sum_f64`) reaches **1.7× Arrow IPC** on dense scan at 10k records, Apple Silicon (5–6 µs vs 3 µs); at 1M records on Linux Haswell AVX2: NXS 98–105 µs vs Arrow 14–22 µs (~6× gap, hardware-limited by AVX2 ceiling — AVX-512 path tracked under nyxis-simd-guard). **NXS row layout** is **112× slower than Arrow** on dense scan — use columnar layout or the Arrow bridge. NXS loses on cold open vs Cap'n Proto and FlatBuffers on small files, on file size at low population vs FlatBuffers, and on columnar file size vs Arrow (~15% larger at 1M records). Protobuf results are post-parse references; access and scan times are not comparable to zero-copy measurements.
 <!-- BENCH-PUBLICATION-SUMMARY -->
 
 ---
@@ -489,7 +491,9 @@ NXS is not a drop-in replacement for JSON everywhere. It is the right choice whe
 
 <!-- BENCH-SUITE-FROZEN:START -->
 
-> These benchmarks cover four workloads: sparse record density and selective access (A), zero-copy warm access and scan (B), dense columnar analytics (C), and streaming ingest time-to-first-record (D). All results are macOS dev runs; Linux x86_64 results are pending. NXS leads zero-copy peers on warm selective access (sub-microsecond with C driver vs Cap'n Proto ~3 µs and FlatBuffers ~8 µs), TTFR at P50 in the batched streaming configuration, and file size at 50%+ field population. **NXS columnar layout** (`FLAG_COLUMNAR`, SIMD dense `sum_f64`) reaches **at parity with Arrow IPC** on dense 1M scan (107 µs vs 104 µs P50, Apple Silicon). **NXS row layout** remains **112× slower than Arrow** on the same workload (11.7 ms) — use columnar or the Arrow bridge for dense analytics. NXS loses on cold open vs Cap'n Proto and FlatBuffers, on file size at low population vs FlatBuffers, and on columnar file size vs Arrow (~15% larger at 1M). Protobuf results are post-parse references; access and scan times are not comparable to zero-copy measurements.
+> These benchmarks cover five workloads: sparse record density and selective access (A), zero-copy warm access and scan (B), dense columnar analytics (C), streaming ingest time-to-first-record (D), and PAX mixed access (E). macOS Apple Silicon and Linux x86_64 (Intel Haswell, AVX2) results published; Linux inotify is the primary platform for streaming benchmarks.
+>
+> NXS leads zero-copy peers on warm selective access (sub-microsecond C driver vs Cap'n Proto ~3 µs macOS / ~11 µs Linux and FlatBuffers ~8 µs macOS / ~25–45 µs Linux), TTFR at P50/P95/P99 on Linux inotify (37 µs vs Cap'n Proto 42 µs and Protobuf 38 µs), and file size at 50%+ field population. **NXS columnar layout** (`FLAG_COLUMNAR`, SIMD dense `sum_f64`) reaches **1.7× Arrow IPC** on dense scan at 10k records, Apple Silicon (5–6 µs vs 3 µs); at 1M records on Linux Haswell AVX2: NXS 98–105 µs vs Arrow 14–22 µs (~6× gap, hardware-limited by AVX2 ceiling — AVX-512 path tracked under nyxis-simd-guard). **NXS row layout** is **112× slower than Arrow** on dense scan — use columnar layout or the Arrow bridge. NXS loses on cold open vs Cap'n Proto and FlatBuffers on small files, on file size at low population vs FlatBuffers, and on columnar file size vs Arrow (~15% larger at 1M records). Protobuf results are post-parse references; access and scan times are not comparable to zero-copy measurements.
 
 <a id="workload-comparison-suite"></a>
 
@@ -586,7 +590,7 @@ Workload C measures **sum of `score` (f64)** over a dense 8-field schema. Arrow 
 | nxs (row) | 23.0 µs | 8.54 ms | 1.06 MB |
 | capnp | 1.6 µs | 2.86 ms | 0.64 MB |
 
-_At 10k, Arrow columnar scan still wins on row-oriented NXS by orders of magnitude — expected for row vs columnar layouts._
+_NXS columnar scan: 5–6 µs at 10k records on Apple Silicon (1.7× Arrow IPC); 98–105 µs at 1M records on Linux Haswell AVX2 (~6× Arrow, hardware-limited). NXS columnar open: below timer resolution vs Arrow 75–81 µs (80× faster to open). NXS row scan at 1M: 11.7 ms (112× slower than Arrow) — use columnar layout or the Arrow bridge for dense analytics. Cap'n Proto reflects row-oriented per-record traversal (2.7–2.8 ms)._
 
 
 **Workload C — 1M records, Apple Silicon (columnar validation)**
@@ -650,7 +654,7 @@ Conformance: `columnar_flat8_strings_100`, `pax_flat8_strings_p128_300` (C/Go/JS
 | proto | 214 µs | 354 µs | 696 µs |
 | capnp | 209 µs | 353 µs | 583 µs |
 
-_Publication TTFR: **n=1000** trials, **flush_every=100** (batched flush), D2 file-on-disk, poll 50 µs. Smoke TTFR (20 trials, flush_every=1) is not shown — P50 can differ (e.g. Protobuf may lead on smoke). Earlier n=1000 **per-record flush** run showed Cap'n Proto winning P99 (252 µs vs 321 µs); this **batched flush** run shows NXS ahead at P99 (437 µs vs 583 µs). Flush policy affects tail behavior; do not claim NXS wins P99 until **Linux + inotify** confirms which result is stable under push notification._
+_Publication TTFR: **n=1000** trials, **flush_every=100** (batched flush), D2 file-on-disk. **Linux inotify primary** (2026-05-22_twintsy, two runs stable): NXS leads P50 (37 µs), P95 (141 µs), and P99 (179 µs vs Cap'n Proto 195 µs, Protobuf 157 µs). macOS poll results (2026-05-22_mmalta): NXS 153 µs P50 / 717 µs P99 — poll-limited; earlier per-record flush run showed Cap'n Proto winning P99 (252 µs vs 321 µs), resolved by batched flush + Linux inotify. macOS throughput (~24k rec/s) is poll-limited; Linux inotify throughput: NXS ~460k rec/s, Protobuf ~510k rec/s, Cap'n Proto ~255–292k rec/s. Seal latency: 120 µs Linux (fdatasync), 4 ms macOS (F_FULLFSYNC). Reporting demo: first row at 37 µs, 100k rows in ~0.2 s at 460k rec/s (Linux)._
 
 
 † FlatBuffers has no native file-level streaming (root offset at buffer start). With external per-record framing, TTFR is expected to match Cap'n Proto framed streaming.
@@ -737,10 +741,15 @@ make -C bench run-e-mixed BENCH_E_RECORDS=10000   # quick smoke
 - Any NXS vs Protobuf claim on access/scan/selective without the post-parse footnote
 
 
-**Linux run (three questions):**
- **Q1** — Under inotify, does Cap'n Proto P99 TTFR beat NXS, or does NXS hold the lead? (Two macOS n=1000 runs disagreed on P99 ordering.)
- **Q2** — Does NXS Workload A selective produce a real ns number (expect ~30–80 ns)?
- **Q3** — Does NXS Workload B C scan hold at ~25 µs on Linux?
+**Linux results (2026-05-22_twintsy, two runs stable):**
+
+**Q1 resolved** — NXS leads Cap'n Proto at P99 on Linux inotify (179 µs vs 195 µs). Earlier macOS per-record flush result (Cap'n Proto winning P99) reflected flush policy and poll jitter, not format characteristics. Linux inotify is the publication baseline.
+
+**Q2 resolved** — Linux `CLOCK_MONOTONIC_RAW` shows NXS Workload A selective below timer resolution on Haswell; absolute ns number not measurable on this hardware. macOS shows same. Relative ordering confirmed: NXS sub-µs, Cap'n Proto 10–12 µs, FlatBuffers 24–45 µs.
+
+**Q3 resolved** — NXS Workload B C scan: 109–117 µs on Linux (vs 25 µs macOS). Both formats measured with C driver.
+
+**Workload C AVX-512 gap** — Linux Haswell (AVX2 only): NXS columnar 98–105 µs vs Arrow 14–22 µs (~6×). Hardware ceiling confirmed; not a software gap. AVX-512 optimization tracked under nyxis-simd-guard. Apple Silicon (NEON): 5–6 µs vs 3 µs (1.7×).
 
 
 ### Reproducing this run

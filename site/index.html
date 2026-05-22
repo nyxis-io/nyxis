@@ -55,12 +55,12 @@
 
 <div class="stat-row">
   <div class="stat">
-    <div class="value">142&nbsp;µs</div>
-    <div class="label">Row TTFR P50 — streaming ingest (<a href="../BENCHMARK.md#workload-d">D</a>)</div>
+    <div class="value">37&nbsp;µs</div>
+    <div class="label">Row TTFR P50 — streaming ingest, Linux inotify (<a href="../BENCHMARK.md#workload-d">D</a>)</div>
   </div>
   <div class="stat">
-    <div class="value">107&nbsp;µs</div>
-    <div class="label">Columnar scan P50 — at parity with Arrow at 1M (<a href="../BENCHMARK.md#workload-c">C</a>)</div>
+    <div class="value">5&nbsp;µs</div>
+    <div class="label">Columnar scan P50 — 1.7× Arrow IPC, Apple Silicon (<a href="../BENCHMARK.md#workload-c">C</a>)</div>
   </div>
   <div class="stat">
     <div class="value">&lt;1&nbsp;µs</div>
@@ -68,7 +68,7 @@
   </div>
 </div>
 <p class="page-lead" style="margin: -8px 0 32px; font-size: 14px; text-align: center; max-width: 52rem; margin-left: auto; margin-right: auto;">
-  macOS Apple Silicon — <a href="../BENCHMARK.md#workload-comparison-suite">full tables &amp; methodology</a> · Linux x86_64 pending.
+  macOS Apple Silicon · Linux x86_64 (Intel Haswell, AVX2) — <a href="../BENCHMARK.md#workload-comparison-suite">full tables &amp; methodology</a>
 </p>
 
 <section class="landing-section">
@@ -83,7 +83,7 @@
       <p class="layout-metric">Stream records as they arrive.
 Sub-µs warm access after seal.
 O(1) seek via tail-index.</p>
-      <p class="layout-use"><strong>142&nbsp;µs TTFR P50</strong> (Workload D)<br>
+      <p class="layout-use"><strong>37&nbsp;µs TTFR P50</strong> (Linux inotify, Workload D)<br>
 Virtual scroll · log explorers · APM traces</p>
     </div>
     <div class="bimodal-col">
@@ -108,7 +108,7 @@ Chart rendering · OLAP · export pipelines<br>
   <h2>Bimodal wire format</h2>
   <pre class="code-block"><span class="key">user</span> {
   <span class="key">id</span> <span class="sigil">=</span> 42
-  <span class="key">name</span> <span class="sigil">"</span>ada
+  <span class="key">name</span> <span class="sigil">"</span>ada_lovelace"
   <span class="key">score</span> <span class="sigil">~</span> 98.6
   <span class="key">active</span> <span class="sigil">?</span> true
 }</pre>
@@ -266,7 +266,7 @@ Tableau / BI ◄── Apache Arrow bridge ◄── Snowflake ingest (pointer-s
   <ul class="enterprise-modules">
     <li>
       <strong>Nyxis In-Memory Compactor Daemon (<code>nxs-compactd</code>)</strong>
-      <span>Automated, highly threaded background defragmentation that packs <code>.nxb</code> data sectors on the fly — typically <strong>20–30% less</strong> data-lake storage slack.</span>
+      <span>Automated background defragmentation that reclaims data-sector slack from append-heavy WAL segments, atomically swapping compacted files without racing active writers.</span>
     </li>
     <li>
       <strong>Apache Arrow zero-copy memory bridge</strong>
