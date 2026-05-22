@@ -21,6 +21,27 @@ pub const MAGIC_FOOTER: u32 = 0x2153_584E;
 /// PAX page magic: `NXSP` (0x4E585350)
 pub const MAGIC_PAGE: u32 = 0x4E58_5350;
 
+// ── Sigil bytes ───────────────────────────────────────────────────────────────
+
+/// Integer sigil: `=`
+pub const SIGIL_INT: u8 = b'=';
+/// Float sigil: `~`
+pub const SIGIL_FLOAT: u8 = b'~';
+/// Boolean sigil: `?`
+pub const SIGIL_BOOL: u8 = b'?';
+/// Keyword sigil: `$`
+pub const SIGIL_KEYWORD: u8 = b'$';
+/// String sigil: `"`
+pub const SIGIL_STR: u8 = b'"';
+/// Timestamp sigil: `@`
+pub const SIGIL_TIME: u8 = b'@';
+/// Binary sigil: `<`
+pub const SIGIL_BINARY: u8 = b'<';
+/// Link sigil: `&`
+pub const SIGIL_LINK: u8 = b'&';
+/// Null sigil: `^`
+pub const SIGIL_NULL: u8 = b'^';
+
 // ── Version ───────────────────────────────────────────────────────────────────
 
 /// Preamble version field: major=1, minor=1

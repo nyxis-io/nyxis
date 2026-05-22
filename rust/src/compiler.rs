@@ -1,20 +1,11 @@
 use crate::consts::{
-    FLAG_SCHEMA_EMBEDDED, MAGIC_FILE, MAGIC_FOOTER, MAGIC_LIST, MAGIC_OBJ, VERSION,
+    FLAG_SCHEMA_EMBEDDED, MAGIC_FILE, MAGIC_FOOTER, MAGIC_LIST, MAGIC_OBJ, SIGIL_BINARY,
+    SIGIL_BOOL, SIGIL_FLOAT, SIGIL_INT, SIGIL_KEYWORD, SIGIL_LINK, SIGIL_NULL, SIGIL_STR,
+    SIGIL_TIME, VERSION,
 };
 use crate::error::{NxsError, Result};
 use crate::parser::{Field, Value};
 use std::collections::HashMap;
-
-// Sigil bytes
-const SIGIL_INT: u8 = b'=';
-const SIGIL_FLOAT: u8 = b'~';
-const SIGIL_BOOL: u8 = b'?';
-const SIGIL_KEYWORD: u8 = b'$';
-const SIGIL_STR: u8 = b'"';
-const SIGIL_TIME: u8 = b'@';
-const SIGIL_BINARY: u8 = b'<';
-const SIGIL_LINK: u8 = b'&';
-const SIGIL_NULL: u8 = b'^';
 
 pub struct Compiler {
     dict: Vec<String>,               // key index → key name
