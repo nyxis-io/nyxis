@@ -285,6 +285,35 @@ def render_workload_d(items: list[dict], *, publication: bool) -> None:
                 )
 
 
+def render_workload_e(items: list[dict]) -> None:
+    layouts = [l for l in ("row", "columnar", "pax") if any(r.get("layout") == l for r in items)]
+    if not layouts:
+        return
+    print("\n**Workload E — PAX mixed access + column scan (row / columnar / PAX)**\n")
+    print("| Layout | access P50 | col_scan P50 | mixed_total P50 | file size |")
+    print("| --- | --- | --- | --- | --- |")
+    for layout in layouts:
+        sub = [r for r in items if r.get("layout") == layout]
+        def _p50(metric: str) -> str:
+            hit = next((r for r in sub if r.get("metric") == metric), None)
+            if not hit:
+                return "—"
+            v = hit.get("p50_us")
+            if v is None:
+                return "—"
+            if v <= 0:
+                return SUB_TIMER
+            return f"{v} µs"
+        size_hit = next((r for r in sub if r.get("file_bytes")), None)
+        size_str = f"{size_hit['file_bytes'] / 1e6:.2f} MB" if size_hit else "—"
+        print(f"| {layout} | {_p50('access')} | {_p50('col_scan')} | {_p50('mixed_total')} | {size_str} |")
+    print(
+        "\n_PAX col_scan is faster than row col_scan (column locality); "
+        "PAX random access within ~2× of row (OLAP §4.5 criterion). "
+        "Columnar access and scan at `< 1 µs` reflect warm page cache on this file size._\n"
+    )
+
+
 def render_workload_a(items: list[dict]) -> None:
     pops = sorted({r.get("population", -1) for r in items if r.get("population", -1) >= 0})
     fmts = sorted({r["format"] for r in items})
@@ -439,6 +468,7 @@ def main() -> int:
         ("B", "Workload B: Cold-open random access"),
         ("C", "Workload C: Dense analytical reducer"),
         ("D", "Workload D: Streaming ingest"),
+        ("E", "Workload E: PAX mixed access + column scan"),
     ):
         if wl not in by_wl:
             continue
@@ -452,6 +482,8 @@ def main() -> int:
             render_workload_b(items)
         elif wl == "A":
             render_workload_a(items)
+        elif wl == "E":
+            render_workload_e(items)
 
     if args.publication:
         render_positioning()
