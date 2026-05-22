@@ -34,6 +34,11 @@ SYMBOLS:
 - Reader.scan_f64(key: str) -> list[float | None]
 - Reader.scan_i64(key: str) -> list[int | None]
 - Reader.sum_f64(key: str) -> float
+- Reader.col_sum_f64(key: str) -> float
+- Reader.col_buffer(key: str) -> dict[str, memoryview]  # keys: values, bitmap, count (numeric)
+- Reader.col_var_buffer(key: str) -> dict[str, memoryview]  # keys: bitmap, offsets, values, count (string/binary, columnar)
+- Reader.col_numpy_f64(key: str) -> numpy.ndarray  # requires numpy
+- Reader.layout: str  # "row" | "columnar" | "pax"
 - Reader.min_f64(key: str) -> float | None
 - Reader.max_f64(key: str) -> float | None
 - Reader.sum_i64(key: str) -> int

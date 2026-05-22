@@ -332,10 +332,16 @@ double nxs_col_min_f64(nxs_reader_t *r, const char *field);
 double nxs_col_max_f64(nxs_reader_t *r, const char *field);
 int64_t nxs_col_sum_i64(nxs_reader_t *r, const char *field);
 
-// Column buffer direct access (columnar and PAX only)
-// Returns pointer to the raw value buffer for zero-copy chart rendering
+// Column buffer direct access (columnar layout only; PAX uses nxs_page_col_buffer per page)
+// Dense numeric: raw f64/i64 value buffer for zero-copy chart rendering
 const void* nxs_col_buffer(nxs_reader_t *r, const char *field, size_t *out_len);
 const uint8_t* nxs_col_null_bitmap(nxs_reader_t *r, const char *field, size_t *out_len);
+
+// String/binary: null bitmap + u32 offsets + values (zero-copy bulk scan; columnar layout only)
+nxs_err_t nxs_col_var_buffer(const nxs_reader_t *r, const char *field,
+                             const uint8_t **bitmap, size_t *bitmap_len,
+                             const uint8_t **offsets, size_t *offsets_len,
+                             const uint8_t **values, size_t *values_len);
 
 // PAX page iteration
 nxs_page_t* nxs_page_first(nxs_reader_t *r);
@@ -488,7 +494,7 @@ Recommendation: include `FLAG_PAGE_CRC` as an optional flag, disabled by default
 - [x] JavaScript: `colBuffer()` / `colGetStr()` (WASM + report demo Chart.js integration)
 - [x] Rust: columnar and PAX read paths (`query.rs`, `bench_pax_mixed`, `bench_columnar_strings`)
 - [x] C driver: columnar/PAX + `nxs_col_buffer` (conformance + site demo)
-- [ ] Python C extension: expose `nxs_col_buffer` as numpy-compatible array
+- [x] Python C extension: `col_buffer`, `col_sum_f64`, `col_numpy_f64` (links `c/nxs.c`; `build_ext.sh`)
 
 ---
 

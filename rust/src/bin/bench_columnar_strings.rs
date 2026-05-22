@@ -26,6 +26,7 @@ struct LayoutResult {
     file_bytes: usize,
     str_access_us: PercentilesUs,
     str_scan_us: PercentilesUs,
+    str_var_scan_us: Option<PercentilesUs>,
     mixed_total_us: PercentilesUs,
     name_len_checksum: u64,
 }
@@ -77,7 +78,7 @@ fn percentiles_ns(mut xs: Vec<i64>) -> PercentilesUs {
     }
 }
 
-fn name_len_checksum(data: &[u8], n: usize) -> u64 {
+fn name_len_checksum_record(data: &[u8], n: usize) -> u64 {
     let r = Reader::new(data).unwrap();
     let mut sum = 0u64;
     for i in 0..n {
@@ -90,15 +91,46 @@ fn name_len_checksum(data: &[u8], n: usize) -> u64 {
     sum
 }
 
+fn col_bit(bm: &[u8], rec: usize) -> bool {
+    (bm[rec / 8] >> (rec % 8)) & 1 == 1
+}
+
+fn name_len_checksum_var(data: &[u8], n: usize) -> u64 {
+    let r = Reader::new(data).unwrap();
+    if r.layout() == nxs::query::Layout::Row {
+        return name_len_checksum_record(data, n);
+    }
+    let col = r.col_var_buffer("name").expect("col_var_buffer");
+    let mut sum = 0u64;
+    for i in 0..n {
+        if !col_bit(col.null_bitmap, i) {
+            continue;
+        }
+        let o = i * 4;
+        let start = u32::from_le_bytes(col.offsets[o..o + 4].try_into().unwrap());
+        let end = u32::from_le_bytes(col.offsets[o + 4..o + 8].try_into().unwrap());
+        sum = sum.wrapping_add((end - start) as u64);
+    }
+    sum
+}
+
 fn measure(
     data: &[u8],
     n: usize,
     random_n: usize,
-) -> (PercentilesUs, PercentilesUs, PercentilesUs, u64) {
+) -> (
+    PercentilesUs,
+    PercentilesUs,
+    Option<PercentilesUs>,
+    PercentilesUs,
+    u64,
+) {
     let mut access_samples = Vec::with_capacity(SAMPLES);
     let mut scan_samples = Vec::with_capacity(SAMPLES);
+    let mut var_scan_samples = Vec::with_capacity(SAMPLES);
     let mut mixed_samples = Vec::with_capacity(SAMPLES);
     let mut idx = 0usize;
+    let use_var = Reader::new(data).unwrap().layout() == nxs::query::Layout::Columnar;
 
     for _ in 0..WARMUP {
         let r = Reader::new(data).unwrap();
@@ -108,15 +140,10 @@ fn measure(
                 std::hint::black_box(rec.get_str("name"));
             }
         }
-        let mut walk = 0u64;
-        for i in 0..n {
-            if let Some(rec) = r.record(i) {
-                if let Some(s) = rec.get_str("name") {
-                    walk = walk.wrapping_add(s.len() as u64);
-                }
-            }
+        std::hint::black_box(name_len_checksum_record(data, n));
+        if use_var {
+            std::hint::black_box(name_len_checksum_var(data, n));
         }
-        std::hint::black_box(walk);
     }
 
     for _ in 0..SAMPLES {
@@ -131,15 +158,14 @@ fn measure(
         }
         let access_ns = t_access0.elapsed().as_nanos() as i64;
         let t_scan0 = Instant::now();
-        let mut walk = 0u64;
-        for i in 0..n {
-            if let Some(rec) = r.record(i) {
-                if let Some(s) = rec.get_str("name") {
-                    walk = walk.wrapping_add(s.len() as u64);
-                }
-            }
-        }
+        let walk = name_len_checksum_record(data, n);
         let scan_ns = t_scan0.elapsed().as_nanos() as i64;
+        if use_var {
+            let t_var0 = Instant::now();
+            let var_walk = name_len_checksum_var(data, n);
+            assert_eq!(var_walk, walk);
+            var_scan_samples.push(t_var0.elapsed().as_nanos() as i64);
+        }
         let total_ns = t0.elapsed().as_nanos() as i64;
         access_samples.push(access_ns);
         scan_samples.push(scan_ns);
@@ -147,10 +173,16 @@ fn measure(
         std::hint::black_box(walk);
     }
 
-    let checksum = name_len_checksum(data, n);
+    let var_scan = if use_var {
+        Some(percentiles_ns(var_scan_samples))
+    } else {
+        None
+    };
+    let checksum = name_len_checksum_record(data, n);
     (
         percentiles_ns(access_samples),
         percentiles_ns(scan_samples),
+        var_scan,
         percentiles_ns(mixed_samples),
         checksum,
     )
@@ -175,14 +207,14 @@ fn main() {
     let col_bytes = finish_columnar(&keys, &rows).expect("columnar");
     let pax_bytes = finish_pax(&keys, &rows, page_size).expect("pax");
 
-    let row_checksum = name_len_checksum(&row_bytes, n);
+    let row_checksum = name_len_checksum_record(&row_bytes, n);
     let mut layouts = Vec::new();
     for (label, bytes) in [
         ("row", row_bytes),
         ("columnar", col_bytes),
         ("pax", pax_bytes),
     ] {
-        let (access, scan, mixed, sum) = measure(&bytes, n, random_n);
+        let (access, scan, var_scan, mixed, sum) = measure(&bytes, n, random_n);
         assert_eq!(sum, row_checksum, "name len checksum mismatch for {label}");
         layouts.push(LayoutResult {
             layout: label,
@@ -191,6 +223,7 @@ fn main() {
             file_bytes: bytes.len(),
             str_access_us: access,
             str_scan_us: scan,
+            str_var_scan_us: var_scan,
             mixed_total_us: mixed,
             name_len_checksum: sum,
         });
