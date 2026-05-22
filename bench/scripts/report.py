@@ -16,6 +16,57 @@ LINE_RE = re.compile(r"^\{.*\}$")
 DRIVER_PRIORITY = ("c", "rust", "go", "python", "stream_d")
 
 
+def _extract_workload_e(text: str) -> list[dict]:
+    """Parse bench_pax_mixed multi-line JSON blocks from raw log text."""
+    rows = []
+    # Find all top-level {...} blocks that span multiple lines
+    depth = 0
+    start = None
+    for i, ch in enumerate(text):
+        if ch == "{":
+            if depth == 0:
+                start = i
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0 and start is not None:
+                chunk = text[start : i + 1]
+                try:
+                    obj = json.loads(chunk)
+                except json.JSONDecodeError:
+                    start = None
+                    continue
+                if obj.get("workload") == "E" and "layouts" in obj:
+                    driver = obj.get("driver", "rust")
+                    records = obj.get("records")
+                    for layout in obj["layouts"]:
+                        for metric, key in (
+                            ("access", "access_us"),
+                            ("col_scan", "col_scan_us"),
+                            ("mixed_total", "mixed_total_us"),
+                        ):
+                            block = layout.get(key)
+                            if not isinstance(block, dict):
+                                continue
+                            rows.append({
+                                "workload": "E",
+                                "format": "nxs",
+                                "layout": layout.get("layout"),
+                                "records": records or layout.get("records"),
+                                "metric": metric,
+                                "population": -1.0,
+                                "driver": driver,
+                                "p50_us": block.get("p50"),
+                                "p95_us": block.get("p95"),
+                                "p99_us": block.get("p99"),
+                                "samples": block.get("samples"),
+                                "file_bytes": layout.get("file_bytes"),
+                                "col_sum_checksum": obj.get("col_sum_checksum") or layout.get("col_sum_checksum"),
+                            })
+                start = None
+    return rows
+
+
 def _driver_rank(row: dict) -> int:
     drv = row.get("driver", "python")
     try:
@@ -31,6 +82,7 @@ def _dedupe_key(row: dict) -> tuple:
         row.get("metric"),
         row.get("records"),
         row.get("population", -1),
+        row.get("layout"),
     )
 
 
@@ -77,10 +129,12 @@ def main() -> int:
     for raw in args.raw:
         if not raw.exists():
             continue
-        for line in raw.read_text(encoding="utf-8").splitlines():
+        text = raw.read_text(encoding="utf-8")
+        for line in text.splitlines():
             line = line.strip()
             if LINE_RE.match(line):
                 rows.append(normalize_row(json.loads(line)))
+        rows.extend(_extract_workload_e(text))
 
     rows = dedupe_rows(rows)
 
