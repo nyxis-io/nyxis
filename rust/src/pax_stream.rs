@@ -5,8 +5,8 @@
 
 use crate::error::{NxsError, Result};
 use crate::layout::{
-    encode_page, sigils_for_keys, RecordRow, FLAG_PAX, FLAG_SCHEMA_EMBEDDED, MAGIC_FILE,
-    MAGIC_FOOTER, MAGIC_PAGE, VERSION,
+    column_sector_len, encode_page, sigils_for_keys, RecordRow, FLAG_PAX, FLAG_SCHEMA_EMBEDDED,
+    MAGIC_FILE, MAGIC_FOOTER, MAGIC_PAGE, VERSION,
 };
 use crate::query::parse_schema;
 use crate::writer::{build_schema, murmur3_64};
@@ -27,7 +27,14 @@ pub struct PaxPageMeta {
 }
 
 /// End offset (exclusive) of a complete PAX page at `off`, if fully present in `data`.
-pub fn complete_page_end(data: &[u8], off: usize) -> Option<usize> {
+///
+/// `sigils` must be the schema sigil slice (parallel to field indices) so that
+/// variable-length columns (`"` string, `<` binary) are sized correctly.
+/// Fixed-width columns use `null_bitmap + N×8`; variable-length columns use
+/// `null_bitmap + (N+1)×4 offsets + values` — passing an empty slice falls
+/// back to treating every column as fixed-width (backward compatible for
+/// all-numeric pages).
+pub fn complete_page_end(data: &[u8], off: usize, sigils: &[u8]) -> Option<usize> {
     if off + PAGE_HEADER > data.len() {
         return None;
     }
@@ -37,9 +44,11 @@ pub fn complete_page_end(data: &[u8], off: usize) -> Option<usize> {
     let record_count = u32::from_le_bytes(data.get(off + 16..off + 20)?.try_into().ok()?) as usize;
     let field_count = u16::from_le_bytes(data.get(off + 20..off + 22)?.try_into().ok()?) as usize;
     let mut body_end = off + PAGE_HEADER;
-    for _ in 0..field_count {
-        let bm = null_bitmap_bytes(record_count);
-        body_end = body_end.checked_add(bm + record_count * 8)?;
+    for fi in 0..field_count {
+        let sigil = sigils.get(fi).copied().unwrap_or(b'=');
+        let sector = data.get(body_end..)?;
+        let slen = column_sector_len(sector, record_count, sigil).ok()?;
+        body_end = body_end.checked_add(slen)?;
     }
     if body_end + 4 > data.len() {
         return None;
@@ -454,7 +463,7 @@ impl<'a> PaxStreamReader<'a> {
     pub fn complete_record_count(&self) -> usize {
         let mut n = 0usize;
         let mut off = self.data_start;
-        while let Some(end) = complete_page_end(self.data, off) {
+        while let Some(end) = complete_page_end(self.data, off, &self.key_sigils) {
             let rc = u32::from_le_bytes(self.data[off + 16..off + 20].try_into().unwrap_or([0; 4]))
                 as usize;
             n += rc;
@@ -465,12 +474,12 @@ impl<'a> PaxStreamReader<'a> {
 
     /// True when at least one full page is available.
     pub fn has_complete_page(&self) -> bool {
-        complete_page_end(self.data, self.data_start).is_some()
+        complete_page_end(self.data, self.data_start, &self.key_sigils).is_some()
     }
 
     /// Next complete page view, advancing the internal cursor.
     pub fn poll_next_page(&mut self) -> Option<PaxPageView<'a>> {
-        let end = complete_page_end(self.data, self.page_cursor)?;
+        let end = complete_page_end(self.data, self.page_cursor, &self.key_sigils)?;
         let off = self.page_cursor;
         self.page_cursor = end;
         Some(parse_page_view(self.data, off))
@@ -487,7 +496,7 @@ impl<'a> PaxStreamReader<'a> {
         let mut sum = 0.0;
         let mut any = false;
         let mut off = self.data_start;
-        while let Some(end) = complete_page_end(self.data, off) {
+        while let Some(end) = complete_page_end(self.data, off, &self.key_sigils) {
             let view = parse_page_view(self.data, off);
             let (bm, vals) = view.field_parts(slot).ok()?;
             let rc = view.record_count as usize;
@@ -506,7 +515,7 @@ impl<'a> PaxStreamReader<'a> {
     /// Global record index → f64 within complete pages only.
     pub fn get_f64_complete(&self, global_index: usize, key: &str) -> Option<f64> {
         let mut off = self.data_start;
-        while let Some(end) = complete_page_end(self.data, off) {
+        while let Some(end) = complete_page_end(self.data, off, &self.key_sigils) {
             let view = parse_page_view(self.data, off);
             let start = view.record_start as usize;
             let count = view.record_count as usize;
@@ -611,6 +620,84 @@ mod tests {
     fn complete_page_end_matches_encode_page() {
         let (_keys, rows) = score_rows(10);
         let page = encode_page(0, 0, 10, 1, &[b'~'], &rows).unwrap();
-        assert_eq!(complete_page_end(&page, 0), Some(page.len()));
+        assert_eq!(complete_page_end(&page, 0, &[b'~']), Some(page.len()));
+    }
+
+    #[test]
+    fn complete_page_end_varlen_string_columns() {
+        use crate::layout::{Cell, RecordRow, finish_pax};
+        // Build a PAX file with string columns (variable-length encoding).
+        let keys = vec!["id".to_string(), "name".to_string(), "score".to_string()];
+        let rows: Vec<RecordRow> = (0..50usize)
+            .map(|i| RecordRow {
+                cells: vec![
+                    Cell::I64(i as i64),
+                    Cell::Str(format!("user_{i}")),
+                    Cell::F64(i as f64 * 1.5),
+                ],
+            })
+            .collect();
+        // page_size = 20 so we get multiple pages and exercise the cursor logic
+        let bytes = finish_pax(&keys, &rows, 20).unwrap();
+
+        // Open as a stream reader — complete_page_end must traverse varlen sectors correctly.
+        let sr = PaxStreamReader::open(&bytes).unwrap();
+        assert!(sr.is_sealed());
+
+        // All 50 records must be visible across all complete pages.
+        assert_eq!(sr.complete_record_count(), 50);
+
+        // Verify every page boundary is found correctly (sigils: b'=' i64, b'"' str, b'~' f64).
+        let sigils = sr.key_sigils();
+        assert_eq!(sigils, &[b'=', b'"', b'~']);
+
+        // The full reader must also work — confirming complete_page_end returned correct bounds.
+        let r = Reader::new(&bytes).unwrap();
+        assert_eq!(r.record_count(), 50);
+        for i in [0usize, 19, 20, 49] {
+            let rec = r.record(i).unwrap();
+            assert_eq!(rec.get_i64("id"), Some(i as i64));
+            let want = format!("user_{i}");
+            assert_eq!(rec.get_str("name"), Some(want.as_str()));
+            assert!((rec.get_f64("score").unwrap() - i as f64 * 1.5).abs() < 1e-9);
+        }
+    }
+
+    #[test]
+    fn pax_stream_writer_varlen_string_roundtrip() {
+        use crate::layout::{Cell, RecordRow};
+        // Stream-write PAX pages containing string columns and verify complete_page_end
+        // returns the correct boundary at each flush.
+        let keys = vec!["label".to_string(), "value".to_string()];
+        let sigils = vec![b'"', b'~'];
+        let page_size = 10u32;
+        let mut w = PaxStreamWriter::new(keys.clone(), sigils, page_size).unwrap();
+
+        let mut file = Vec::new();
+        let _data_start = w.write_stream_header(&mut file).unwrap();
+
+        let mut flushed_at = 0usize;
+        for i in 0..30usize {
+            let row = RecordRow {
+                cells: vec![Cell::Str(format!("label_{i}")), Cell::F64(i as f64)],
+            };
+            w.push_record(row).unwrap();
+            w.write_data_sector_since(&mut file, flushed_at).unwrap();
+            flushed_at = w.data_sector_len();
+        }
+
+        let sealed = w.finish_stream().unwrap();
+        let sr = PaxStreamReader::open(&sealed).unwrap();
+        assert!(sr.is_sealed());
+        assert_eq!(sr.complete_record_count(), 30);
+
+        let r = Reader::new(&sealed).unwrap();
+        assert_eq!(r.record_count(), 30);
+        for i in [0usize, 9, 10, 29] {
+            let rec = r.record(i).unwrap();
+            let want = format!("label_{i}");
+            assert_eq!(rec.get_str("label"), Some(want.as_str()));
+            assert!((rec.get_f64("value").unwrap() - i as f64).abs() < 1e-9);
+        }
     }
 }
