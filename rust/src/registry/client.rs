@@ -48,7 +48,7 @@ impl RegistryClient {
             .register_schema(Request::new(req))
             .await
             .map(|r| r.into_inner())
-            .map_err(|s| format!("RegisterSchema: {}", s.message()))
+            .map_err(|s| format!("RegisterSchema: {s}"))
     }
 
     pub async fn get_schema_by_hash(
@@ -62,7 +62,7 @@ impl RegistryClient {
             .get_schema_by_hash(Request::new(req))
             .await
             .map(|r| r.into_inner())
-            .map_err(|s| format!("GetSchemaByHash: {}", s.message()))
+            .map_err(|s| format!("GetSchemaByHash: {s}"))
     }
 
     pub async fn list_schemas(
@@ -75,6 +75,6 @@ impl RegistryClient {
             .list_schemas(Request::new(req))
             .await
             .map(|r| r.into_inner())
-            .map_err(|s| format!("ListSchemas: {}", s.message()))
+            .map_err(|s| format!("ListSchemas: {s}"))
     }
 }

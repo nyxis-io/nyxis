@@ -103,20 +103,14 @@ fn run_compile(args: CompileArgs) {
         eprintln!("error: unknown layout (row|columnar|pax)");
         std::process::exit(1);
     });
-    let page_size = match args.page_size {
-        Some(n) => n,
-        None if layout == Layout::Pax => 4096,
-        None => 0,
+    let opts = CompileOptions {
+        layout,
+        page_size: args.page_size.unwrap_or(0),
     };
-    let opts = CompileOptions { layout, page_size };
 
-    let output_path = args.output.clone().unwrap_or_else(|| {
-        args.input
-            .with_extension("nxb")
-            .to_string_lossy()
-            .into_owned()
-            .into()
-    });
+    let output_path = args
+        .output
+        .unwrap_or_else(|| args.input.with_extension("nxb"));
 
     let source = std::fs::read_to_string(&args.input)
         .map_err(|e| NxsError::IoError(e.to_string()))
@@ -170,7 +164,7 @@ async fn dispatch_registry(args: RegistryArgs) -> Result<(), String> {
 
 async fn registry_push(args: PushArgs) -> Result<(), String> {
     let nxb = load_nxb_bytes(&args.file)?;
-    let preamble = extract_preamble(&nxb).map_err(|e| e.join(", "))?;
+    let preamble = extract_preamble(&nxb)?;
     let dict_hash = preamble.dict_hash.to_le_bytes();
 
     let mut client = RegistryClient::connect(&args.server).await?;
@@ -276,7 +270,7 @@ async fn resolve_operand(
     let path = Path::new(arg);
     if path.exists() {
         let nxb = load_nxb_bytes(path)?;
-        let p = extract_preamble(&nxb).map_err(|e| e.join(", "))?;
+        let p = extract_preamble(&nxb)?;
         return Ok((
             p.dict_hash.to_le_bytes(),
             p.schema_bytes,
