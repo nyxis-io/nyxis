@@ -2,6 +2,7 @@
 """Transcode canonical JSON → binary formats for the benchmark suite.
 
 Requires: bench/generators/codegen.sh (protoc) for protobuf; optional flatc, pyarrow, pycapnp.
+Python deps: uv sync in bench/generators (see pyproject.toml).
 
 Usage:
   python3 transcode.py --workload B --format proto --json ../data/json/workload_B_1000.json \\

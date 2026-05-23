@@ -74,7 +74,8 @@ Each harness emits one JSON object per measurement (stdout):
 NXS runs with the repo only. Other formats need code generators + Python packages:
 
 ```bash
-# Python 3.11–3.14 (pyarrow>=22 on 3.14; pyarrow>=18 on 3.11–3.13)
+# Python 3.11–3.14 via uv (pyarrow pins in bench/generators/pyproject.toml)
+# Install uv: https://docs.astral.sh/uv/getting-started/installation/
 bash bench/scripts/setup_venv.sh   # or: PYTHON=python3.14 bash bench/scripts/setup_venv.sh
 source .venv-bench/bin/activate
 

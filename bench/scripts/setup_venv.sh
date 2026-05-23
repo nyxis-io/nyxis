@@ -1,9 +1,16 @@
 #!/usr/bin/env bash
-# Create bench venv with pinned deps (see bench/generators/requirements.txt).
+# Sync bench Python deps with uv (see bench/generators/pyproject.toml).
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+GEN="$ROOT/bench/generators"
 VENV="${VENV:-$ROOT/.venv-bench}"
 PY="${PYTHON:-}"
+UV="${UV:-uv}"
+
+if ! command -v "$UV" >/dev/null 2>&1; then
+  echo "uv not found (install: https://docs.astral.sh/uv/getting-started/installation/)" >&2
+  exit 1
+fi
 
 py_ok() {
   command -v "$1" >/dev/null 2>&1 \
@@ -22,14 +29,18 @@ if [ -n "$PY" ] && ! py_ok "$PY"; then
   PY=
 fi
 [ -n "$PY" ] || {
-  echo "need python3.11–3.14 (pyarrow>=22 on 3.14; see bench/generators/requirements.txt)" >&2
+  echo "need python3.11–3.14 (pyarrow pins in bench/generators/pyproject.toml)" >&2
   exit 1
 }
 
-"$PY" -m venv "$VENV"
-# shellcheck disable=SC1091
-source "$VENV/bin/activate"
-pip install -U pip
-pip install -r "$ROOT/bench/generators/requirements.txt"
-bash "$ROOT/bench/generators/codegen.sh"
-echo "venv ready: source $VENV/bin/activate"
+export UV_PROJECT_ENVIRONMENT="$VENV"
+sync_args=(sync --directory "$GEN")
+if [ -n "${BENCH_UV_FROZEN:-}" ]; then
+  sync_args+=(--frozen)
+fi
+if [ -n "$PY" ]; then
+  sync_args+=(--python "$PY")
+fi
+"$UV" "${sync_args[@]}"
+bash "$GEN/codegen.sh"
+echo "venv ready: $VENV ($("$VENV/bin/python" -c 'import sys; print(".".join(map(str, sys.version_info[:3])))'))"
