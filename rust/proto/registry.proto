@@ -1,0 +1,53 @@
+syntax = "proto3";
+
+package nyxis.registry.v1;
+
+// Distributed schema registry and payload validation (Principal tier MVP).
+service RegistryService {
+  rpc RegisterSchema(RegisterSchemaRequest) returns (RegisterSchemaResponse);
+  rpc GetSchemaByHash(GetSchemaByHashRequest) returns (GetSchemaByHashResponse);
+  rpc ValidatePayload(ValidatePayloadRequest) returns (ValidatePayloadResponse);
+  // Deferred: returns UNAVAILABLE in MVP.
+  rpc ResolveDrift(ResolveDriftRequest) returns (ResolveDriftResponse);
+}
+
+message RegisterSchemaRequest {
+  // 8-byte little-endian DictHash (NYXB preamble bytes 8..16).
+  bytes dict_hash = 1;
+  // Embedded schema sector (key count + manifest + string pool, 8-byte aligned).
+  bytes schema_bytes = 2;
+  // reject | additive_only | proxy_rewrite (default additive_only).
+  string drift_policy = 3;
+}
+
+message RegisterSchemaResponse {
+  uint32 version = 1;
+}
+
+message GetSchemaByHashRequest {
+  bytes dict_hash = 1;
+}
+
+message GetSchemaByHashResponse {
+  bytes schema_bytes = 1;
+  uint32 version = 2;
+  string drift_policy = 3;
+}
+
+message ValidatePayloadRequest {
+  bytes nxb_bytes = 1;
+}
+
+message ValidatePayloadResponse {
+  bool valid = 1;
+  repeated string errors = 2;
+}
+
+message ResolveDriftRequest {
+  bytes dict_hash = 1;
+  bytes nxb_bytes = 2;
+}
+
+message ResolveDriftResponse {
+  bytes rewritten_nxb_bytes = 1;
+}
