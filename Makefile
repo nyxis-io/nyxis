@@ -17,6 +17,7 @@ CONF ?= $(abspath conformance)
 #   make test-php-ci    # PHP + C extension tests (matches CI)
 #   make test-rust-ci   # Rust tests + compile examples/ (matches CI)
 #   make conformance    # generate vectors + run all conformance runners
+#   make conformance-prefetch PREFETCH=1  # prefetch harness (optional; off by default)
 #   make conformance-run-js  # … single runner (see Makefile)
 #   make fuzz           # run cargo-fuzz for 60s (requires nightly)
 #   make all            # fix + test + conformance
@@ -34,7 +35,7 @@ CONF ?= $(abspath conformance)
         lint-kotlin           test-kotlin \
         lint-csharp fix-csharp test-csharp \
         test-rust-ci test-py-ci test-ruby-ci test-php-ci \
-        conformance-run conformance-run-js conformance-run-py conformance-run-go \
+        conformance-run conformance-prefetch conformance-run-js conformance-run-py conformance-run-go \
         conformance-run-ruby conformance-run-php conformance-run-c conformance-run-swift \
         conformance-run-kotlin conformance-run-csharp conformance-run-rust \
         lint-mcp fix-mcp build-mcp test-mcp install-mcp
@@ -278,6 +279,18 @@ test-csharp:
 # runners against them. Requires fixtures to be generated first.
 
 conformance: conformance-generate conformance-run
+
+# Prefetch conformance (phase 1): harness + JS stub. Gated — does not run under default `make conformance`.
+conformance-prefetch:
+ifneq ($(PREFETCH),1)
+	@echo "Skipping prefetch conformance (set PREFETCH=1 to enable)"
+else
+	@echo "Running prefetch conformance..."
+	cd conformance/prefetch/harness && go test ./...
+	chmod +x conformance/prefetch/run_prefetch_js.sh
+	./conformance/prefetch/run_prefetch_js.sh
+	@echo "✅  Prefetch conformance finished."
+endif
 
 conformance-generate:
 	@echo "Generating conformance vectors..."

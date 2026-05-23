@@ -857,6 +857,48 @@ fn make_pax_invalid_page_magic() -> (Vec<u8>, String) {
     (nxb, r#"{"error":"ERR_INVALID_PAGE_MAGIC"}"#.to_string())
 }
 
+// ── Prefetch vectors (row layout, sparse tail-index spread) ─────────────────
+
+fn make_prefetch_sparse_50() -> Vector {
+    // 55 records (50+). Large `tag` blobs every 10 records spread absolute offsets
+    // across multiple 64 KiB pages for viewport prefetch conformance.
+    const N: usize = 55;
+    const PAD_EVERY: usize = 10;
+    const PAD_BYTES: usize = 32 * 1024;
+
+    let schema = Schema::new(&["id", "tag"]);
+    let mut w = NxsWriter::with_capacity(&schema, N * (PAD_BYTES / 4).max(64));
+
+    let mut records_json: Vec<String> = Vec::with_capacity(N);
+    let pad_chunk = "x".repeat(PAD_BYTES.saturating_sub(16));
+
+    for i in 0..N {
+        w.begin_object();
+        w.write_i64(Slot(0), i as i64);
+        if i % PAD_EVERY == 0 {
+            let tag = format!("rec_{}_{}", i, pad_chunk);
+            w.write_str(Slot(1), &tag);
+        } else {
+            w.write_str(Slot(1), &format!("rec_{}", i));
+        }
+        w.end_object();
+        // Minimal expected: id only (tag omitted; partial assertions allowed).
+        records_json.push(format!("{{\"id\":{}}}", i));
+    }
+
+    let nxb = w.finish();
+    let expected = format!(
+        "{{\"record_count\":{},\"keys\":[\"id\",\"tag\"],\"records\":[{}]}}",
+        N,
+        records_json.join(",")
+    );
+    Vector {
+        name: "prefetch_sparse_50",
+        nxb,
+        expected,
+    }
+}
+
 fn make_pax_sparse_1000() -> Vector {
     let keys = vec![
         "id".to_string(),
@@ -991,6 +1033,25 @@ fn main() {
     )
     .unwrap();
     println!("  wrote pax_streaming_unsealed + pax_invalid_page_magic (PAX streaming)");
+
+    let prefetch_dir = out_path.join("prefetch");
+    fs::create_dir_all(&prefetch_dir).expect("create prefetch directory");
+    let prefetch = make_prefetch_sparse_50();
+    fs::write(
+        prefetch_dir.join(format!("{}.nxb", prefetch.name)),
+        &prefetch.nxb,
+    )
+    .unwrap();
+    fs::write(
+        prefetch_dir.join(format!("{}.expected.json", prefetch.name)),
+        &prefetch.expected,
+    )
+    .unwrap();
+    println!(
+        "  wrote prefetch/{}.nxb ({} bytes) + .expected.json",
+        prefetch.name,
+        prefetch.nxb.len()
+    );
 
     println!(
         "\nAll conformance vectors written to: {}",
