@@ -247,7 +247,7 @@ The benchmark suite ships when:
 
 These need a decision before Phase 1 starts:
 
-- **Q1:** Does the benchmark use the BSL-licensed Nyxis compiler or only the MIT-licensed drivers? Affects who can re-run benchmarks under the $1M / 100GB threshold.
+- **Q1:** Does the benchmark use the BSL-licensed Nyxis compiler or only the MIT-licensed drivers? Affects who can re-run benchmarks under the $5M / 10 TB threshold.
 - **Q2:** Does Workload C include Parquet as well as Arrow IPC? Parquet is the on-disk counterpart and might be the more common comparator.
 - **Q3:** What's the policy if a re-run on a future format version (Protobuf 6, FlatBuffers 2.x) changes the ordering? Keep historical results and publish a "current version" addendum, or replace?
 - **Q4:** Who's the third-party reviewer in section 7.3? Need someone identified before Phase 1 ends, ideally from outside the project.

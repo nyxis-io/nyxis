@@ -107,7 +107,7 @@ This repository (**nyxis**) contains the Rust compiler, format spec, conformance
 | **C (source)** | [GitHub Releases](https://github.com/nyxis-io/nyxis-drivers/releases) (`c/v*` tags) |
 | **From source** | Clone [nyxis-drivers](https://github.com/nyxis-io/nyxis-drivers) — see its [README](https://github.com/nyxis-io/nyxis-drivers/blob/main/README.md) |
 
-For the split-repo layout and licensing boundaries, see [GOVERNANCE.md](./GOVERNANCE.md).
+For the split-repo layout and licensing boundaries, see [COMMERCIAL.md](./COMMERCIAL.md).
 
 ---
 

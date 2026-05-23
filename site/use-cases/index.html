@@ -264,9 +264,15 @@
 
       <h4>Workload C — dense columnar scan (1M records)</h4>
       <p>
-        Arrow IPC: 104&nbsp;µs. NXS columnar: 107&nbsp;µs (at parity, SIMD vectorized).
+        Arrow IPC: 104&nbsp;µs. NXS columnar: 107&nbsp;µs (columnar layout; open-core <code>nxs::query::Reader</code> on Apple Silicon dev hosts).
         NXS row: 11.7&nbsp;ms (112× slower than Arrow — use columnar layout or the Arrow bridge for this workload).
         <a href="../BENCHMARK.md#workload-c">Full tables →</a>
+      </p>
+      <p class="bench-footnote">
+        <small>AVX-512 ≤1.5× Arrow on dense 1M <code>sum(score)</code> is verified on bench hosts via the
+        <a href="https://github.com/nyxis-io/nyxis-extensions/blob/main/bench/methodology/workload_C_simd_guard.md">nyxis-extensions Workload&nbsp;C gate</a>
+        (<code>scripts/run-workload-c-gate.sh</code>; optional GitHub <code>workflow_dispatch</code>).
+        Apple Silicon NEON uses the same procedure with a separate results row — not interchangeable with the x86 AVX-512 claim.</small>
       </p>
 
       <h4>Workload D — streaming TTFR (n=1000, batched flush)</h4>
@@ -286,7 +292,7 @@
             <li>You need warm random access among zero-copy formats — sub-µs selective read (<a href="../BENCHMARK.md#workload-a">A</a>), sub-µs field access (<a href="../BENCHMARK.md#workload-b">B</a>)</li>
             <li>You need streaming ingest with post-seal random access in the same file — 142&nbsp;µs TTFR P50, O(1) seek after seal (<a href="../BENCHMARK.md#workload-d">D</a>)</li>
             <li>Records are moderately to heavily populated (50%+ fields) — NXS file size competitive with FlatBuffers (<a href="../BENCHMARK.md#workload-a">A</a>)</li>
-            <li>Dense field scan at Arrow parity — <code>columnar</code> layout with SIMD (<a href="../BENCHMARK.md#workload-c">C</a>, 1M records)</li>
+            <li>Dense field scan at Arrow parity — <code>columnar</code> layout (<a href="../BENCHMARK.md#workload-c">C</a>, 1M records); optional <code>nyxis-simd-guard</code> (MVP correctness path — see Workload&nbsp;C gate below)</li>
             <li>You need human-readable source, git-diffable binary, or AI-agent access via MCP</li>
           </ul>
         </div>
@@ -318,7 +324,7 @@
         Verified in <a href="../BENCHMARK.md#workload-c">Workload C</a>: Arrow IPC scan at 104&nbsp;µs vs NXS row-oriented
         scan at 11.7&nbsp;ms — 112× difference on dense uniform data. This is the expected architectural result for
         columnar vs row-oriented formats on scan-heavy workloads. NXS <strong>columnar layout</strong> closes this gap to
-        at parity on Apple Silicon (107&nbsp;µs) using SIMD vectorization. For pure analytical workloads, use the
+        at parity on Apple Silicon (107&nbsp;µs) via columnar layout. Optional <code>nyxis-simd-guard</code> adds dense batch dispatch (MVP; throughput claims require the manual Workload&nbsp;C gate on AVX-512 hosts). For pure analytical workloads, use the
         <strong>Arrow bridge</strong>. For mixed streaming + analytics workloads, use NXS <strong>PAX layout</strong> — page-level streaming with columnar pages for chart scan and row access within each page (see <a href="../BENCHMARK.md#workload-e">Workload E</a>).
       </p>
       <p>
@@ -522,7 +528,7 @@
         A per-record <strong>presence bitmask</strong> encodes sparse optional fields across heterogeneous logs.
         The proprietary <strong><code>nxs-registryd</code></strong> service and <strong><code>nxs-registry</code></strong>
         CLI provide centralized gRPC schema contracts — validating payloads on ingress and listing or diffing schemas
-        when pod versions diverge (additive drift in MVP).
+        when pod versions diverge (additive-only drift resolution in MVP; <code>proxy_rewrite</code> deferred).
       </p>
       <p class="use-case-footnote">
         Key interning and presence bitmask reduce metadata overhead vs JSON. File size vs binary peers depends on field
@@ -730,7 +736,8 @@
         C Data Interface with explicit memory ownership transfer into DataFusion, Polars, or DuckDB.
         For vectorized batch searches across raw memory buffers, the
         <strong><code>nyxis-simd-guard</code></strong> extension (MVP) dispatches AVX-512, AVX2, NEON, or scalar paths
-        over dense column buffers — see Workload&nbsp;C in <a href="../BENCHMARK.md#workload-c">BENCHMARK.md</a>.
+        over dense column buffers for correctness; AVX-512 ≤1.5× Arrow on Workload&nbsp;C is verified only via the
+        <a href="https://github.com/nyxis-io/nyxis-extensions/blob/main/bench/methodology/workload_C_simd_guard.md" rel="noopener">manual gate</a> on bench hardware (see <a href="../BENCHMARK.md#workload-c">BENCHMARK.md</a>).
       </p>
 
       <h3>The system advantage</h3>
@@ -841,13 +848,48 @@
       </p>
     </article>
 
+    <p class="use-case-group">Security, replication &amp; query</p>
+
+    <article class="use-case" id="platform-ops">
+      <p class="use-case-tier use-case-tier--enterprise">Enterprise Core · Tier 4 platform v1</p>
+      <h2>Encrypted segments, warm standby, and read-only analytics</h2>
+
+      <h3>The operational gap</h3>
+      <p>
+        Teams that already seal <code>.nxb</code> on disk still need at-rest protection, a second copy on another mount or
+        rack, and a narrow read API for aggregates and column scans — without pulling full files through JSON or ad-hoc
+        decrypt scripts.
+      </p>
+
+      <h3>The Nyxis topology</h3>
+      <p>
+        <strong><code>nyxis-encrypt</code></strong> seals segments as <code>*.nxb.enc</code> with
+        <code>*.nxb.env.json</code> envelope metadata (AES-256-GCM; file DEK in v1).
+        <strong><code>nxs-replicate</code></strong> plans and applies <code>file://</code> copies with manifest
+        idempotency, including encrypt sidecars when present.
+        <strong><code>nxs-queryd</code></strong> serves <code>AggregateSum</code> and streaming <code>ScanColumn</code>
+        over mmap or decrypt-to-buffer paths, optional <code>nxs-registryd</code> validation, and Prometheus
+        <code>/metrics</code> for SRE dashboards.
+      </p>
+
+      <h3>The system advantage</h3>
+      <p class="use-case-roi">
+        One sealed-segment contract from compliance through DR to bounded read-only serving — still zero-copy on
+        plaintext paths; encrypted segments decrypt only inside the licensed query proxy with explicit size caps.
+      </p>
+      <p class="use-case-cta">
+        <a class="btn btn-primary" href="/pricing/">Commercial pricing</a>
+        <a class="btn btn-secondary" href="https://github.com/nyxis-io/nyxis/blob/main/COMMERCIAL.md" rel="noopener">COMMERCIAL.md</a>
+      </p>
+    </article>
+
     <section class="landing-section" style="padding-bottom: 64px;">
       <h2>Where to go next</h2>
       <p class="page-lead" style="margin-bottom: 20px;">
         You have the constraint (Act I), the protocol (Act II), and reference production patterns (Act III). Most teams
         start with
-        MIT drivers and BSL-licensed compiler tooling; Arrow, registry, and compaction extensions unlock enterprise
-        scale.
+        MIT drivers and BSL-licensed compiler tooling; encrypt, replication, query, compaction, Arrow, registry, and
+        SIMD extensions unlock enterprise scale.
       </p>
 
       <div
@@ -865,12 +907,13 @@
         <li>
           <strong>Open core path</strong>
           <span><a href="https://github.com/nyxis-io/nyxis-drivers" rel="noopener">nyxis-drivers</a> (MIT) +
-            compiler/CLI (BSL, free under $1M revenue and 100&nbsp;GB/month).</span>
+            compiler/CLI (BSL, free under $5M revenue and 10&nbsp;TB/month).</span>
         </li>
         <li>
           <strong>Enterprise path</strong>
-          <span>Arrow bridge, in-memory compactor, schema registry, SIMD guard — see <a href="/pricing/">commercial
-              pricing</a> or <a href="mailto:licensing@nyxis.io">licensing@nyxis.io</a>.</span>
+          <span>Encrypt-at-rest, <code>file://</code> replication, <code>nxs-queryd</code>, compactor, Arrow bridge,
+            schema registry, SIMD guard (MVP) — see <a href="/pricing/">commercial pricing</a> or
+            <a href="mailto:licensing@nyxis.io">licensing@nyxis.io</a>.</span>
         </li>
       </ul>
       <div class="landing-actions" style="justify-content: flex-start; margin-top: 24px;">

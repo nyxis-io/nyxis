@@ -13,10 +13,10 @@ Your organization (including all global parent companies, affiliates, and
 subsidiaries under common control) fully complies with BOTH of the following
 conditions:
 
-1. Your organization's gross annual revenues are less than US$1,000,000; AND
+1. Your organization's gross annual revenues are less than US$5,000,000; AND
 2. The total aggregate volume of data processed, serialized, or deserialized by
    the Licensed Work across your entire production infrastructure does not exceed
-   100 Gigabytes (GB) within any single calendar month.
+   10 Terabytes (TB) within any single calendar month.
 
 If either condition is not met, production use is not granted under this license.
 Any production use by that organization is a license violation unless the
