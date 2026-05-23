@@ -26,8 +26,7 @@ impl Compiler {
     // First pass: collect all unique keys into the global dictionary
     pub fn collect_keys(&mut self, fields: &[Field]) {
         for field in fields {
-            let idx = self.intern_key(&field.key);
-            self.mark_slot_sigil(idx, value_sigil_byte(&field.value));
+            self.intern_key(&field.key);
             self.collect_keys_from_value(&field.value);
         }
     }
@@ -36,8 +35,7 @@ impl Compiler {
         match value {
             Value::Object(fields) => {
                 for field in fields {
-                    let idx = self.intern_key(&field.key);
-                    self.mark_slot_sigil(idx, value_sigil_byte(&field.value));
+                    self.intern_key(&field.key);
                     self.collect_keys_from_value(&field.value);
                 }
             }
@@ -130,7 +128,7 @@ impl Compiler {
         b
     }
 
-    fn encode_object(&self, fields: &[Field]) -> Result<Vec<u8>> {
+    fn encode_object(&mut self, fields: &[Field]) -> Result<Vec<u8>> {
         // Resolve macro fields first
         let resolved: Vec<(usize, Value)> = fields
             .iter()
@@ -152,7 +150,8 @@ impl Compiler {
 
         // Encode each value
         let mut value_bufs: Vec<Vec<u8>> = Vec::new();
-        for (_, v) in &resolved {
+        for (slot, v) in &resolved {
+            self.mark_slot_sigil(*slot, value_sigil_byte(v));
             value_bufs.push(encode_value(v)?);
         }
 

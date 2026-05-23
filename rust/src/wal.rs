@@ -239,11 +239,7 @@ impl SpanWal {
         let mut header = [0u8; 8];
         file.read_exact(&mut header)
             .map_err(|e| NxsError::IoError(e.to_string()))?;
-        let magic = u32::from_le_bytes(
-            header[0..4]
-                .try_into()
-                .map_err(|_| NxsError::OutOfBounds)?,
-        );
+        let magic = u32::from_le_bytes(header[0..4].try_into().map_err(|_| NxsError::OutOfBounds)?);
         if magic != MAGIC_WAL {
             return Err(NxsError::BadMagic);
         }

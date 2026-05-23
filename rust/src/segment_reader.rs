@@ -192,7 +192,8 @@ impl SealedSegment {
     fn load(path: PathBuf) -> Result<Self> {
         let file = File::open(&path).map_err(|e| NxsError::IoError(e.to_string()))?;
         let mmap = unsafe {
-            Mmap::map(&file).map_err(|e| NxsError::IoError(format!("mmap {}: {e}", path.display())))?
+            Mmap::map(&file)
+                .map_err(|e| NxsError::IoError(format!("mmap {}: {e}", path.display())))?
         };
         let data = &mmap[..];
         let decoded = decode(data)?;
@@ -243,8 +244,7 @@ impl SealedSegment {
     }
 
     fn decode_span_at(&self, abs_off: u64) -> Result<Span> {
-        let fields =
-            decode_record_at(self.data(), abs_off as usize, &self.keys, &self.sigils)?;
+        let fields = decode_record_at(self.data(), abs_off as usize, &self.keys, &self.sigils)?;
         fields_to_span(&fields).ok_or(NxsError::OutOfBounds)
     }
 }

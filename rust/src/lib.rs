@@ -121,6 +121,26 @@ mod layout_tests {
         let bytes = finish_columnar(&keys, &rows).unwrap();
         assert!(bytes.len() > 64);
     }
+
+    #[test]
+    fn row_compile_uses_resolved_macro_sigils() {
+        let bytes = compile_source("id: =7 alias: @id name: !\"bob\"\n").unwrap();
+        let reader = crate::query::Reader::new(&bytes).unwrap();
+        assert_eq!(reader.key_sigils(), b"==\"");
+        let rec = reader.record(0).unwrap();
+        assert_eq!(rec.get_i64("alias"), Some(7));
+        assert_eq!(rec.get_str("name"), Some("bob"));
+    }
+
+    #[test]
+    fn reader_rejects_overflowing_row_tail_pointer() {
+        let data = [
+            0x42, 0x58, 0x59, 0x4e, 0, 0, 0, 0, 0, 0x29, 0, 2, 0, 0, 0, 0xff, 0xff, 0xff, 0xff,
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0, 0, 0, 0, 0, 0, 0, 0, 0x0a, 0, 0x22, 0x5c,
+            0x28, 0x4e, 0x58, 0x53, 0x21,
+        ];
+        assert!(crate::query::Reader::new(&data).is_err());
+    }
 }
 
 fn parse_file_with_pragmas(
