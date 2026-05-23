@@ -36,6 +36,7 @@ jobs:
       - name: Bench venv + CI smoke
         env:
           BENCH_UV_FROZEN: "1"
+          BENCH_WITH_CAPNP: "1"
         run: |
           bash bench/scripts/setup_venv.sh
           test -x .venv-bench/bin/python

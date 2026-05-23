@@ -76,7 +76,10 @@ NXS runs with the repo only. Other formats need code generators + Python package
 ```bash
 # Python 3.11–3.14 via uv (pyarrow pins in bench/generators/pyproject.toml)
 # Install uv: https://docs.astral.sh/uv/getting-started/installation/
-bash bench/scripts/setup_venv.sh   # or: PYTHON=python3.14 bash bench/scripts/setup_venv.sh
+bash bench/scripts/setup_venv.sh   # fast default (no pycapnp)
+# Cap'n Proto Python harness (pycapnp supports 3.14 but PyPI has no cp314 wheels yet — use 3.12 for fast install):
+#   PYTHON=python3.12 BENCH_WITH_CAPNP=1 bash bench/scripts/setup_venv.sh
+# On 3.14 with BENCH_WITH_CAPNP=1, expect a source build until upstream publishes wheels.
 source .venv-bench/bin/activate
 
 bash bench/generators/codegen.sh   # protoc required; flatc optional; capnp optional

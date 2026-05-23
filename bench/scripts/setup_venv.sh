@@ -38,9 +38,16 @@ sync_args=(sync --directory "$GEN")
 if [ -n "${BENCH_UV_FROZEN:-}" ]; then
   sync_args+=(--frozen)
 fi
+if [ -n "${BENCH_WITH_CAPNP:-}" ]; then
+  sync_args+=(--group capnp)
+fi
 if [ -n "$PY" ]; then
   sync_args+=(--python "$PY")
 fi
 "$UV" "${sync_args[@]}"
 bash "$GEN/codegen.sh"
-echo "venv ready: $VENV ($("$VENV/bin/python" -c 'import sys; print(".".join(map(str, sys.version_info[:3])))'))"
+ver="$("$VENV/bin/python" -c 'import sys; print(".".join(map(str, sys.version_info[:3])))')"
+echo "venv ready: $VENV ($ver)"
+if [ -z "${BENCH_WITH_CAPNP:-}" ] && ! "$VENV/bin/python" -c 'import capnp' 2>/dev/null; then
+  echo "note: pycapnp skipped (fast sync). Cap'n Proto Python harness: PYTHON=python3.12 BENCH_WITH_CAPNP=1 $0" >&2
+fi

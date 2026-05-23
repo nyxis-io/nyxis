@@ -23,6 +23,10 @@ dependencies = [
     { name = "protobuf" },
     { name = "pyarrow", version = "21.0.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.14'" },
     { name = "pyarrow", version = "24.0.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.14'" },
+]
+
+[package.dev-dependencies]
+capnp = [
     { name = "pycapnp" },
 ]
 
@@ -32,8 +36,10 @@ requires-dist = [
     { name = "protobuf", specifier = ">=7.34" },
     { name = "pyarrow", marker = "python_full_version < '3.14'", specifier = ">=18.0,<22" },
     { name = "pyarrow", marker = "python_full_version >= '3.14'", specifier = ">=22.0" },
-    { name = "pycapnp", specifier = ">=2.0" },
 ]
+
+[package.metadata.requires-dev]
+capnp = [{ name = "pycapnp", specifier = ">=2.0" }]
 
 [[package]]
 name = "protobuf"

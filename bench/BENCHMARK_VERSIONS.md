@@ -16,6 +16,6 @@ Pinned toolchains for reproducible head-to-head runs. Re-run after bumps with ex
 
 Lockfiles:
 
-- `generators/pyproject.toml` + `generators/uv.lock` — Python transcoder (`uv sync`)
+- `generators/pyproject.toml` + `generators/uv.lock` — Python transcoder (`uv sync`; optional `capnp` group for `pycapnp`)
 - `generators/transcode_rust/Cargo.lock` — NXB writer from canonical JSON
 - `harness/rust/Cargo.lock` — multi-format harness

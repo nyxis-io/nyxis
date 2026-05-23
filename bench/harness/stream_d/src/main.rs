@@ -22,6 +22,8 @@ use prost::Message;
 mod flat8_capnp {
     include!(concat!(env!("OUT_DIR"), "/flat8_capnp.rs"));
 }
+// Workload D uses length-delimited records only; Flat8File is for B/C file fixtures.
+#[allow(dead_code)]
 mod flat8_pb {
     include!(concat!(env!("OUT_DIR"), "/nyxis.bench.rs"));
 }
