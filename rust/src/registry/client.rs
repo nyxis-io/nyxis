@@ -5,7 +5,8 @@ use tonic::Request;
 
 use super::pb::registry_service_client::RegistryServiceClient;
 use super::pb::{
-    GetSchemaByHashRequest, GetSchemaByHashResponse, RegisterSchemaRequest, RegisterSchemaResponse,
+    GetSchemaByHashRequest, GetSchemaByHashResponse, ListSchemasRequest, ListSchemasResponse,
+    RegisterSchemaRequest, RegisterSchemaResponse,
 };
 
 pub struct RegistryClient {
@@ -62,5 +63,18 @@ impl RegistryClient {
             .await
             .map(|r| r.into_inner())
             .map_err(|s| format!("GetSchemaByHash: {}", s.message()))
+    }
+
+    pub async fn list_schemas(
+        &mut self,
+        limit: u32,
+        offset: u32,
+    ) -> Result<ListSchemasResponse, String> {
+        let req = ListSchemasRequest { limit, offset };
+        self.inner
+            .list_schemas(Request::new(req))
+            .await
+            .map(|r| r.into_inner())
+            .map_err(|s| format!("ListSchemas: {}", s.message()))
     }
 }

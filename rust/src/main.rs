@@ -49,7 +49,7 @@ struct RegistryArgs {
 enum RegistryCommands {
     /// Register schema from `.nxb` (or compile `.nxs` first)
     Push(PushArgs),
-    /// Look up schema metadata by DictHash (`ListSchemas` not in MVP API)
+    /// List schemas via `ListSchemas`, or probe by DictHash with `--hash`
     List(ListArgs),
     /// Compare two DictHashes or `.nxb` files (local and/or via registry)
     Diff(DiffArgs),
@@ -71,7 +71,11 @@ struct PushArgs {
 struct ListArgs {
     #[arg(long, default_value = DEFAULT_REGISTRY_SERVER)]
     server: String,
-    /// DictHash to probe (repeatable). Without any hash, prints API limitation notice.
+    #[arg(long, default_value = "1000")]
+    limit: u32,
+    #[arg(long, default_value = "0")]
+    offset: u32,
+    /// DictHash to probe (repeatable). Skips `ListSchemas` when any hash is given.
     #[arg(long = "hash", value_name = "HEX")]
     hashes: Vec<String>,
 }
@@ -184,29 +188,59 @@ async fn registry_push(args: PushArgs) -> Result<(), String> {
 }
 
 async fn registry_list(args: ListArgs) -> Result<(), String> {
-    if args.hashes.is_empty() {
-        eprintln!(
-            "note: nyxis.registry.v1 has no ListSchemas RPC in MVP; pass --hash <16-hex> to probe the registry"
-        );
+    let mut client = RegistryClient::connect(&args.server).await?;
+
+    if !args.hashes.is_empty() {
+        println!("dict_hash\tversion\tdrift_policy\tschema_bytes");
+        for h in &args.hashes {
+            let hash = registry::parse_dict_hash_hex(h)?;
+            match client.get_schema_by_hash(hash).await {
+                Ok(row) => println!(
+                    "{}\t{}\t{}\t{}",
+                    registry::format_dict_hash(&hash),
+                    row.version,
+                    row.drift_policy,
+                    row.schema_bytes.len()
+                ),
+                Err(e) => eprintln!("{}: {e}", registry::format_dict_hash(&hash)),
+            }
+        }
         return Ok(());
     }
 
-    let mut client = RegistryClient::connect(&args.server).await?;
-    println!("dict_hash\tversion\tdrift_policy\tschema_bytes");
-    for h in &args.hashes {
-        let hash = registry::parse_dict_hash_hex(h)?;
-        match client.get_schema_by_hash(hash).await {
-            Ok(row) => println!(
-                "{}\t{}\t{}\t{}",
-                registry::format_dict_hash(&hash),
-                row.version,
-                row.drift_policy,
-                row.schema_bytes.len()
-            ),
-            Err(e) => eprintln!("{}: {e}", registry::format_dict_hash(&hash)),
-        }
+    let resp = client.list_schemas(args.limit, args.offset).await?;
+    if resp.schemas.is_empty() && args.offset == 0 {
+        println!("(no schemas)");
+        return Ok(());
+    }
+    println!("dict_hash\tversion\tdrift_policy\tkey_count");
+    for entry in &resp.schemas {
+        let hash = dict_hash_from_proto(&entry.dict_hash)?;
+        println!(
+            "{}\t{}\t{}\t{}",
+            registry::format_dict_hash(&hash),
+            entry.version,
+            entry.drift_policy,
+            entry.key_count
+        );
+    }
+    let shown = resp.schemas.len() as u32;
+    if args.offset + shown < resp.total {
+        println!(
+            "# showing {}–{} of {}",
+            args.offset + 1,
+            args.offset + shown,
+            resp.total
+        );
     }
     Ok(())
+}
+
+fn dict_hash_from_proto(bytes: &[u8]) -> Result<[u8; 8], String> {
+    let arr: [u8; 8] = bytes
+        .try_into()
+        .map_err(|_| format!("dict_hash must be 8 bytes (got {})", bytes.len()))?;
+    Ok(arr)
 }
 
 async fn registry_diff(args: DiffArgs) -> Result<(), String> {

@@ -28,11 +28,15 @@ fn registry_help_lists_subcommands() {
 }
 
 #[test]
-fn registry_list_without_hash_prints_mvp_note() {
+fn registry_list_help_shows_pagination() {
     Command::cargo_bin("nxs")
         .unwrap()
-        .args(["registry", "list", "--server", "127.0.0.1:1"])
+        .args(["registry", "list", "--help"])
         .assert()
         .success()
-        .stderr(predicate::str::contains("ListSchemas"));
+        .stdout(
+            predicate::str::contains("--limit")
+                .and(predicate::str::contains("--offset"))
+                .and(predicate::str::contains("--hash")),
+        );
 }

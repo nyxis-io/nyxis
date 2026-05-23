@@ -6,6 +6,7 @@ package nyxis.registry.v1;
 service RegistryService {
   rpc RegisterSchema(RegisterSchemaRequest) returns (RegisterSchemaResponse);
   rpc GetSchemaByHash(GetSchemaByHashRequest) returns (GetSchemaByHashResponse);
+  rpc ListSchemas(ListSchemasRequest) returns (ListSchemasResponse);
   rpc ValidatePayload(ValidatePayloadRequest) returns (ValidatePayloadResponse);
   // Deferred: returns UNAVAILABLE in MVP.
   rpc ResolveDrift(ResolveDriftRequest) returns (ResolveDriftResponse);
@@ -32,6 +33,24 @@ message GetSchemaByHashResponse {
   bytes schema_bytes = 1;
   uint32 version = 2;
   string drift_policy = 3;
+}
+
+message ListSchemasRequest {
+  // Max rows to return (0 = server default, typically 1000).
+  uint32 limit = 1;
+  uint32 offset = 2;
+}
+
+message SchemaSummary {
+  bytes dict_hash = 1;
+  uint32 version = 2;
+  string drift_policy = 3;
+  uint32 key_count = 4;
+}
+
+message ListSchemasResponse {
+  repeated SchemaSummary schemas = 1;
+  uint32 total = 2;
 }
 
 message ValidatePayloadRequest {

@@ -110,7 +110,7 @@ test-rust:
 
 rust-examples:
 	cd rust && cargo build --release --bin nxs
-	cd rust && for f in ../examples/*.nxs; do ./target/release/nxs "$$f" && echo "compiled $$f"; done
+	cd rust && for f in ../examples/*.nxs; do ./target/release/nxs compile "$$f" && echo "compiled $$f"; done
 
 test-rust-ci: test-rust rust-examples
 
