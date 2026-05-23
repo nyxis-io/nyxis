@@ -271,15 +271,20 @@ impl<'a> Reader<'a> {
 
     fn pax_column_sector(&self, page_idx: usize, slot: usize) -> Result<&[u8]> {
         const MAGIC_PAGE: u32 = 0x4E58_5350;
-        let e = self.tail_start + page_idx * PAX_TAIL_ENTRY_BYTES;
+        let e = page_idx
+            .checked_mul(PAX_TAIL_ENTRY_BYTES)
+            .and_then(|n| self.tail_start.checked_add(n))
+            .ok_or(NxsError::OutOfBounds)?;
+        let page_off_start = e.checked_add(16).ok_or(NxsError::OutOfBounds)?;
+        let page_off_end = e.checked_add(24).ok_or(NxsError::OutOfBounds)?;
         let poff = u64::from_le_bytes(
             self.data
-                .get(e + 16..e + 24)
+                .get(page_off_start..page_off_end)
                 .ok_or(NxsError::OutOfBounds)?
                 .try_into()
                 .map_err(|_| NxsError::OutOfBounds)?,
         ) as usize;
-        if poff + 24 > self.data.len() {
+        if poff > self.data.len().saturating_sub(24) {
             return Err(NxsError::OutOfBounds);
         }
         if u32::from_le_bytes(
@@ -303,15 +308,21 @@ impl<'a> Reader<'a> {
         if slot >= field_count {
             return Err(NxsError::OutOfBounds);
         }
-        let mut body = poff + 24;
+        let mut body = poff.checked_add(24).ok_or(NxsError::OutOfBounds)?;
         for fi in 0..slot {
+            if body > self.data.len() {
+                return Err(NxsError::OutOfBounds);
+            }
             let sig = self.key_sigils.get(fi).copied().unwrap_or(b'=');
             let slen = column_sector_len(&self.data[body..], rc, sig)?;
-            body += slen;
+            body = body.checked_add(slen).ok_or(NxsError::OutOfBounds)?;
+        }
+        if body > self.data.len() {
+            return Err(NxsError::OutOfBounds);
         }
         let sig = self.key_sigils.get(slot).copied().unwrap_or(b'=');
         let slen = column_sector_len(&self.data[body..], rc, sig)?;
-        if body + slen > self.data.len() {
+        if body > self.data.len().saturating_sub(slen) {
             return Err(NxsError::OutOfBounds);
         }
         Ok(&self.data[body..body + slen])
@@ -403,7 +414,7 @@ impl<'a> Reader<'a> {
             return 0;
         }
         let tp = self.tail_start;
-        if tp + 4 > self.data.len() {
+        if tp > self.data.len().saturating_sub(4) {
             return 0;
         }
         // page count stored in footer; re-read from footer
@@ -412,16 +423,24 @@ impl<'a> Reader<'a> {
     }
 
     fn pax_page_rec_start(&self, page_idx: usize) -> Option<u64> {
-        let e = self.tail_start + page_idx * PAX_TAIL_ENTRY_BYTES;
+        let e = page_idx
+            .checked_mul(PAX_TAIL_ENTRY_BYTES)
+            .and_then(|n| self.tail_start.checked_add(n))?;
+        let start = e.checked_add(4)?;
+        let end = e.checked_add(12)?;
         Some(u64::from_le_bytes(
-            self.data.get(e + 4..e + 12)?.try_into().ok()?,
+            self.data.get(start..end)?.try_into().ok()?,
         ))
     }
 
     fn pax_page_rec_count(&self, page_idx: usize) -> Option<u32> {
-        let e = self.tail_start + page_idx * PAX_TAIL_ENTRY_BYTES;
+        let e = page_idx
+            .checked_mul(PAX_TAIL_ENTRY_BYTES)
+            .and_then(|n| self.tail_start.checked_add(n))?;
+        let start = e.checked_add(12)?;
+        let end = e.checked_add(16)?;
         Some(u32::from_le_bytes(
-            self.data.get(e + 12..e + 16)?.try_into().ok()?,
+            self.data.get(start..end)?.try_into().ok()?,
         ))
     }
 

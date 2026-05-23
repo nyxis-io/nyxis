@@ -9,9 +9,9 @@ catalog {
             price: ~149.99
             stock: =342
             available: ?true
-            category: $electronics
+            category: "electronics"
             weight_kg: ~0.85
-            tags: [$featured, $new]
+            tags: ["featured", "new"]
         }
         item {
             sku: "NX-1002"
@@ -19,9 +19,9 @@ catalog {
             price: ~59.95
             stock: =1204
             available: ?true
-            category: $electronics
+            category: "electronics"
             weight_kg: ~0.12
-            tags: [$bestseller]
+            tags: ["bestseller"]
         }
         item {
             sku: "NX-2001"
@@ -29,9 +29,9 @@ catalog {
             price: ~499.00
             stock: =0
             available: ?false
-            category: $furniture
+            category: "furniture"
             weight_kg: ~22.50
-            tags: [$out_of_stock]
+            tags: ["out_of_stock"]
         }
         item {
             sku: "NX-3001"
@@ -39,9 +39,9 @@ catalog {
             price: ~34.99
             stock: =876
             available: ?true
-            category: $accessories
+            category: "accessories"
             weight_kg: ~0.09
-            tags: [$featured, $sale]
+            tags: ["featured", "sale"]
         }
     }
 }
