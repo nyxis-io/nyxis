@@ -254,7 +254,8 @@ impl<'a> Reader<'a> {
         let Some(prefetch) = &self.prefetch else {
             return;
         };
-        let Some(off) = crate::prefetch::row_record_offset(self.data, self.tail_start, index) else {
+        let Some(off) = crate::prefetch::row_record_offset(self.data, self.tail_start, index)
+        else {
             return;
         };
         let page_size = prefetch.options().page_size;

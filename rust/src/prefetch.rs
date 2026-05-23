@@ -340,9 +340,7 @@ impl PrefetchEngine {
 
         let needed: Vec<u32> = page_indices
             .into_iter()
-            .filter(|&p| {
-                !self.cache.borrow().has(p) && !self.in_flight.borrow().contains(&p)
-            })
+            .filter(|&p| !self.cache.borrow().has(p) && !self.in_flight.borrow().contains(&p))
             .collect();
 
         let ranges = clamp_ranges(coalesce_page_indices(&needed, gap, page_size), file_size);
@@ -381,9 +379,7 @@ impl PrefetchEngine {
 pub fn row_record_offset(data: &[u8], tail_start: usize, index: usize) -> Option<usize> {
     let entry = tail_start.checked_add(index.checked_mul(10)?)?;
     let end = entry.checked_add(10)?;
-    Some(u64::from_le_bytes(
-        data.get(entry + 2..end)?.try_into().ok()?,
-    ) as usize)
+    Some(u64::from_le_bytes(data.get(entry + 2..end)?.try_into().ok()?) as usize)
 }
 
 /// Page indices touched by records `[start_index, end_index]` inclusive.
