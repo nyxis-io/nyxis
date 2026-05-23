@@ -17,7 +17,7 @@ use crate::error::{NxsError, Result};
 use crate::layout::{
     col_var_parts, column_sector_len, is_var_sigil, null_bitmap_bytes, var_str_at,
 };
-use crate::prefetch::{PrefetchEngine, DEFAULT_MAX_PAGES};
+use crate::prefetch::PrefetchEngine;
 
 pub use crate::prefetch::{AccessHint, CacheStats, OpenOptions};
 
@@ -54,6 +54,9 @@ fn col_bit(bm: &[u8], rec: usize) -> bool {
 // ── Reader ────────────────────────────────────────────────────────────────────
 
 /// Zero-copy reader for a `.nxb` buffer; supports row, columnar, and PAX layouts.
+///
+/// When opened with [`Self::with_options`], prefetch state is protected by internal
+/// mutexes so the reader remains [`Send`] + [`Sync`].
 pub struct Reader<'a> {
     data: &'a [u8],
     keys: Vec<String>,
@@ -205,6 +208,7 @@ impl<'a> Reader<'a> {
 
     /// Open with prefetch options (row-layout viewport cache; phase 1).
     pub fn with_options(data: &'a [u8], options: OpenOptions) -> Result<Self> {
+        options.validate()?;
         let mut reader = Self::new(data)?;
         if reader.layout == Layout::Row {
             reader.prefetch = Some(PrefetchEngine::new(options));
@@ -236,12 +240,12 @@ impl<'a> Reader<'a> {
         } else {
             CacheStats {
                 pages_cached: 0,
-                pages_max: DEFAULT_MAX_PAGES,
+                pages_max: 0,
                 memory_used_bytes: 0,
                 cache_hits: 0,
                 cache_misses: 0,
                 fetches_issued: 0,
-                strategy: "lazy".to_string(),
+                strategy: "disabled".to_string(),
                 pattern: "unknown".to_string(),
             }
         }

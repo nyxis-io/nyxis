@@ -2,8 +2,11 @@
 //!
 //! Phase 1: row-layout viewport prefetch for buffer-backed readers (sync path).
 
-use std::cell::{Cell, RefCell};
 use std::collections::{HashMap, HashSet};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Mutex;
+
+use crate::error::{NxsError, Result};
 
 pub const DEFAULT_PAGE_SIZE: usize = 65_536;
 pub const DEFAULT_MAX_PAGES: usize = 256;
@@ -65,6 +68,16 @@ impl OpenOptions {
         self.coalesce_gap_pages = gap;
         self
     }
+
+    /// Reject invalid prefetch configuration before opening a reader.
+    pub fn validate(&self) -> Result<()> {
+        if self.page_size == 0 {
+            return Err(NxsError::ParseError(
+                "prefetch page_size must be greater than 0".into(),
+            ));
+        }
+        Ok(())
+    }
 }
 
 /// A coalesced byte range covering one or more page indices.
@@ -105,11 +118,16 @@ pub fn coalesce_page_indices(
 
     spans
         .into_iter()
-        .map(|(a, b)| CoalescedRange {
-            page_start: a,
-            page_end: b,
-            byte_start: a as usize * page_size,
-            byte_length: (b - a + 1) as usize * page_size,
+        .filter_map(|(a, b)| {
+            let count = (b - a).checked_add(1)? as usize;
+            let byte_start = (a as usize).checked_mul(page_size)?;
+            let byte_length = count.checked_mul(page_size)?;
+            Some(CoalescedRange {
+                page_start: a,
+                page_end: b,
+                byte_start,
+                byte_length,
+            })
         })
         .collect()
 }
@@ -122,7 +140,8 @@ pub fn clamp_ranges(ranges: Vec<CoalescedRange>, file_size: usize) -> Vec<Coales
             if r.byte_start >= file_size {
                 return None;
             }
-            if r.byte_start + r.byte_length > file_size {
+            let end = r.byte_start.checked_add(r.byte_length)?;
+            if end > file_size {
                 r.byte_length = file_size - r.byte_start;
             }
             if r.byte_length == 0 {
@@ -177,13 +196,15 @@ impl PageCache {
         Some(entry.data.as_slice())
     }
 
-    pub fn set(&mut self, page_index: u32, data: Vec<u8>, pinned: bool) {
+    pub fn set(&mut self, page_index: u32, data: Vec<u8>, pinned: bool) -> bool {
         if self.max_pages == 0 {
-            return;
+            return false;
         }
-        while self.pages.len() >= self.max_pages {
-            if !self.evict_one() {
-                break;
+        if !self.pages.contains_key(&page_index) {
+            while self.pages.len() >= self.max_pages {
+                if !self.evict_one() {
+                    return false;
+                }
             }
         }
         self.clock = self.clock.saturating_add(1);
@@ -195,6 +216,7 @@ impl PageCache {
                 pinned,
             },
         );
+        true
     }
 
     fn evict_one(&mut self) -> bool {
@@ -261,11 +283,11 @@ pub struct CacheStats {
     pub pattern: String,
 }
 
-/// Per-reader prefetch engine (sync buffer path).
+/// Per-reader prefetch engine (sync buffer path; `Send + Sync`).
 pub struct PrefetchEngine {
-    cache: RefCell<PageCache>,
-    in_flight: RefCell<HashSet<u32>>,
-    fetches_issued: Cell<u64>,
+    cache: Mutex<PageCache>,
+    in_flight: Mutex<HashSet<u32>>,
+    fetches_issued: AtomicU64,
     options: OpenOptions,
 }
 
@@ -273,9 +295,9 @@ impl PrefetchEngine {
     pub fn new(options: OpenOptions) -> Self {
         let cache = PageCache::new(options.max_pages, options.page_size);
         Self {
-            cache: RefCell::new(cache),
-            in_flight: RefCell::new(HashSet::new()),
-            fetches_issued: Cell::new(0),
+            cache: Mutex::new(cache),
+            in_flight: Mutex::new(HashSet::new()),
+            fetches_issued: AtomicU64::new(0),
             options,
         }
     }
@@ -285,21 +307,21 @@ impl PrefetchEngine {
     }
 
     pub fn cache_stats(&self) -> CacheStats {
-        let cache = self.cache.borrow();
+        let cache = self.cache.lock().expect("prefetch cache lock");
         CacheStats {
             pages_cached: cache.pages_cached(),
             pages_max: self.options.max_pages,
             memory_used_bytes: cache.memory_used_bytes(),
             cache_hits: cache.hits(),
             cache_misses: cache.misses(),
-            fetches_issued: self.fetches_issued.get(),
-            strategy: "lazy".to_string(),
+            fetches_issued: self.fetches_issued.load(Ordering::Relaxed),
+            strategy: "viewport".to_string(),
             pattern: "unknown".to_string(),
         }
     }
 
     pub fn touch_page(&self, page_index: u32) {
-        let mut cache = self.cache.borrow_mut();
+        let mut cache = self.cache.lock().expect("prefetch cache lock");
         if cache.get(page_index).is_none() {
             cache.note_miss();
         }
@@ -338,10 +360,14 @@ impl PrefetchEngine {
 
         let pinned: Vec<u32> = page_indices.clone();
 
-        let needed: Vec<u32> = page_indices
-            .into_iter()
-            .filter(|&p| !self.cache.borrow().has(p) && !self.in_flight.borrow().contains(&p))
-            .collect();
+        let needed: Vec<u32> = {
+            let cache = self.cache.lock().expect("prefetch cache lock");
+            let in_flight = self.in_flight.lock().expect("prefetch in_flight lock");
+            page_indices
+                .into_iter()
+                .filter(|&p| !cache.has(p) && !in_flight.contains(&p))
+                .collect()
+        };
 
         let ranges = clamp_ranges(coalesce_page_indices(&needed, gap, page_size), file_size);
 
@@ -349,28 +375,39 @@ impl PrefetchEngine {
             self.fetch_range(data, &range, page_size, file_size);
         }
 
-        self.cache.borrow_mut().pin_pages(&pinned);
+        let mut cache = self.cache.lock().expect("prefetch cache lock");
+        cache.pin_pages(&pinned);
+        cache.unpin_all();
     }
 
     fn fetch_range(&self, data: &[u8], range: &CoalescedRange, page_size: usize, file_size: usize) {
-        for p in range.page_start..=range.page_end {
-            self.in_flight.borrow_mut().insert(p);
+        {
+            let mut in_flight = self.in_flight.lock().expect("prefetch in_flight lock");
+            for p in range.page_start..=range.page_end {
+                in_flight.insert(p);
+            }
         }
 
-        self.fetches_issued
-            .set(self.fetches_issued.get().saturating_add(1));
+        self.fetches_issued.fetch_add(1, Ordering::Relaxed);
 
         for p in range.page_start..=range.page_end {
             let p_usize = p as usize;
             let byte_start = p_usize * page_size;
             if byte_start >= file_size {
-                self.in_flight.borrow_mut().remove(&p);
+                self.in_flight
+                    .lock()
+                    .expect("prefetch in_flight lock")
+                    .remove(&p);
                 continue;
             }
             let byte_end = ((p_usize + 1) * page_size).min(file_size);
             let page_data = data[byte_start..byte_end].to_vec();
-            self.cache.borrow_mut().set(p, page_data, false);
-            self.in_flight.borrow_mut().remove(&p);
+            let mut cache = self.cache.lock().expect("prefetch cache lock");
+            cache.set(p, page_data, false);
+            self.in_flight
+                .lock()
+                .expect("prefetch in_flight lock")
+                .remove(&p);
         }
     }
 }
@@ -482,11 +519,21 @@ mod tests {
 
     #[test]
     fn page_cache_pinned_not_evicted() {
-        let mut cache = PageCache::new(1, 8);
+        let mut cache = PageCache::new(2, 8);
         cache.set(1, vec![1; 8], true);
         cache.set(2, vec![2; 8], false);
+        cache.set(3, vec![3; 8], false);
         assert!(cache.has(1));
-        assert!(cache.has(2));
+        assert!(!cache.has(2));
+        assert!(cache.has(3));
+    }
+
+    #[test]
+    fn page_cache_refuses_insert_when_full_and_pinned() {
+        let mut cache = PageCache::new(1, 8);
+        cache.set(1, vec![1; 8], true);
+        assert!(!cache.set(2, vec![2; 8], false));
+        assert!(!cache.has(2));
     }
 
     #[test]
@@ -543,5 +590,14 @@ mod tests {
         assert_eq!(opts.page_size, 65_536);
         assert_eq!(opts.coalesce_gap_pages, 1);
         assert_eq!(opts.hint, AccessHint::Unknown);
+        assert!(opts.validate().is_ok());
+    }
+
+    #[test]
+    fn open_options_rejects_zero_page_size() {
+        let opts = OpenOptions::new().page_size(0);
+        assert!(opts.validate().is_err());
+        let data = make_sparse_nxb(5);
+        assert!(Reader::with_options(&data, opts).is_err());
     }
 }
