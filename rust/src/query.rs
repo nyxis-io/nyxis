@@ -1545,4 +1545,61 @@ mod tests {
         let buf = r.col_buffer("score").unwrap();
         assert_eq!(buf.len(), 100 * 8);
     }
+
+    #[test]
+    fn columnar_strings_roundtrip() {
+        use crate::layout::{finish_columnar, null_bitmap_bytes, var_str_at, Cell, RecordRow};
+
+        let keys = vec!["id".into(), "name".into(), "score".into()];
+        let mut rows = Vec::new();
+        for i in 0..100usize {
+            rows.push(RecordRow {
+                cells: vec![
+                    Cell::I64(i as i64),
+                    Cell::Str(format!("user_{i}")),
+                    Cell::F64(i as f64 * 1.25),
+                ],
+            });
+        }
+        let bytes = finish_columnar(&keys, &rows).unwrap();
+        let r = Reader::new(&bytes).unwrap();
+        assert_eq!(r.record_count(), 100);
+        for i in 0..100 {
+            let rec = r.record(i).unwrap();
+            assert_eq!(rec.get_i64("id"), Some(i as i64));
+            let want = format!("user_{i}");
+            assert_eq!(rec.get_str("name"), Some(want.as_str()));
+            assert!((rec.get_f64("score").unwrap() - i as f64 * 1.25).abs() < 1e-9);
+        }
+        let (bm, offsets, values) = r.col_field_var_parts(1).unwrap();
+        assert_eq!(bm.len(), null_bitmap_bytes(100));
+        assert_eq!(offsets.len(), 101 * 4);
+        assert!(!values.is_empty());
+        assert_eq!(var_str_at(offsets, values, 42), Some("user_42"));
+    }
+
+    #[test]
+    fn pax_strings_roundtrip_across_pages() {
+        use crate::layout::{finish_pax, Cell, RecordRow};
+
+        let keys = vec!["id".into(), "name".into(), "score".into()];
+        let rows: Vec<RecordRow> = (0..300usize)
+            .map(|i| RecordRow {
+                cells: vec![
+                    Cell::I64(i as i64),
+                    Cell::Str(format!("user_{i}")),
+                    Cell::F64(i as f64),
+                ],
+            })
+            .collect();
+        let bytes = finish_pax(&keys, &rows, 128).unwrap();
+        let r = Reader::new(&bytes).unwrap();
+        assert_eq!(r.record_count(), 300);
+        for i in [0usize, 127, 128, 257, 299] {
+            let rec = r.record(i).unwrap();
+            let want = format!("user_{i}");
+            assert_eq!(rec.get_str("name"), Some(want.as_str()));
+            assert_eq!(rec.get_i64("id"), Some(i as i64));
+        }
+    }
 }
