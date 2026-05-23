@@ -9,7 +9,7 @@ Pinned toolchains for reproducible head-to-head runs. Re-run after bumps with ex
 | `protoc` / libprotobuf | 27.x / protobuf 7.x (Python) | Generated accessors only (no reflection on hot paths) |
 | FlatBuffers | `google/flatbuffers` v24.3.25+ | Generated `*_reader.h`; verifier off hot path |
 | Cap'n Proto | 1.0.x | Packed encoding where schema allows |
-| Apache Arrow IPC | 18.x | Workload C columnar comparator (`pyarrow>=18` for Python 3.13 wheels) |
+| Apache Arrow IPC | 18.x (3.11–3.13) / 22+ (3.14) | Workload C columnar comparator (`pyarrow` env markers in `requirements.txt`) |
 | Rust | 1.75+ | `--release`, LTO via `generators/transcode_rust/Cargo.toml` |
 | Go | 1.22+ | Document `GOAMD64=v3` if used |
 | C compiler | GCC 13+ or Clang 16+ | `-O3 -march=native -flto` primary; `-O2 -march=x86-64-v3` portable |
