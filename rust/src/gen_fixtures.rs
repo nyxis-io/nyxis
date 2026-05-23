@@ -5,9 +5,12 @@ mod decoder;
 /// Generates matching .nxb and .json fixtures for the JS benchmark.
 /// Usage: cargo run --release --bin gen_fixtures -- <out_dir> [sizes...]
 mod error;
+mod layout;
 mod lexer;
 mod parser;
 mod writer;
+
+use layout::{finish_columnar, Cell, RecordRow};
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -109,6 +112,28 @@ fn write_nxb(records: &[Rec], path: &Path) {
     println!("  {} → {} bytes", path.display(), bytes.len());
 }
 
+fn write_nxb_columnar(records: &[Rec], path: &Path) {
+    let keys: Vec<String> = SLOTS.iter().map(|s| (*s).to_string()).collect();
+    let rows: Vec<RecordRow> = records
+        .iter()
+        .map(|r| RecordRow {
+            cells: vec![
+                Cell::I64(r.id),
+                Cell::Str(r.username.clone()),
+                Cell::Str(r.email.clone()),
+                Cell::I64(r.age),
+                Cell::F64(r.balance),
+                Cell::Bool(r.active),
+                Cell::F64(r.score),
+                Cell::Time(1_777_593_600_000_000_000),
+            ],
+        })
+        .collect();
+    let bytes = finish_columnar(&keys, &rows).expect("columnar encode");
+    write_file(path, &bytes, "columnar nxb");
+    println!("  {} → {} bytes", path.display(), bytes.len());
+}
+
 fn write_json(records: &[Rec], path: &Path) {
     let mut s = String::with_capacity(records.len() * 180);
     s.push('[');
@@ -163,6 +188,10 @@ fn main() {
         println!("Generating n={n}...");
         let records = build(n);
         write_nxb(&records, &out_dir.join(format!("records_{n}.nxb")));
+        write_nxb_columnar(
+            &records,
+            &out_dir.join(format!("records_{n}_columnar.nxb")),
+        );
         write_json(&records, &out_dir.join(format!("records_{n}.json")));
         write_csv(&records, &out_dir.join(format!("records_{n}.csv")));
     }

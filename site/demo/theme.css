@@ -34,6 +34,7 @@
   --chart-csv: #a78bfa;
   --chart-nxs: #5b9cf5;
   --chart-nxs-wasm: #3ecf8e;
+  --chart-nxs-col: #c77dff;
   --chart-striped: #8b3a48;
   --banner-ok-bg: rgba(62, 207, 142, 0.08);
   --banner-warn-bg: rgba(224, 176, 96, 0.08);
@@ -70,6 +71,7 @@ html[data-theme="light"] {
   --chart-csv: #6d28d9;
   --chart-nxs: #1d5fd4;
   --chart-nxs-wasm: #1a7a4a;
+  --chart-nxs-col: #7c3aed;
   --chart-striped: #be5a6a;
   --banner-ok-bg: rgba(26, 122, 74, 0.1);
   --banner-warn-bg: rgba(138, 90, 10, 0.1);

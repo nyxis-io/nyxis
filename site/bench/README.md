@@ -12,19 +12,47 @@ make fixtures
 # or: FIXTURE_COUNT=1000000 make fixtures
 ```
 
-Writes `site/bench/fixtures/records_<N>.{nxb,json,csv}` via the Rust `gen_fixtures` binary. All three must share the same record count for a given `N` — do not symlink `.json`/`.nxb` to a different size (the browser bench compares formats row-for-row). Default `make fixtures` generates `N=1000`.
+Writes `site/bench/fixtures/records_<N>.{nxb,json,csv}` and `records_<N>_columnar.nxb` via the Rust `gen_fixtures` binary. All formats must share the same record count for a given `N` — do not symlink fixtures across sizes. Default `make fixtures` generates `N=1000`.
+
+Verify columnar fixtures are served (browser bench fetches them):
+
+```bash
+curl -I http://localhost:8000/bench/fixtures/records_10000_columnar.nxb
+# expect HTTP 200, Content-Type: application/octet-stream
+```
+
+## Browser benchmark scenarios (current order)
+
+Charts on http://localhost:8000/bench/ are numbered to match the page. Bar labels use **(pre-parsed)** for JSON/CSV warm baselines (parse cost excluded) and **(lazy decode)** for row NXS paths.
+
+| § | Chart id | What it measures |
+|---|----------|------------------|
+| 1 | `chart-open` | Open / parse entire file |
+| 2 | `chart-cold-mem` | Cold: parse/open + one field at `n/2` (bytes in memory) |
+| 3 | `chart-cold-fetch` | Cold: same as §2 after `fetch()` |
+| 4 | `chart-cold-reduce` | Cold: open/parse + sum `score` (no warm state) |
+| 5 | `chart-stream` | Time to first usable record (stream vs `JSON.parse`) |
+| 6 | `chart-iterate-all` | Open + walk all rows, read `username` once |
+| 7 | `chart-json-scan` | JSON substring scan vs parse+loop vs NXS `cursor.scan` |
+| 8 | `chart-iterate-warm` | Warm: iterate `username` (JSON/CSV pre-parsed) |
+| 9 | `chart-random` | Warm: random one-field access |
+| 10 | `chart-random-multi` | Warm: random four-field access |
+| 11 | `chart-scattered` | Warm: ~500 strided random reads |
+| 12 | `chart-multi-scan` | Open + linear four-field scan (`cursor.scan`, not `seekWarm`/row) |
+| 13 | `chart-filter` | Warm: count `score > 80` (cursor filter; row bitmask cost) |
+| 14 | `chart-reduce` | Warm: sum `score` (JSON/CSV + row `sumF64` + **columnar `colSumF64`**) |
+| 15 | `chart-indexed-sum` | Row index loop vs `sumF64` vs columnar reducer |
+| 16 | `chart-memory` | Chrome `performance.memory` (indicative) |
+| 17 | `chart-worker` | Main-thread vs worker chunk sum |
+| 18–19 | WAL charts | Reference data from Rust WAL bench |
+
+Harness implementation: `bench-run.js` (browser), `bench.js` (Node). §12–13 use `cursor.scan` / cursor filter — not `seekWarm` per row or `Query.count()` allocation.
 
 ## Node benchmark
 
 ```bash
 node site/bench/bench.js site/bench/fixtures
 ```
-
-## Browser benchmark
-
-See [demo/README.md](../demo/README.md) — open http://localhost:8000/bench/ through docker compose.
-
-Charts include **open + iterate all** (parse/open the file, then read `username` on every record) alongside open-only, random access, cold first-field, and column reducers.
 
 ## WASM reducers
 

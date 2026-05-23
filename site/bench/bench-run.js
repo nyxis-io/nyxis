@@ -1,5 +1,10 @@
 // Shared benchmark scenarios for browser (and importable patterns for Node).
-import { NxsReader, NxsStreamReader, gt } from "/sdk/nxs.js";
+import { NxsReader, NxsStreamReader } from "/sdk/nxs.js";
+
+/** Visible on chart bars — JSON/CSV parse cost is outside the timed region. */
+export const LABEL_PRE = " (pre-parsed)";
+/** Visible on chart bars — NXS decodes from .nxb bytes in the timed region. */
+export const LABEL_LAZY = " (lazy decode)";
 
 // ── CSV / JSON helpers ──────────────────────────────────────────────────────
 
@@ -156,6 +161,7 @@ function sumScoreFromFieldIndex(idx) {
  * @param {object} ctx
  * @param {(sel:string)=>Element} ctx.$
  * @param {Uint8Array} ctx.nxbBuf
+ * @param {Uint8Array|null} ctx.nxbColBuf — optional columnar `.nxb` for aggregate charts
  * @param {string|undefined} ctx.jsonStr
  * @param {string|undefined} ctx.csvStr
  * @param {string|null} ctx.jsonFailText
@@ -164,7 +170,10 @@ function sumScoreFromFieldIndex(idx) {
  * @param {number} ctx.selectedN — UI preset (display only)
  */
 export async function runBenchmarks(ctx) {
-  const { $, nxbBuf, jsonStr, csvStr, jsonFailText, csvFailText, wasm, selectedN } = ctx;
+  const {
+    $, nxbBuf, nxbColBuf, jsonStr, csvStr,
+    jsonFailText, csvFailText, wasm, selectedN,
+  } = ctx;
 
   const iters = {
     parse: selectedN >= 1e7 ? 3 : selectedN >= 1e6 ? 5 : selectedN >= 1e5 ? 20 : 200,
@@ -178,6 +187,13 @@ export async function runBenchmarks(ctx) {
 
   const reader = new NxsReader(nxbBuf);
   const recordCount = reader.recordCount;
+  let colReader = null;
+  if (nxbColBuf?.byteLength) {
+    try {
+      const cr = new NxsReader(nxbColBuf);
+      if (cr.layout === "columnar") colReader = cr;
+    } catch { /* optional fixture */ }
+  }
   let wasmReader = null;
   if (wasm) {
     wasmReader = new NxsReader(nxbBuf);
@@ -274,25 +290,25 @@ export async function runBenchmarks(ctx) {
 
   // 3. Iterate only (warm)
   drawChart($("#chart-iterate-warm"), [
-    scenario("JSON for-of (pre-parsed)", "json", !parsedJson, jsonFail, () =>
+    scenario(`JSON for-of${LABEL_PRE}`, "json", !parsedJson, jsonFail, () =>
       bench(iters.iterateWarm, () => {
         let acc = 0;
         for (const r of parsedJson) acc += r.username.length;
         return acc;
       }), pr),
-    scenario("CSV for-of (pre-parsed)", "csv", !parsedCsv, csvFail, () =>
+    scenario(`CSV for-of${LABEL_PRE}`, "csv", !parsedCsv, csvFail, () =>
       bench(iters.iterateWarm, () => {
         let acc = 0;
         for (const r of parsedCsv) acc += r.username.length;
         return acc;
       }), pr),
-    scenario("NXS cursor.scan (warm reader)", "nxs", false, null, () =>
+    scenario(`NXS cursor.scan${LABEL_LAZY}`, "nxs", false, null, () =>
       bench(iters.iterateWarm, () => {
         let acc = 0;
         reader.scan(cur => { acc += cur.getStrBySlot(uSlot).length; });
         return acc;
       }), pr),
-    scenario("NXS field index getStrAt(i)", "nxs", false, null, () =>
+    scenario(`NXS field index${LABEL_LAZY}`, "nxs", false, null, () =>
       bench(iters.iterateWarm, () => {
         let acc = 0;
         for (let i = 0; i < recordCount; i++) acc += usernameIndex.getStrAt(i).length;
@@ -302,23 +318,23 @@ export async function runBenchmarks(ctx) {
 
   // 4. Random 1-field
   const randomRows = [
-    scenario("JSON arr[k].username (pre-parsed)", "json", !parsedJson, jsonFail, () => {
+    scenario(`JSON arr[k].username${LABEL_PRE}`, "json", !parsedJson, jsonFail, () => {
       ii = 0; return bench(iters.random, () => parsedJson[idxs[ii++ % iters.random]].username);
     }),
-    scenario("CSV arr[k].username (pre-parsed)", "csv", !parsedCsv, csvFail, () => {
+    scenario(`CSV arr[k].username${LABEL_PRE}`, "csv", !parsedCsv, csvFail, () => {
       ii = 0; return bench(iters.random, () => parsedCsv[idxs[ii++ % iters.random]].username);
     }),
-    scenario("NXS record(k).getStrBySlot", "nxs", false, null, () => {
+    scenario(`NXS record(k)${LABEL_LAZY}`, "nxs", false, null, () => {
       ii = 0; return bench(iters.random, () => reader.record(idxs[ii++ % iters.random]).getStrBySlot(uSlot));
     }),
-    scenario("NXS cursor.seek + getStrBySlot", "nxs", false, null, () => {
+    scenario(`NXS cursor.seek${LABEL_LAZY}`, "nxs", false, null, () => {
       ii = 0;
       return bench(iters.random, () => {
         randCur.seek(idxs[ii++ % iters.random]);
         return randCur.getStrBySlot(uSlot);
       });
     }),
-    scenario("NXS field index + getStrAt(k)", "nxs", false, null, () => {
+    scenario(`NXS field index${LABEL_LAZY}`, "nxs", false, null, () => {
       ii = 0; return bench(iters.random, () => usernameIndex.getStrAt(idxs[ii++ % iters.random]));
     }),
   ];
@@ -331,21 +347,21 @@ export async function runBenchmarks(ctx) {
 
   // 5. Random multi-field
   drawChart($("#chart-random-multi"), [
-    scenario("JSON 4-field (pre-parsed)", "json", !parsedJson, jsonFail, () => {
+    scenario(`JSON 4-field${LABEL_PRE}`, "json", !parsedJson, jsonFail, () => {
       ii = 0;
       return bench(iters.random, () => {
         const r = parsedJson[idxs[ii++ % iters.random]];
         return r.username.length + r.age + r.balance + (r.active ? 1 : 0);
       });
     }),
-    scenario("CSV 4-field (pre-parsed)", "csv", !parsedCsv, csvFail, () => {
+    scenario(`CSV 4-field${LABEL_PRE}`, "csv", !parsedCsv, csvFail, () => {
       ii = 0;
       return bench(iters.random, () => {
         const r = parsedCsv[idxs[ii++ % iters.random]];
         return r.username.length + +r.age + +r.balance + (r.active === "true" ? 1 : 0);
       });
     }),
-    scenario("NXS 4-field record(k)", "nxs", false, null, () => {
+    scenario(`NXS 4-field record(k)${LABEL_LAZY}`, "nxs", false, null, () => {
       ii = 0;
       return bench(iters.random, () => {
         const obj = reader.record(idxs[ii++ % iters.random]);
@@ -353,7 +369,7 @@ export async function runBenchmarks(ctx) {
           + obj.getF64BySlot(sBal) + (obj.getBoolBySlot(sAct) ? 1 : 0);
       });
     }),
-    scenario("NXS 4-field cursor.seekWarm(k)", "nxs", false, null, () => {
+    scenario(`NXS 4-field seekWarm(k)${LABEL_LAZY}`, "nxs", false, null, () => {
       ii = 0;
       return bench(iters.random, () => {
         multiCur.seekWarm(idxs[ii++ % iters.random]);
@@ -365,13 +381,13 @@ export async function runBenchmarks(ctx) {
 
   // 6. Scattered access
   drawChart($("#chart-scattered"), [
-    scenario("JSON pre-parsed scattered", "json", !parsedJson, jsonFail, () =>
+    scenario(`JSON scattered${LABEL_PRE}`, "json", !parsedJson, jsonFail, () =>
       bench(iters.scan, () => {
         let acc = 0;
         for (let j = 0; j < scattered.length; j++) acc += parsedJson[scattered[j]].username.length;
         return acc;
       })),
-    scenario("NXS cursor scattered", "nxs", false, null, () =>
+    scenario(`NXS cursor scattered${LABEL_LAZY}`, "nxs", false, null, () =>
       bench(iters.scan, () => {
         let acc = 0;
         for (let j = 0; j < scattered.length; j++) {
@@ -380,7 +396,7 @@ export async function runBenchmarks(ctx) {
         }
         return acc;
       })),
-    scenario("NXS field index scattered", "nxs", false, null, () =>
+    scenario(`NXS field index scattered${LABEL_LAZY}`, "nxs", false, null, () =>
       bench(iters.scan, () => {
         let acc = 0;
         for (let j = 0; j < scattered.length; j++) acc += usernameIndex.getStrAt(scattered[j]).length;
@@ -390,7 +406,7 @@ export async function runBenchmarks(ctx) {
 
   // 7. Multi-field full scan
   drawChart($("#chart-multi-scan"), [
-    scenario("JSON open+4-field scan", "json", !!jsonFail, jsonFail, () =>
+    scenario("JSON parse + 4-field loop", "json", !!jsonFail, jsonFail, () =>
       bench(iters.iterateAll, () => {
         let acc = 0;
         for (const r of JSON.parse(jsonStr)) {
@@ -398,16 +414,14 @@ export async function runBenchmarks(ctx) {
         }
         return acc;
       }), pr),
-    scenario("NXS open+seekWarm scan", "nxs", false, null, () =>
+    scenario(`NXS open + cursor.scan${LABEL_LAZY}`, "nxs", false, null, () =>
       bench(iters.iterateAll, () => {
         const r = new NxsReader(nxbBuf);
-        const cur = r.cursor();
         let acc = 0;
-        for (let i = 0; i < r.recordCount; i++) {
-          cur.seekWarm(i);
+        r.scan(cur => {
           acc += cur.getStrBySlot(sUser).length + cur.getI64BySlot(sAge)
             + cur.getF64BySlot(sBal) + (cur.getBoolBySlot(sAct) ? 1 : 0);
-        }
+        });
         return acc;
       }), pr),
   ], recordCount);
@@ -415,14 +429,22 @@ export async function runBenchmarks(ctx) {
   // 8. Filter count (score > 80)
   const scoreThreshold = 80;
   drawChart($("#chart-filter"), [
-    scenario("JSON filter count", "json", !parsedJson, jsonFail, () =>
+    scenario(`JSON filter count${LABEL_PRE}`, "json", !parsedJson, jsonFail, () =>
       bench(iters.scan, () => {
         let c = 0;
         for (const r of parsedJson) if (r.score > scoreThreshold) c++;
         return c;
       }), pr),
-    scenario("NXS where(gt score)", "nxs", false, null, () =>
-      bench(iters.scan, () => reader.where(gt("score", scoreThreshold)).count()), pr),
+    scenario(`NXS cursor filter (lazy decode, row bitmask)`, "nxs", false, null, () =>
+      bench(iters.scan, () => {
+        let c = 0;
+        const cur = reader.cursor();
+        for (let i = 0; i < recordCount; i++) {
+          cur.seek(i);
+          if (cur.getF64BySlot(scoreSlot) > scoreThreshold) c++;
+        }
+        return c;
+      }), pr),
   ], recordCount);
 
   // 9. Cold first field (bytes already in memory)
@@ -456,35 +478,43 @@ export async function runBenchmarks(ctx) {
 
   // 11. Aggregate (warm)
   const reduceRows = [
-    scenario("JSON pre-parsed + loop", "json", !parsedJson, jsonFail, () =>
+    scenario(`JSON sum score${LABEL_PRE}`, "json", !parsedJson, jsonFail, () =>
       bench(iters.scan, () => { let s = 0; for (const r of parsedJson) s += r.score; return s; }), pr),
-    scenario("CSV sumCsvScore (raw)", "csv", !csvStr, csvFail, () =>
+    scenario("CSV sumCsvScore (raw bytes)", "csv", !csvStr, csvFail, () =>
       bench(iters.scan, () => sumCsvScore(csvStr), pr)),
-    scenario("NXS sumF64 (JS)", "nxs", false, null, () =>
+    scenario(`NXS row sumF64${LABEL_LAZY}`, "nxs", false, null, () =>
       bench(iters.scan, () => reader.sumF64("score"), pr)),
   ];
   if (wasmReader) {
-    reduceRows.push(scenario("NXS sumF64 (WASM)", "nxs-wasm", false, null, () =>
+    reduceRows.push(scenario(`NXS row sumF64 WASM${LABEL_LAZY}`, "nxs-wasm", false, null, () =>
       bench(iters.scan, () => wasmReader.sumF64("score"), pr)));
+  }
+  if (colReader) {
+    reduceRows.push(scenario("NXS columnar colSumF64", "nxs-col", false, null, () =>
+      bench(iters.scan, () => colReader.colSumF64("score"), pr)));
   }
   drawChart($("#chart-reduce"), reduceRows, recordCount);
 
   // 12. Indexed sum vs reducer
   const indexedRows = [
-    scenario("JSON pre-parsed sum score", "json", !parsedJson, jsonFail, () =>
+    scenario(`JSON sum score${LABEL_PRE}`, "json", !parsedJson, jsonFail, () =>
       bench(iters.scan, () => {
         let s = 0;
         for (const r of parsedJson) s += r.score;
         return s;
       }), pr),
-    scenario("NXS sumF64 reducer", "nxs", false, null, () =>
+    scenario(`NXS row sumF64${LABEL_LAZY}`, "nxs", false, null, () =>
       bench(iters.scan, () => reader.sumF64("score"), pr)),
-    scenario("NXS buildIndex + loop", "nxs", false, null, () =>
+    scenario(`NXS row buildIndex + loop${LABEL_LAZY}`, "nxs", false, null, () =>
       bench(iters.scan, () => {
         const idx = reader.buildFieldIndex("score");
         return sumScoreFromFieldIndex(idx);
       }), pr),
   ];
+  if (colReader) {
+    indexedRows.push(scenario("NXS columnar colSumF64", "nxs-col", false, null, () =>
+      bench(iters.scan, () => colReader.colSumF64("score"), pr)));
+  }
   if (scoreIndexWasm) {
     indexedRows.push(scenario("NXS WASM index + loop", "nxs-wasm", false, null, () =>
       bench(iters.scan, () => sumScoreFromFieldIndex(scoreIndexWasm), pr)));

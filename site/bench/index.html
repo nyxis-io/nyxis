@@ -118,9 +118,26 @@
     margin: 0 0 16px;
   }
 
+  .bench-legend {
+    font-size: 13px;
+    color: var(--muted);
+    margin: 0 0 20px;
+    padding: 10px 14px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    line-height: 1.55;
+  }
+  .bench-legend strong { color: var(--text); font-weight: 600; }
+  section.card.card--lead { border-color: color-mix(in srgb, var(--accent) 35%, var(--border)); }
+  section.card.card--warm h2 .warm-tag {
+    font-weight: 500;
+    font-size: 13px;
+    color: var(--muted);
+  }
   .chart {
     display: grid;
-    grid-template-columns: 120px 1fr 120px;
+    grid-template-columns: minmax(148px, 42%) 1fr 120px;
     gap: 6px 12px;
     align-items: center;
   }
@@ -146,6 +163,7 @@
   .chart .bar.csv  { background: var(--chart-csv); }
   .chart .bar.nxs  { background: var(--chart-nxs); }
   .chart .bar.nxs-wasm { background: var(--chart-nxs-wasm); }
+  .chart .bar.nxs-col { background: var(--chart-nxs-col); }
   .chart .bar.failed {
     background: repeating-linear-gradient(
       45deg, var(--bad), var(--bad) 6px, var(--chart-striped) 6px, var(--chart-striped) 12px
@@ -188,13 +206,19 @@
   <header class="page-header">
     <p class="page-eyebrow">NXS · Nyxis</p>
     <h1 class="page-title">Browser benchmark</h1>
-    <p class="page-lead">NXS vs JSON vs CSV — the same fixtures used in the Node and Go benches, run in your browser over <code>fetch()</code>.</p>
+    <p class="page-lead">NXS vs JSON vs CSV — the same fixtures used in the Node and Go benches, run in your browser over <code>fetch()</code>. Scenarios are ordered so NXS strengths (open, cold read, cold analytics, streaming) appear first; warm field access (where pre-parsed JSON wins) appears later with explicit bar labels.</p>
   </header>
 
   <section class="what-tested" aria-label="What this page tests">
     <strong>What this page tests</strong>
-    Seventeen browser workloads plus WAL reference charts. JSON/CSV bars marked <em>pre-parsed</em> use an in-memory object graph; NXS decodes lazily from <code>.nxb</code> bytes (cursor, <code>buildFieldIndex</code>, WASM index build when loaded). Covers open, full traversal, warm vs cold access, scattered reads, filters, aggregates, streaming first record, heap growth (Chrome), and worker parallel sum. Use size presets or upload matching fixtures.
+    Seventeen browser workloads plus WAL reference charts. Row <code>.nxb</code> plus <code>records_&lt;N&gt;_columnar.nxb</code> for aggregate comparisons. Use size presets or upload matching fixtures.
   </section>
+
+  <p class="bench-legend" id="bench-legend">
+    <strong>pre-parsed</strong> on JSON/CSV bars — full parse happened before the timer.
+    <strong>lazy decode</strong> on NXS row bars — reads from <code>.nxb</code> bytes inside the timed region.
+    Purple <strong>columnar</strong> bars use <code>records_&lt;N&gt;_columnar.nxb</code> (<code>colSumF64</code>).
+  </p>
 
   <div class="controls">
     <div>
@@ -223,94 +247,94 @@
 
   <div class="sizes-info" id="sizes-info"></div>
 
-  <section class="card">
+  <section class="card card--lead">
     <h2>1. Open file — parse the entire structure</h2>
     <p class="desc">JSON and CSV eagerly parse every byte; NXS reads only the header + tail-index.</p>
     <div class="chart" id="chart-open"></div>
   </section>
 
+  <section class="card card--lead">
+    <h2>2. Cold first field — bytes already in memory</h2>
+    <p class="desc">Parse/open then read one field at record <code>n/2</code> (no network; isolates decode cost).</p>
+    <div class="chart" id="chart-cold-mem"></div>
+  </section>
+
+  <section class="card card--lead">
+    <h2>3. Cold pipeline — fetch + parse + one field</h2>
+    <p class="desc">Models the page-load path after <code>fetch()</code>: open or parse, then first field at <code>n/2</code>.</p>
+    <div class="chart" id="chart-cold-fetch"></div>
+  </section>
+
+  <section class="card card--lead">
+    <h2>4. Cold pipeline — open + sum score</h2>
+    <p class="desc">No pre-parsed state: parse entire file then reduce (realistic analytics cold start).</p>
+    <div class="chart" id="chart-cold-reduce"></div>
+  </section>
+
+  <section class="card card--lead">
+    <h2>5. Stream — time to first record</h2>
+    <p class="desc">Chunked <code>NxsStreamReader</code> vs <code>JSON.parse</code> until first row is usable.</p>
+    <div class="chart" id="chart-stream"></div>
+  </section>
+
   <section class="card">
-    <h2>2. Open + iterate all records</h2>
+    <h2>6. Open + iterate all records</h2>
     <p class="desc">End-to-end: open the format, then walk every record and read <code>username</code> once. JSON/CSV must parse the full file first; NXS opens cheaply then decodes each row on the pass.</p>
     <div class="chart" id="chart-iterate-all"></div>
   </section>
 
   <section class="card">
-    <h2>3. Iterate only — warm structures</h2>
-    <p class="desc">Data already parsed/opened; walk every record and read <code>username</code>. Shows steady-state traversal without open cost.</p>
-    <div class="chart" id="chart-iterate-warm"></div>
-  </section>
-
-  <section class="card">
-    <h2>4. Random-access read — one field from record k</h2>
-    <p class="desc">JSON/CSV: property access on a <strong>pre-parsed</strong> array (baseline). NXS: decode from <code>.nxb</code> bytes — compare <code>record</code> vs zero-alloc <code>cursor</code> vs one-time <code>buildFieldIndex</code> (optional WASM build).</p>
-    <div class="chart" id="chart-random"></div>
-  </section>
-
-  <section class="card">
-    <h2>5. Random-access read — multiple fields from record k</h2>
-    <p class="desc">Four fields per random record. NXS <code>cursor.seekWarm(k)</code> builds the rank cache once per record instead of on the second field.</p>
-    <div class="chart" id="chart-random-multi"></div>
-  </section>
-
-  <section class="card">
-    <h2>6. Scattered access — strided indices</h2>
-    <p class="desc">~500 reads at evenly spaced record indices (simulates non-sequential UI paging).</p>
-    <div class="chart" id="chart-scattered"></div>
-  </section>
-
-  <section class="card">
-    <h2>7. Full scan — four fields per record</h2>
-    <p class="desc">Open + linear pass reading username, age, balance, active on every row.</p>
-    <div class="chart" id="chart-multi-scan"></div>
-  </section>
-
-  <section class="card">
-    <h2>8. Filter — count where score &gt; 80</h2>
-    <p class="desc">Predicate over all records: JSON loop vs NXS <code>where(gt("score", 80))</code>.</p>
-    <div class="chart" id="chart-filter"></div>
-  </section>
-
-  <section class="card">
-    <h2>9. Cold first field — bytes already in memory</h2>
-    <p class="desc">Parse/open then read one field at record <code>n/2</code> (no network; isolates decode cost).</p>
-    <div class="chart" id="chart-cold-mem"></div>
-  </section>
-
-  <section class="card">
-    <h2>10. Cold pipeline — fetch + parse + one field</h2>
-    <p class="desc">Same as §9 but models the full page-load path after <code>fetch()</code>.</p>
-    <div class="chart" id="chart-cold-fetch"></div>
-  </section>
-
-  <section class="card">
-    <h2>11. Aggregate — sum of 'score' (warm)</h2>
-    <p class="desc">Pre-parsed JSON loop, raw CSV column scan, NXS <code>sumF64</code> (WASM reducer when loaded).</p>
-    <div class="chart" id="chart-reduce"></div>
-  </section>
-
-  <section class="card">
-    <h2>12. Indexed sum vs column reducer</h2>
-    <p class="desc"><code>buildFieldIndex("score")</code> + loop vs built-in <code>sumF64</code> (and WASM index build).</p>
-    <div class="chart" id="chart-indexed-sum"></div>
-  </section>
-
-  <section class="card">
-    <h2>13. Cold pipeline — open + sum score</h2>
-    <p class="desc">No pre-parsed state: parse entire file then reduce (realistic analytics cold start).</p>
-    <div class="chart" id="chart-cold-reduce"></div>
-  </section>
-
-  <section class="card">
-    <h2>14. JSON raw scan vs parse + loop</h2>
+    <h2>7. JSON raw scan vs parse + loop</h2>
     <p class="desc">Substring scan for <code>"username":</code> lengths without <code>JSON.parse</code> vs full parse + loop vs NXS scan.</p>
     <div class="chart" id="chart-json-scan"></div>
   </section>
 
-  <section class="card">
-    <h2>15. Stream — time to first record</h2>
-    <p class="desc">Chunked <code>NxsStreamReader</code> vs <code>JSON.parse</code> until first row is usable.</p>
-    <div class="chart" id="chart-stream"></div>
+  <section class="card card--warm">
+    <h2>8. Iterate only — warm structures <span class="warm-tag">· JSON/CSV pre-parsed</span></h2>
+    <p class="desc">Data already parsed/opened; walk every record and read <code>username</code>. Steady-state traversal without open cost.</p>
+    <div class="chart" id="chart-iterate-warm"></div>
+  </section>
+
+  <section class="card card--warm">
+    <h2>9. Random-access read — one field from record k <span class="warm-tag">· JSON/CSV pre-parsed</span></h2>
+    <p class="desc">JSON/CSV: property access on a pre-parsed array. NXS: decode from row <code>.nxb</code> — <code>record</code> vs <code>cursor</code> vs <code>buildFieldIndex</code> (optional WASM build).</p>
+    <div class="chart" id="chart-random"></div>
+  </section>
+
+  <section class="card card--warm">
+    <h2>10. Random-access read — multiple fields from record k <span class="warm-tag">· JSON/CSV pre-parsed</span></h2>
+    <p class="desc">Four fields per random record. NXS <code>seekWarm(k)</code> amortises the rank cache when reading several fields on the same row.</p>
+    <div class="chart" id="chart-random-multi"></div>
+  </section>
+
+  <section class="card card--warm">
+    <h2>11. Scattered access — strided indices <span class="warm-tag">· JSON/CSV pre-parsed</span></h2>
+    <p class="desc">~500 reads at evenly spaced record indices (simulates non-sequential UI paging).</p>
+    <div class="chart" id="chart-scattered"></div>
+  </section>
+
+  <section class="card card--warm">
+    <h2>12. Full scan — four fields per record</h2>
+    <p class="desc">Open + linear pass reading username, age, balance, active on every row. NXS uses zero-alloc <code>cursor.scan</code> (not <code>seekWarm</code> per row).</p>
+    <div class="chart" id="chart-multi-scan"></div>
+  </section>
+
+  <section class="card card--warm">
+    <h2>13. Filter — count where score &gt; 80 <span class="warm-tag">· JSON/CSV pre-parsed</span></h2>
+    <p class="desc">Predicate over all records: JSON loop vs NXS <code>cursor.seek</code> + <code>getF64BySlot</code>. Row layout walks the bitmask per field — use columnar layout for filter-heavy analytics.</p>
+    <div class="chart" id="chart-filter"></div>
+  </section>
+
+  <section class="card card--warm">
+    <h2>14. Aggregate — sum of 'score' (warm) <span class="warm-tag">· JSON/CSV pre-parsed</span></h2>
+    <p class="desc">Pre-parsed JSON loop, raw CSV column scan, row <code>sumF64</code> (WASM when loaded), and columnar <code>colSumF64</code> when the columnar fixture is present.</p>
+    <div class="chart" id="chart-reduce"></div>
+  </section>
+
+  <section class="card card--warm">
+    <h2>15. Indexed sum vs column reducer <span class="warm-tag">· row vs columnar layout</span></h2>
+    <p class="desc">Row: <code>buildFieldIndex("score")</code> + loop vs <code>sumF64</code>. Columnar: dense <code>colSumF64</code> (SIMD path in native drivers).</p>
+    <div class="chart" id="chart-indexed-sum"></div>
   </section>
 
   <section class="card">
@@ -623,7 +647,7 @@ async function fetchBytesSafe(url) {
   }
 }
 
-function buildEntryFromBuffers(nxbBuf, jsonBytes, csvBytes, jsonMissingErr, csvMissingErr) {
+function buildEntryFromBuffers(nxbBuf, nxbColBuf, jsonBytes, csvBytes, jsonMissingErr, csvMissingErr) {
   const jsonDec = jsonBytes?.byteLength
     ? bytesToStringSafe(jsonBytes)
     : { err: jsonMissingErr ?? "not uploaded" };
@@ -632,6 +656,7 @@ function buildEntryFromBuffers(nxbBuf, jsonBytes, csvBytes, jsonMissingErr, csvM
     : { err: csvMissingErr ?? "not uploaded" };
   return {
     nxbBuf,
+    nxbColBuf: nxbColBuf?.byteLength ? nxbColBuf : null,
     jsonBytes,
     csvBytes,
     jsonStr: jsonDec.str,
@@ -645,19 +670,25 @@ async function loadFixtures(n) {
   if (fetchCache.has(n)) return fetchCache.get(n);
 
   setStatus(`Fetching ${n.toLocaleString()} records…`, "running");
-  const [nRes, jRes, cRes] = await Promise.all([
+  const [nRes, colRes, jRes, cRes] = await Promise.all([
     fetchBytesSafe(`./fixtures/records_${n}.nxb`),
+    fetchBytesSafe(`./fixtures/records_${n}_columnar.nxb`),
     fetchBytesSafe(`./fixtures/records_${n}.json`),
     fetchBytesSafe(`./fixtures/records_${n}.csv`),
   ]);
 
   if (nRes.err) throw new Error(`NXS fetch failed: ${nRes.err}`);
   const nxbBuf = nRes.bytes;
+  const nxbColBuf = colRes.err ? null : colRes.bytes;
+  if (colRes.err) {
+    console.warn(`Columnar fixture not loaded (${colRes.err}); §14–15 columnar bars omitted.`);
+  }
   const jsonBytes = jRes.bytes;
   const csvBytes = cRes.bytes;
 
   const entry = buildEntryFromBuffers(
     nxbBuf,
+    nxbColBuf,
     jsonBytes,
     csvBytes,
     jsonBytes ? undefined : `fetch: ${jRes.err}`,
@@ -670,11 +701,13 @@ async function loadFixtures(n) {
 async function applyUploadedFiles(fileList) {
   const files = [...fileList];
   let nxbFile = null;
+  let nxbColFile = null;
   let jsonFile = null;
   let csvFile = null;
   for (const f of files) {
     const low = f.name.toLowerCase();
-    if (low.endsWith(".nxb")) nxbFile = f;
+    if (low.endsWith(".nxb") && low.includes("columnar")) nxbColFile = f;
+    else if (low.endsWith(".nxb")) nxbFile = f;
     else if (low.endsWith(".json")) jsonFile = f;
     else if (low.endsWith(".csv")) csvFile = f;
   }
@@ -690,10 +723,14 @@ async function applyUploadedFiles(fileList) {
     setStatus(`Not a valid .nxb: ${e.message}`, "error");
     return;
   }
+  const nxbColBuf = nxbColFile
+    ? new Uint8Array(await nxbColFile.arrayBuffer())
+    : null;
   const jsonBytes = jsonFile ? new Uint8Array(await jsonFile.arrayBuffer()) : undefined;
   const csvBytes = csvFile ? new Uint8Array(await csvFile.arrayBuffer()) : undefined;
   const entry = buildEntryFromBuffers(
     nxbBuf,
+    nxbColBuf,
     jsonBytes,
     csvBytes,
     jsonFile ? undefined : "not uploaded",
@@ -701,6 +738,7 @@ async function applyUploadedFiles(fileList) {
   );
   uploadedSuite = { n, entry };
   const parts = [nxbFile.name];
+  if (nxbColFile) parts.push(nxbColFile.name);
   if (jsonFile) parts.push(jsonFile.name);
   if (csvFile) parts.push(csvFile.name);
   $("#upload-summary").textContent = `Using upload: ${parts.join(" + ")} — n=${n.toLocaleString()}`;
@@ -744,7 +782,7 @@ $("#run").addEventListener("click", async () => {
   try {
     const n = uploadedSuite ? uploadedSuite.n : selectedN;
     const {
-      nxbBuf, jsonBytes, csvBytes,
+      nxbBuf, nxbColBuf, jsonBytes, csvBytes,
       jsonStr, csvStr, jsonErr, csvErr,
     } = uploadedSuite ? uploadedSuite.entry : await loadFixtures(n);
 
@@ -752,11 +790,14 @@ $("#run").addEventListener("click", async () => {
     const jsonLen = jsonBytes?.length ?? 0;
     const csvLen = csvBytes?.length ?? 0;
     const nxbPct = jsonLen ? (nxbBuf.length / jsonLen * 100).toFixed(0) : "?";
+    const colLen = nxbColBuf?.length ?? 0;
+    const colPct = jsonLen && colLen ? (colLen / jsonLen * 100).toFixed(0) : "?";
     const csvPct = jsonLen ? (csvLen / jsonLen * 100).toFixed(0) : "?";
     const srcLabel = uploadedSuite ? "uploaded" : `records_${n}`;
     $("#sizes-info").innerHTML = `
       <span class="tag">${srcLabel}</span>
-      <span class="tag">.nxb ${fmtBytes(nxbBuf.length)} (${nxbPct}% of JSON)</span>
+      <span class="tag">.nxb row ${fmtBytes(nxbBuf.length)} (${nxbPct}% of JSON)</span>
+      <span class="tag">.nxb col ${colLen ? `${fmtBytes(colLen)} (${colPct}% of JSON)` : "missing"}</span>
       <span class="tag">.json ${jsonBytes ? fmtBytes(jsonLen) : jsonErr}</span>
       <span class="tag">.csv ${csvBytes ? fmtBytes(csvLen) : csvErr} ${csvBytes ? `(${csvPct}% of JSON)` : ""}</span>
     `;
@@ -769,6 +810,7 @@ $("#run").addEventListener("click", async () => {
     const recordCount = await runBenchmarks({
       $,
       nxbBuf,
+      nxbColBuf,
       jsonStr,
       csvStr,
       jsonFailText,

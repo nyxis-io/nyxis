@@ -15,7 +15,7 @@ import { performance } from "node:perf_hooks";
 
 const __benchDir = dirname(fileURLToPath(import.meta.url));
 const WASM_PATH = join(__benchDir, "wasm/nxs_reducers.wasm");
-import { NxsReader, gt } from "../../../nyxis-drivers/js/nxs.js";
+import { NxsReader } from "../../../nyxis-drivers/js/nxs.js";
 import { loadWasm } from "../../../nyxis-drivers/js/wasm.js";
 
 // Synchronous zero-copy helper for the benchmark harness.
@@ -356,17 +356,15 @@ async function runScale(fixtureDir, n, wasm) {
   });
   const nxsFourScan = bench(iterateIters, () => {
     const r = new NxsReader(nxbBuf);
-    const cur = r.cursor();
     let acc = 0;
-    for (let i = 0; i < r.recordCount; i++) {
-      cur.seekWarm(i);
+    r.scan(cur => {
       acc += cur.getStrBySlot(sUser).length + cur.getI64BySlot(sAge)
         + cur.getF64BySlot(sBal) + (cur.getBoolBySlot(sAct) ? 1 : 0);
-    }
+    });
     return acc;
   });
   row("JSON for-of 4-field",                  jsonFourScan,  jsonFourScan);
-  row("NXS open + seekWarm 4-field",           nxsFourScan,   jsonFourScan);
+  row("NXS open + cursor.scan 4-field",       nxsFourScan,   jsonFourScan);
   footer();
 
   // ── 2e. Filter count (score > 80) ───────────────────────────────────────
@@ -377,9 +375,18 @@ async function runScale(fixtureDir, n, wasm) {
     for (const r of parsedJson) if (r.score > scoreThreshold) c++;
     return c;
   });
-  const nxsFilter = bench(scanIters, () => reader.where(gt("score", scoreThreshold)).count());
+  const scoreSlot = reader.slot("score");
+  const filterCur = reader.cursor();
+  const nxsFilter = bench(scanIters, () => {
+    let c = 0;
+    for (let i = 0; i < reader.recordCount; i++) {
+      filterCur.seek(i);
+      if (filterCur.getF64BySlot(scoreSlot) > scoreThreshold) c++;
+    }
+    return c;
+  });
   row("JSON filter count",                    jsonFilter,  jsonFilter);
-  row("NXS where(gt score)",                  nxsFilter,   jsonFilter);
+  row("NXS cursor filter (row bitmask)",      nxsFilter,   jsonFilter);
   footer();
 
   // ── 2f. JSON raw scan vs parse ──────────────────────────────────────────
