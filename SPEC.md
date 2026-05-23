@@ -304,6 +304,16 @@ The Link sigil `&` stores a signed 32-bit Little-Endian integer. This value is a
 
 Circular links (a chain of `&` references that resolves back to its origin) **MUST** be detected and rejected by parsers. Parsers **SHOULD** limit link-chain depth to 16 hops.
 
+### 8.3 Compaction advisory locks
+
+Online repack or compaction of a sealed `.nxb` file (rewriting the data sector while preserving DictHash and tail-index semantics) **MUST** coordinate with concurrent readers and writers via a sidecar lock file.
+
+**Lock file convention.** For a file at pathname `P` ending in `.nxb`, the lock file **MUST** be `P` with the suffix `.lock` appended (e.g. `records.nxb` → `records.nxb.lock`). The lock file **MAY** be empty; its presence and an **exclusive** advisory lock held on it denote an active compaction or ingestion critical section.
+
+**Reader behavior.** A conformant reader that opens `P` for decode **MUST** detect `P.lock` (or failure to acquire a shared/non-blocking probe of the same advisory lock). While the lock is held by another process, the reader **MUST NOT** treat partially-written or in-rename bytes as valid NXB. The reader **MUST** either (a) wait with bounded backoff and retry, (b) return `ERR_COMPACTION_LOCK`, or (c) skip the file and surface an explicit warning — silent mis-read is forbidden.
+
+**Compactor guarantees.** A compaction implementation **MUST** hold an exclusive advisory lock on `P.lock` for the entire interval from first read of `P` through atomic replacement of `P`. Repacked bytes **MUST** be written to a distinct pathname (e.g. `P.compacting`) and committed by a single atomic rename onto `P`. The lock **MUST** be released only after the rename succeeds or the operation is aborted without changing `P`. Readers therefore never observe a partially-renamed `P` without the lock being held.
+
 ---
 
 ## 9. Security and Constraints
@@ -336,6 +346,7 @@ Circular links (a chain of `&` references that resolves back to its origin) **MU
 | `ERR_UNSUPPORTED_FIELD_TYPE` | Field type not supported in columnar/PAX initial release (see Normative Annex A §Q3 / OLAP.md §Q3) |
 | `ERR_INVALID_PAGE_MAGIC` | Expected `NXSP` at page boundary |
 | `ERR_PAGE_CRC_MISMATCH` | PAX page CRC32 does not match (only when `FLAG_PAGE_CRC` is set) |
+| `ERR_COMPACTION_LOCK` | `.nxb.lock` held or compaction in progress; reader refused to decode |
 
 ---
 
@@ -380,6 +391,11 @@ user {
 - Readers MUST resolve `TailPtr == 0` by reading `FooterTailPtr` from `EOF - 12`.
 - Schema and record bytes remain unchanged, allowing incremental parsers to emit records before the Tail-Index arrives.
 - No binary format changes from the pre-release draft.
+
+### v1.2.1 — 2026-05-22 (Compaction advisory locks)
+
+- §8.3 defines `{path}.nxb.lock` sidecar convention, reader obligations, and compactor rename guarantees.
+- Appendix A adds `ERR_COMPACTION_LOCK`.
 
 ### v1.2.0 — 2026-05-21 (Columnar & PAX)
 
