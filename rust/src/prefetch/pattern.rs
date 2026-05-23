@@ -2,7 +2,6 @@
 
 pub const SEQUENTIAL_THRESHOLD: u64 = 10;
 pub const RANDOM_THRESHOLD: u64 = 100;
-pub const HISTORY_SIZE: usize = 32;
 pub const MIN_OBSERVATIONS: usize = 8;
 pub const UPGRADE_SEQUENTIAL_THRESHOLD: u32 = 100;
 
@@ -28,9 +27,6 @@ impl AccessPattern {
 /// Observes `record(index)` / seek calls and classifies access patterns.
 #[derive(Debug, Clone)]
 pub struct AccessPatternDetector {
-    accesses: [i64; HISTORY_SIZE],
-    write_pos: usize,
-    filled: usize,
     sequential_runs: u32,
     random_jumps: u32,
     last_index: i64,
@@ -45,9 +41,6 @@ impl Default for AccessPatternDetector {
 impl AccessPatternDetector {
     pub fn new() -> Self {
         Self {
-            accesses: [-1; HISTORY_SIZE],
-            write_pos: 0,
-            filled: 0,
             sequential_runs: 0,
             random_jumps: 0,
             last_index: -1,
@@ -71,11 +64,6 @@ impl AccessPatternDetector {
             } else if delta > RANDOM_THRESHOLD {
                 self.random_jumps = self.random_jumps.saturating_add(1);
             }
-        }
-        self.accesses[self.write_pos] = idx;
-        self.write_pos = (self.write_pos + 1) % HISTORY_SIZE;
-        if self.filled < HISTORY_SIZE {
-            self.filled += 1;
         }
         self.last_index = idx;
     }

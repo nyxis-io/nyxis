@@ -434,11 +434,11 @@ impl PrefetchEngine {
             let last_page = (end.saturating_sub(1)) / page_size;
             let indices: Vec<u32> = (first_page..=last_page).map(|p| p as u32).collect();
             let ranges = clamp_ranges(coalesce_page_indices(&indices, gap, page_size), data.len());
-            fetches.fetch_add(1, Ordering::Relaxed);
             for range in ranges {
                 if cancelled.load(Ordering::Acquire) {
                     return;
                 }
+                fetches.fetch_add(1, Ordering::Relaxed);
                 for p in range.page_start..=range.page_end {
                     in_flight.lock().expect("in_flight").insert(p);
                 }
