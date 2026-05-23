@@ -188,10 +188,7 @@ fn main() {
         println!("Generating n={n}...");
         let records = build(n);
         write_nxb(&records, &out_dir.join(format!("records_{n}.nxb")));
-        write_nxb_columnar(
-            &records,
-            &out_dir.join(format!("records_{n}_columnar.nxb")),
-        );
+        write_nxb_columnar(&records, &out_dir.join(format!("records_{n}_columnar.nxb")));
         write_json(&records, &out_dir.join(format!("records_{n}.json")));
         write_csv(&records, &out_dir.join(format!("records_{n}.csv")));
     }

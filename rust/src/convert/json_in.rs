@@ -211,7 +211,7 @@ pub fn import_file(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::convert::{CommonOpts, ImportArgs, ImportFormat};
+    use crate::convert::{ImportArgs, ImportFormat};
     use crate::decoder;
 
     fn default_import_args() -> ImportArgs {

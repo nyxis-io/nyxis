@@ -40,6 +40,7 @@ pub mod layout;
 pub mod lexer;
 pub mod parser;
 pub mod pax_stream;
+pub mod prefetch;
 pub mod query;
 pub mod segment_reader;
 pub mod stream_reader;

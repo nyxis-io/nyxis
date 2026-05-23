@@ -329,12 +329,12 @@ fn encode_var_column(n: usize, col: &[&Cell]) -> Result<Vec<u8>> {
     let mut offsets: Vec<u32> = Vec::with_capacity(n + 1);
     let mut values: Vec<u8> = Vec::new();
     offsets.push(0);
-    for i in 0..n {
-        if !present(i) {
+    for cell in col.iter().take(n) {
+        if !cell_populated(cell) {
             offsets.push(*offsets.last().unwrap_or(&0));
             continue;
         }
-        match col[i] {
+        match cell {
             Cell::Str(s) => values.extend_from_slice(s.as_bytes()),
             Cell::Binary(b) => values.extend_from_slice(b),
             _ => {}
@@ -423,12 +423,12 @@ pub fn finish_columnar(keys: &[String], rows: &[RecordRow]) -> Result<Vec<u8>> {
 
     let mut data = Vec::new();
     let mut tail_entries: Vec<(u16, u64, u64)> = Vec::new();
-    for fi in 0..keys.len() {
+    for (fi, sigil) in sigils.iter().enumerate() {
         let col: Vec<&Cell> = rows
             .iter()
             .map(|r| r.cells.get(fi).unwrap_or(&Cell::Absent))
             .collect();
-        let field_buf = encode_field_column(n, &col, sigils[fi])?;
+        let field_buf = encode_field_column(n, &col, *sigil)?;
         let offset = 32 + schema_bytes.len() as u64 + data.len() as u64;
         let length = field_buf.len() as u64;
         tail_entries.push((fi as u16, offset, length));
@@ -768,58 +768,5 @@ mod tests {
     #[test]
     fn invalid_flags_rejected() {
         assert!(validate_preamble_flags(FLAG_COLUMNAR | FLAG_PAX).is_err());
-    }
-
-    #[test]
-    fn columnar_strings_roundtrip() {
-        let keys = vec!["id".into(), "name".into(), "score".into()];
-        let mut rows = Vec::new();
-        for i in 0..100usize {
-            rows.push(RecordRow {
-                cells: vec![
-                    Cell::I64(i as i64),
-                    Cell::Str(format!("user_{i}")),
-                    Cell::F64(i as f64 * 1.25),
-                ],
-            });
-        }
-        let bytes = finish_columnar(&keys, &rows).unwrap();
-        let r = crate::query::Reader::new(&bytes).unwrap();
-        assert_eq!(r.record_count(), 100);
-        for i in 0..100 {
-            let rec = r.record(i).unwrap();
-            assert_eq!(rec.get_i64("id"), Some(i as i64));
-            let want = format!("user_{i}");
-            assert_eq!(rec.get_str("name"), Some(want.as_str()));
-            assert!((rec.get_f64("score").unwrap() - i as f64 * 1.25).abs() < 1e-9);
-        }
-        let (bm, offsets, values) = r.col_field_var_parts(1).unwrap();
-        assert_eq!(bm.len(), null_bitmap_bytes(100));
-        assert_eq!(offsets.len(), 101 * 4);
-        assert!(!values.is_empty());
-        assert_eq!(var_str_at(offsets, values, 42), Some("user_42"));
-    }
-
-    #[test]
-    fn pax_strings_roundtrip_across_pages() {
-        let keys = vec!["id".into(), "name".into(), "score".into()];
-        let rows: Vec<RecordRow> = (0..300usize)
-            .map(|i| RecordRow {
-                cells: vec![
-                    Cell::I64(i as i64),
-                    Cell::Str(format!("user_{i}")),
-                    Cell::F64(i as f64),
-                ],
-            })
-            .collect();
-        let bytes = finish_pax(&keys, &rows, 128).unwrap();
-        let r = crate::query::Reader::new(&bytes).unwrap();
-        assert_eq!(r.record_count(), 300);
-        for i in [0usize, 127, 128, 257, 299] {
-            let rec = r.record(i).unwrap();
-            let want = format!("user_{i}");
-            assert_eq!(rec.get_str("name"), Some(want.as_str()));
-            assert_eq!(rec.get_i64("id"), Some(i as i64));
-        }
     }
 }

@@ -17,6 +17,9 @@ use crate::error::{NxsError, Result};
 use crate::layout::{
     col_var_parts, column_sector_len, is_var_sigil, null_bitmap_bytes, var_str_at,
 };
+use crate::prefetch::PrefetchEngine;
+
+pub use crate::prefetch::{AccessHint, CacheStats, OpenOptions};
 
 // ── Format constants ──────────────────────────────────────────────────────────
 use crate::consts::{
@@ -51,6 +54,9 @@ fn col_bit(bm: &[u8], rec: usize) -> bool {
 // ── Reader ────────────────────────────────────────────────────────────────────
 
 /// Zero-copy reader for a `.nxb` buffer; supports row, columnar, and PAX layouts.
+///
+/// When opened with [`Self::with_options`], prefetch state is protected by internal
+/// mutexes so the reader remains [`Send`] + [`Sync`].
 pub struct Reader<'a> {
     data: &'a [u8],
     keys: Vec<String>,
@@ -61,6 +67,7 @@ pub struct Reader<'a> {
     layout: Layout,
     col_buf_off: Vec<u64>,
     col_buf_len: Vec<u64>,
+    prefetch: Option<PrefetchEngine>,
 }
 
 impl<'a> Reader<'a> {
@@ -195,7 +202,68 @@ impl<'a> Reader<'a> {
             layout,
             col_buf_off,
             col_buf_len,
+            prefetch: None,
         })
+    }
+
+    /// Open with prefetch options (row-layout viewport cache; phase 1).
+    pub fn with_options(data: &'a [u8], options: OpenOptions) -> Result<Self> {
+        options.validate()?;
+        let mut reader = Self::new(data)?;
+        if reader.layout == Layout::Row {
+            reader.prefetch = Some(PrefetchEngine::new(options));
+        }
+        Ok(reader)
+    }
+
+    /// Prefetch pages covering records `[start_index, end_index]` (row layout only).
+    pub fn prefetch_viewport(&self, start_index: usize, end_index: usize) -> Result<()> {
+        if self.layout != Layout::Row {
+            return Ok(());
+        }
+        if let Some(prefetch) = &self.prefetch {
+            prefetch.prefetch_viewport(
+                self.data,
+                self.tail_start,
+                self.record_count,
+                start_index,
+                end_index,
+            );
+        }
+        Ok(())
+    }
+
+    /// Page cache statistics (zeros when prefetch was not enabled at open).
+    pub fn cache_stats(&self) -> CacheStats {
+        if let Some(prefetch) = &self.prefetch {
+            prefetch.cache_stats()
+        } else {
+            CacheStats {
+                pages_cached: 0,
+                pages_max: 0,
+                memory_used_bytes: 0,
+                cache_hits: 0,
+                cache_misses: 0,
+                fetches_issued: 0,
+                strategy: "disabled".to_string(),
+                pattern: "unknown".to_string(),
+            }
+        }
+    }
+
+    fn touch_record_page(&self, index: usize) {
+        if self.layout != Layout::Row {
+            return;
+        }
+        let Some(prefetch) = &self.prefetch else {
+            return;
+        };
+        let Some(off) = crate::prefetch::row_record_offset(self.data, self.tail_start, index)
+        else {
+            return;
+        };
+        let page_size = prefetch.options().page_size;
+        prefetch.touch_page((off / page_size) as u32);
     }
 
     /// Row, columnar, or PAX layout.
@@ -519,6 +587,7 @@ impl<'a> Reader<'a> {
         if i >= self.record_count {
             return None;
         }
+        self.touch_record_page(i);
         let offset = if self.layout == Layout::Row {
             let entry = self.tail_start + i * 10;
             u64::from_le_bytes(self.data.get(entry + 2..entry + 10)?.try_into().ok()?) as usize
@@ -1479,5 +1548,62 @@ mod tests {
         assert!((sum - want).abs() < 1e-9, "sum {sum} want {want}");
         let buf = r.col_buffer("score").unwrap();
         assert_eq!(buf.len(), 100 * 8);
+    }
+
+    #[test]
+    fn columnar_strings_roundtrip() {
+        use crate::layout::{finish_columnar, null_bitmap_bytes, var_str_at, Cell, RecordRow};
+
+        let keys = vec!["id".into(), "name".into(), "score".into()];
+        let mut rows = Vec::new();
+        for i in 0..100usize {
+            rows.push(RecordRow {
+                cells: vec![
+                    Cell::I64(i as i64),
+                    Cell::Str(format!("user_{i}")),
+                    Cell::F64(i as f64 * 1.25),
+                ],
+            });
+        }
+        let bytes = finish_columnar(&keys, &rows).unwrap();
+        let r = Reader::new(&bytes).unwrap();
+        assert_eq!(r.record_count(), 100);
+        for i in 0..100 {
+            let rec = r.record(i).unwrap();
+            assert_eq!(rec.get_i64("id"), Some(i as i64));
+            let want = format!("user_{i}");
+            assert_eq!(rec.get_str("name"), Some(want.as_str()));
+            assert!((rec.get_f64("score").unwrap() - i as f64 * 1.25).abs() < 1e-9);
+        }
+        let (bm, offsets, values) = r.col_field_var_parts(1).unwrap();
+        assert_eq!(bm.len(), null_bitmap_bytes(100));
+        assert_eq!(offsets.len(), 101 * 4);
+        assert!(!values.is_empty());
+        assert_eq!(var_str_at(offsets, values, 42), Some("user_42"));
+    }
+
+    #[test]
+    fn pax_strings_roundtrip_across_pages() {
+        use crate::layout::{finish_pax, Cell, RecordRow};
+
+        let keys = vec!["id".into(), "name".into(), "score".into()];
+        let rows: Vec<RecordRow> = (0..300usize)
+            .map(|i| RecordRow {
+                cells: vec![
+                    Cell::I64(i as i64),
+                    Cell::Str(format!("user_{i}")),
+                    Cell::F64(i as f64),
+                ],
+            })
+            .collect();
+        let bytes = finish_pax(&keys, &rows, 128).unwrap();
+        let r = Reader::new(&bytes).unwrap();
+        assert_eq!(r.record_count(), 300);
+        for i in [0usize, 127, 128, 257, 299] {
+            let rec = r.record(i).unwrap();
+            let want = format!("user_{i}");
+            assert_eq!(rec.get_str("name"), Some(want.as_str()));
+            assert_eq!(rec.get_i64("id"), Some(i as i64));
+        }
     }
 }

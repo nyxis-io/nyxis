@@ -132,7 +132,7 @@ fn decoded_value_to_json(val: DecodedValue, binary_mode: BinaryEncoding) -> serd
 mod tests {
     use super::*;
     use crate::convert::json_in;
-    use crate::convert::{BinaryEncoding, CommonOpts, ExportArgs, ExportFormat};
+    use crate::convert::{BinaryEncoding, ExportArgs, ExportFormat};
     use crate::convert::{ConflictPolicy, ImportArgs, ImportFormat};
     use crate::decoder;
 
