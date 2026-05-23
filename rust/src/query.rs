@@ -17,6 +17,9 @@ use crate::error::{NxsError, Result};
 use crate::layout::{
     col_var_parts, column_sector_len, is_var_sigil, null_bitmap_bytes, var_str_at,
 };
+use crate::prefetch::{PrefetchEngine, DEFAULT_MAX_PAGES};
+
+pub use crate::prefetch::{AccessHint, CacheStats, OpenOptions};
 
 // ── Format constants ──────────────────────────────────────────────────────────
 use crate::consts::{
@@ -61,6 +64,7 @@ pub struct Reader<'a> {
     layout: Layout,
     col_buf_off: Vec<u64>,
     col_buf_len: Vec<u64>,
+    prefetch: Option<PrefetchEngine>,
 }
 
 impl<'a> Reader<'a> {
@@ -195,7 +199,66 @@ impl<'a> Reader<'a> {
             layout,
             col_buf_off,
             col_buf_len,
+            prefetch: None,
         })
+    }
+
+    /// Open with prefetch options (row-layout viewport cache; phase 1).
+    pub fn with_options(data: &'a [u8], options: OpenOptions) -> Result<Self> {
+        let mut reader = Self::new(data)?;
+        if reader.layout == Layout::Row {
+            reader.prefetch = Some(PrefetchEngine::new(options));
+        }
+        Ok(reader)
+    }
+
+    /// Prefetch pages covering records `[start_index, end_index]` (row layout only).
+    pub fn prefetch_viewport(&self, start_index: usize, end_index: usize) -> Result<()> {
+        if self.layout != Layout::Row {
+            return Ok(());
+        }
+        if let Some(prefetch) = &self.prefetch {
+            prefetch.prefetch_viewport(
+                self.data,
+                self.tail_start,
+                self.record_count,
+                start_index,
+                end_index,
+            );
+        }
+        Ok(())
+    }
+
+    /// Page cache statistics (zeros when prefetch was not enabled at open).
+    pub fn cache_stats(&self) -> CacheStats {
+        if let Some(prefetch) = &self.prefetch {
+            prefetch.cache_stats()
+        } else {
+            CacheStats {
+                pages_cached: 0,
+                pages_max: DEFAULT_MAX_PAGES,
+                memory_used_bytes: 0,
+                cache_hits: 0,
+                cache_misses: 0,
+                fetches_issued: 0,
+                strategy: "lazy".to_string(),
+                pattern: "unknown".to_string(),
+            }
+        }
+    }
+
+    fn touch_record_page(&self, index: usize) {
+        if self.layout != Layout::Row {
+            return;
+        }
+        let Some(prefetch) = &self.prefetch else {
+            return;
+        };
+        let Some(off) = crate::prefetch::row_record_offset(self.data, self.tail_start, index) else {
+            return;
+        };
+        let page_size = prefetch.options().page_size;
+        prefetch.touch_page((off / page_size) as u32);
     }
 
     /// Row, columnar, or PAX layout.
@@ -519,6 +582,7 @@ impl<'a> Reader<'a> {
         if i >= self.record_count {
             return None;
         }
+        self.touch_record_page(i);
         let offset = if self.layout == Layout::Row {
             let entry = self.tail_start + i * 10;
             u64::from_le_bytes(self.data.get(entry + 2..entry + 10)?.try_into().ok()?) as usize
