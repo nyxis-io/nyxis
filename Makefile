@@ -318,7 +318,7 @@ conformance-run-php:
 	php conformance/run_php.php conformance/
 
 conformance-run-c:
-	cc -std=c99 -O2 -I$(DRV)/c $(DRV)/c/nxs.c conformance/run_c.c -o /tmp/run_c_conf -lm -Wno-format-truncation -Wno-unused-result && /tmp/run_c_conf conformance/
+	cc -std=c99 -O2 -I$(DRV)/c $(DRV)/c/nxs.c $(DRV)/c/nxs_prefetch.c conformance/run_c.c -o /tmp/run_c_conf -lm -Wno-format-truncation -Wno-unused-result && /tmp/run_c_conf conformance/
 
 conformance-run-swift:
 	cd $(DRV)/swift && swift run nxs-conformance $(CONF)/
