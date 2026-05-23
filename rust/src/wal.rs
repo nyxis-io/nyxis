@@ -239,7 +239,7 @@ impl SpanWal {
         let mut header = [0u8; 8];
         file.read_exact(&mut header)
             .map_err(|e| NxsError::IoError(e.to_string()))?;
-        let magic = u32::from_le_bytes(header[0..4].try_into().unwrap());
+        let magic = u32::from_le_bytes(header[0..4].try_into().map_err(|_| NxsError::OutOfBounds)?);
         if magic != MAGIC_WAL {
             return Err(NxsError::BadMagic);
         }
@@ -266,11 +266,19 @@ impl SpanWal {
             let mut rec_header = [0u8; 8];
             file.read_exact(&mut rec_header)
                 .map_err(|e| NxsError::IoError(e.to_string()))?;
-            let obj_magic = u32::from_le_bytes(rec_header[0..4].try_into().unwrap());
+            let obj_magic = u32::from_le_bytes(
+                rec_header[0..4]
+                    .try_into()
+                    .map_err(|_| NxsError::OutOfBounds)?,
+            );
             if obj_magic != MAGIC_OBJ {
                 break; // truncated or corrupt tail — stop here
             }
-            let obj_len = u32::from_le_bytes(rec_header[4..8].try_into().unwrap()) as u64;
+            let obj_len = u32::from_le_bytes(
+                rec_header[4..8]
+                    .try_into()
+                    .map_err(|_| NxsError::OutOfBounds)?,
+            ) as u64;
 
             // Read the full object to extract trace_id / span_id from bitmask + offsets
             if !(8..=MAX_RECORD_BYTES).contains(&obj_len) || pos + obj_len > file_len {

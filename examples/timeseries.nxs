@@ -2,7 +2,7 @@
 sensor_data {
     device_id: "sensor-7f3a"
     location: "server-room-b2"
-    unit: $celsius
+    unit: "celsius"
     readings {
         point { ts: @2026-04-30, value: ~21.4, ok: ?true }
         point { ts: @2026-04-30, value: ~21.6, ok: ?true }

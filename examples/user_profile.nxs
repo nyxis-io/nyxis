@@ -6,11 +6,11 @@ user {
     age: =31
     balance: ~2874.99
     active: ?true
-    role: $admin
+    role: "admin"
     bio: "Software engineer and open-source contributor."
     created_at: @2022-03-15
     last_login: @2026-04-29
-    tags: [$admin, $beta, $verified]
+    tags: ["admin", "beta", "verified"]
     address {
         street: "123 Maple St"
         city: "Springfield"
@@ -18,7 +18,7 @@ user {
         country: "US"
     }
     preferences {
-        theme: $dark
+        theme: "dark"
         notifications: ?true
         language: "en-US"
         items_per_page: =25

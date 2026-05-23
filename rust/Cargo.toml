@@ -84,6 +84,7 @@ csv = "1"
 quick-xml = { version = "0.36", features = ["encoding"] }
 base64 = "0.22"
 tempfile = "3"
+memmap2 = "0.9"
 serde_yaml2 = "0.1"
 tonic = "0.12"
 prost = "0.13"

@@ -307,6 +307,44 @@ fn parse_temporal(s: &str) -> Result<i64> {
             .map(Some)
             .map(|v| v.unwrap());
     }
+    // Support YYYY-MM-DDTHH:MM:SS[.fraction] without timezone.
+    if s.len() >= 19 && s.as_bytes().get(4) == Some(&b'-') && s.as_bytes().get(10) == Some(&b'T') {
+        let date_ns = parse_temporal(&s[..10])?;
+        let hour: i64 = s[11..13]
+            .parse()
+            .map_err(|_| NxsError::ParseError(format!("bad temporal: {s}")))?;
+        let minute: i64 = s[14..16]
+            .parse()
+            .map_err(|_| NxsError::ParseError(format!("bad temporal: {s}")))?;
+        let second: i64 = s[17..19]
+            .parse()
+            .map_err(|_| NxsError::ParseError(format!("bad temporal: {s}")))?;
+        if hour > 23 || minute > 59 || second > 59 {
+            return Err(NxsError::ParseError(format!("bad temporal: {s}")));
+        }
+        let frac_ns = if let Some(frac) = s.get(19..).and_then(|rest| rest.strip_prefix('.')) {
+            if frac.is_empty() || frac.len() > 9 || !frac.bytes().all(|b| b.is_ascii_digit()) {
+                return Err(NxsError::ParseError(format!("bad temporal: {s}")));
+            }
+            let mut padded = frac.to_string();
+            while padded.len() < 9 {
+                padded.push('0');
+            }
+            padded
+                .parse::<i64>()
+                .map_err(|_| NxsError::ParseError(format!("bad temporal: {s}")))?
+        } else if s.len() == 19 {
+            0
+        } else {
+            return Err(NxsError::ParseError(format!("bad temporal: {s}")));
+        };
+        return date_ns
+            .checked_add(hour * 3_600_000_000_000)
+            .and_then(|v| v.checked_add(minute * 60_000_000_000))
+            .and_then(|v| v.checked_add(second * 1_000_000_000))
+            .and_then(|v| v.checked_add(frac_ns))
+            .ok_or_else(|| NxsError::ParseError(format!("temporal overflow: {s}")));
+    }
     // Support raw nanosecond integer
     s.parse::<i64>()
         .map_err(|_| NxsError::ParseError(format!("bad temporal: {s}")))

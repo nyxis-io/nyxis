@@ -293,6 +293,11 @@ conformance-run-py:
 conformance-run-go:
 	cd $(DRV)/go && go run $(CONF)/run_go.go $(CONF)/
 
+# Go writer produces minimal.nxb-compatible bytes; Rust test reads via NXS_GO_PRODUCER_OUT.
+conformance-go-producer:
+	cd $(DRV)/go && go test -run '^TestGoProducerMatchesRustConformance$$' -count=1 .
+	cd rust && cargo test --test go_producer_roundtrip -- --nocapture
+
 conformance-run-ruby:
 	ruby conformance/run_ruby.rb conformance/
 

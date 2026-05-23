@@ -45,7 +45,7 @@ USE WHEN: Called by every language workflow (except rust.yml) to produce shared 
 
 # go.yml
 
-DOES: Runs `go test ./...` for the Go NXS reader with Go 1.23 against downloaded fixtures on push or PR to `go/`.
+DOES: Runs `go test ./...` for the Go NXS reader with Go 1.26 against downloaded fixtures on push or PR to `go/`.
 SYMBOLS:
 - fixtures (reusable call)
 - test (setup-go@v5, go test ./...)

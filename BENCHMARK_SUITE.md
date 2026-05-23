@@ -4,6 +4,8 @@
 **Purpose:** Define the work required to deliver verified head-to-head benchmarks against Protobuf, FlatBuffers, and Cap'n Proto, fulfilling the commitment made in the use-cases page Act II.
 **Non-goal:** Producing a marketing matrix. The matrix is downstream of this work, not part of it.
 
+**Python environment:** Cross-format generators use `bench/.venv-bench`. Create it with `bash bench/scripts/setup_venv.sh` — see [`bench/README.md`](bench/README.md).
+
 ---
 
 ## 1. Guiding principles
