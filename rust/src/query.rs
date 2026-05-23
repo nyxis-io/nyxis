@@ -1205,14 +1205,14 @@ pub(crate) fn parse_schema(data: &[u8], offset: usize) -> Result<(Vec<String>, V
 /// Stateless LEB128 bitmask walker — returns the absolute byte offset of
 /// the value at `slot` within the NYXO object at `obj_offset`, or `None`.
 pub(crate) fn resolve_slot(data: &[u8], obj_offset: usize, slot: usize) -> Option<usize> {
-    let mut p = obj_offset + 8; // skip NYXO magic (4) + length (4)
+    let mut p = obj_offset.checked_add(8)?; // skip NYXO magic (4) + length (4)
     let mut cur: usize = 0;
     let mut table_idx: usize = 0;
     let mut found = false;
     let mut b: u8;
     loop {
         b = *data.get(p)?;
-        p += 1;
+        p = p.checked_add(1)?;
         let bits = b & 0x7F;
         for bit in 0..7usize {
             if cur == slot {
@@ -1221,9 +1221,9 @@ pub(crate) fn resolve_slot(data: &[u8], obj_offset: usize, slot: usize) -> Optio
                 }
                 found = true;
             } else if cur < slot && (bits >> bit) & 1 == 1 {
-                table_idx += 1;
+                table_idx = table_idx.checked_add(1)?;
             }
-            cur += 1;
+            cur = cur.checked_add(1)?;
         }
         if found && b & 0x80 == 0 {
             break;
@@ -1238,14 +1238,13 @@ pub(crate) fn resolve_slot(data: &[u8], obj_offset: usize, slot: usize) -> Optio
     // skip remaining continuation bytes
     while b & 0x80 != 0 {
         b = *data.get(p)?;
-        p += 1;
+        p = p.checked_add(1)?;
     }
-    let rel = u16::from_le_bytes(
-        data.get(p + table_idx * 2..p + table_idx * 2 + 2)?
-            .try_into()
-            .ok()?,
-    ) as usize;
-    Some(obj_offset + rel)
+    let table_off = table_idx.checked_mul(2)?;
+    let table_start = p.checked_add(table_off)?;
+    let table_end = table_start.checked_add(2)?;
+    let rel = u16::from_le_bytes(data.get(table_start..table_end)?.try_into().ok()?) as usize;
+    obj_offset.checked_add(rel)
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
