@@ -724,9 +724,11 @@ _PAX TTFR scales with `page_size`, not total records. At `page_size=256` and 26k
 | pax | 10 | 9,315 | 9,327 | 32.5 MB |
 
 **OLAP gate (1M records):**
-- PAX col scan **9.3 ms** vs row **10.7 ms** — PAX beats row ✅
-- PAX random access **10 µs** vs row **11 µs** — within 2× ✅
-- Columnar col scan **103 µs** — fastest for dense numeric scan
+- PAX col scan vs row — **platform-dependent:**
+  - macOS Apple Silicon: PAX **9.3 ms** vs row **10.7 ms** ✅ (PAX wins at default page_size=4096)
+  - AWS EPYC 9R14: PAX **27.4 ms** vs row **22.4 ms** ⚠️ at page_size=4096; PAX **21.5 ms** vs row **22.9 ms** ✅ at page_size ≥ 32,768
+- PAX random access within 2× of row on both platforms ✅
+- Columnar col scan **103–114 µs** — fastest for dense numeric scan on both platforms ✅
 
 **10k smoke (dev sanity)**
 
@@ -738,9 +740,40 @@ _PAX TTFR scales with `page_size`, not total records. At `page_size=256` and 26k
 
 _At 10k records all layouts are cache-resident; columnar and PAX file size advantage (0.33 MB vs 0.66 MB row) is the primary differentiator at small scale._
 
+**1M records — AWS EPYC 9R14, P50 (µs)**
+
+| Layout | random access | col scan | mixed total | file size |
+| --- | --- | --- | --- | --- |
+| row | 24 | 22,359 | 22,386 | 66.0 MB |
+| columnar | 2 | **114** | 117 | 32.5 MB |
+| pax (page_size=4096) | 15 | 27,416 | 27,432 | 32.5 MB |
+
+_PAX col scan is slower than row at default page_size=4096 on x86 DRAM. At 1M records with 4096-record pages, ~244 cross-page seeks cause cache misses that exceed the within-page columnar locality benefit. Columnar wins pure column scans at every page size (~114 µs, ~200× faster than row or PAX). On Apple Silicon unified memory PAX beats row at default page_size (9,315 µs vs 10,671 µs) due to lower seek overhead._
+
+**PAX page_size sweep — EPYC 9R14, 1M records (col_scan P50)**
+
+| page_size | PAX scan | Row scan | Columnar scan | PAX vs row |
+| --- | --- | --- | --- | --- |
+| 4,096 | 27,416 µs | 22,254 µs | 114 µs | 1.23× slower |
+| 8,192 | 25,361 µs | 22,281 µs | 114 µs | 1.14× slower |
+| 16,384 | 23,367 µs | 22,236 µs | 113 µs | 1.05× slower |
+| **32,768** | **21,496 µs** | 22,850 µs | 114 µs | **0.94× (PAX wins)** |
+| 65,536 | 19,635 µs | 22,243 µs | 114 µs | 0.88× |
+| 131,072 | 17,938 µs | 22,798 µs | 114 µs | 0.79× |
+| 262,144 | 16,674 µs | 22,357 µs | 114 µs | 0.75× |
+| 500,000 | 15,711 µs | 22,324 µs | 114 µs | 0.70× |
+| 1,000,000 | 14,779 µs | 22,317 µs | 114 µs | 0.66× |
+
+_Crossover: PAX beats row-oriented col scan at page_size ≥ ~32,768 records on x86 DRAM. Default page_size=4096 is optimized for Apple Silicon and browser workloads. For x86 server analytical workloads at large scale, set page_size ≥ 32,768. Use columnar layout for pure column scans — it wins at every page size by 130–240×._
+
 ```bash
 cd nyxis && make -C bench run-e-mixed BENCH_E_RECORDS=1000000
 make -C bench run-e-mixed BENCH_E_RECORDS=10000   # quick smoke
+
+# Reproduce page_size sweep (after Makefile fix)
+for ps in 4096 32768 65536 131072; do
+  ./rust/target/release/bench_pax_mixed 1000000 100 $ps
+done
 ```
 
 ---
@@ -786,6 +819,9 @@ make -C bench run-e-mixed BENCH_E_RECORDS=10000   # quick smoke
 | D | TTFR P50 | 142–174 µs (poll) | 34–37 µs (inotify) | **7 µs (inotify)** |
 | D | Throughput | ~24k rec/s (poll) | ~460k rec/s | **636k rec/s** |
 | D | Seal P50 | 4 ms (F_FULLFSYNC) | 120 µs (fdatasync) | **49 µs (fdatasync)** |
+| E | PAX col scan (1M, page=4096) | PAX beats row ✅ | — | PAX loses to row ⚠️ |
+| E | PAX col scan (1M, page≥32768) | — | — | PAX beats row ✅ |
+| E | Columnar col scan (1M) | **103 µs ✅** | — | **114 µs ✅** |
 
 ---
 
@@ -802,13 +838,16 @@ make -C bench run-e-mixed BENCH_E_RECORDS=10000   # quick smoke
 - NXS columnar open is >80× faster than Arrow IPC open across all platforms
 - NXS row dense scan is 112× slower than Arrow — use `columnar` layout or the Arrow bridge
 - NXS is the only format here with native file-level streaming **and** post-seal O(1) random access in the same file
-- PAX OLAP gate passes at 1M records (col scan beats row; random access within 2× of row)
+- PAX OLAP gate passes at 1M records on Apple Silicon (default page_size=4096) and on EPYC 9R14 at page_size ≥ 32,768
+- PAX random access within 2× of row on both platforms at all page sizes tested
+- Columnar col scan fastest at all page sizes on both platforms (114 µs EPYC, 103 µs Apple Silicon)
 
 **Not supported:**
 
 - NXS file size wins at low population rates (FlatBuffers leads at 10–25%)
 - NXS cold open vs Cap'n Proto / FlatBuffers at small files (Cap'n Proto 1.5–5.9 µs vs NXS warm-cache sub-µs — cold-open comparison requires a large-file test)
 - NXS columnar scan gate on Intel Haswell (AVX2-only hardware ceiling, ~6× Arrow at 1M) — expected, not a software gap
+- PAX col scan beating row at default page_size=4096 on x86 DRAM — requires page_size ≥ 32,768 on EPYC 9R14
 - Any NXS vs Protobuf claim on access/scan/selective without the post-parse footnote
 
 **Resolved questions:**
