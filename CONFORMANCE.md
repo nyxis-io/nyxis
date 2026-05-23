@@ -181,6 +181,6 @@ Commit regenerated `.nxb` binaries with the spec change so driver CI consumes a 
 
 ## 6. Related docs
 
-- [GOVERNANCE.md](GOVERNANCE.md) — repo split and licensing
+- [COMMERCIAL.md](COMMERCIAL.md) — repo split and licensing
 - [nyxis/conformance/README.md](nyxis/conformance/README.md) — JSON schemas and vector table
 - [nyxis/COMMERCIAL.md](nyxis/COMMERCIAL.md) — production licensing thresholds

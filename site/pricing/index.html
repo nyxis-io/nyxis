@@ -54,7 +54,7 @@
       </p>
       <h3 class="pricing-tier__includes-title">Included</h3>
       <ul class="pricing-tier__includes">
-        <li>100% free production use when gross annual revenue is <strong>under $1M USD</strong> <em>and</em> processed data is <strong>under 100&nbsp;GB/month</strong>.</li>
+        <li>100% free production use when gross annual revenue is <strong>under $5M USD</strong> <em>and</em> processed data is <strong>under 10&nbsp;TB/month</strong>.</li>
         <li>Core Rust compiler and CLI workspace.</li>
         <li>All 10+ permissive MIT-licensed language client drivers (C, Go, Python, TypeScript, and others).</li>
         <li>Deterministic BSL&nbsp;1.1 license expiration — converts fully to MIT on <strong>2029-05-20</strong>.</li>
@@ -104,6 +104,9 @@
       <ul class="pricing-tier__includes">
         <li>Everything in Startup / Growth.</li>
         <li><strong>Nyxis In-Memory Compactor Daemon</strong> (<code>nxs-compactd</code>) for background sector defragmentation and online <code>.nxb</code> repacking.</li>
+        <li><strong>Encrypt-at-rest v1</strong> — AES-256-GCM sealing with envelope sidecars (<code>nyxis-encrypt</code>).</li>
+        <li><strong>Segment replication v1</strong> — <code>nxs-replicate plan|apply</code> for <code>file://</code> destinations with manifest idempotency.</li>
+        <li><strong>Read-only query proxy v1</strong> — <code>nxs-queryd</code> (<code>AggregateSum</code>, streaming <code>ScanColumn</code>, Prometheus <code>/metrics</code>).</li>
         <li>Dedicated Slack support channel with next-business-day SLA.</li>
       </ul>
       <div class="pricing-tier__cta">
@@ -127,8 +130,8 @@
       <ul class="pricing-tier__includes">
         <li>Unlimited data ingestion volume and server instances.</li>
         <li><strong>Apache Arrow zero-copy memory bridge</strong> — columnar mapping via the Arrow C Data Interface for Snowflake, Polars, and DataFusion pipelines.</li>
-        <li><strong>Distributed schema registry &amp; proxy</strong> (<code>nxs-registryd</code>) — centralized gRPC contract verification with automated schema drift resolution.</li>
-        <li><strong>Hardware-accelerated SIMD guard</strong> — AVX-512 and ARM NEON vectorized kernels for parallel batch search across raw binary buffers.</li>
+        <li><strong>Distributed schema registry &amp; proxy</strong> (<code>nxs-registryd</code>) — gRPC contract verification and additive-only drift resolution (MVP).</li>
+        <li><strong>Hardware-accelerated SIMD guard</strong> (<code>nyxis-simd-guard</code>, MVP) — dense batch kernels; AVX-512 Workload&nbsp;C parity is verified via a <a href="https://github.com/nyxis-io/nyxis-extensions/blob/main/bench/methodology/workload_C_simd_guard.md" rel="noopener">manual gate</a> on bench hosts, not all CI runners.</li>
         <li><strong>4-hour</strong> critical incident response SLA and legal indemnification.</li>
       </ul>
       <div class="pricing-tier__cta">
@@ -155,14 +158,14 @@
       <summary>How are &ldquo;Revenue&rdquo; and &ldquo;Throughput&rdquo; measured for the free tier?</summary>
       <div class="pricing-faq-body">
         <p>
-          If your company makes over <strong>$1,000,000 USD</strong> in gross annual revenue,
+          If your company makes over <strong>$5,000,000 USD</strong> in gross annual revenue,
           <em>or</em> your production applications serialize or deserialize more than
-          <strong>100&nbsp;GB</strong> of <code>.nxb</code> payloads across your network lanes in a single calendar month,
+          <strong>10&nbsp;TB</strong> of <code>.nxb</code> payloads across your network lanes in a single calendar month,
           your standard BSL&nbsp;1.1 allowance expires. You must step into a paid commercial agreement.
         </p>
         <p>
           Because Nyxis relies on constant-time pointer casting instead of full-file heap parsing, scaling past
-          100&nbsp;GB/month does not inflate browser or worker memory the way repeated <code>JSON.parse()</code> pipelines do.
+          10&nbsp;TB/month does not inflate browser or worker memory the way repeated <code>JSON.parse()</code> pipelines do.
           See the <a href="/use-cases/#v8-limits">V8 allocation parity matrix</a> on the use-cases page for the technical breakdown.
         </p>
       </div>
@@ -178,7 +181,7 @@
           <strong>Principal</strong> when revenue exceeds $100M or throughput exceeds 50&nbsp;TB/month.
         </p>
         <p>
-          Enterprise extensions (compactor, Arrow bridge, schema registry, SIMD guard) align with these packages — see the tier cards above and
+          Enterprise extensions (compactor, encrypt, replicate, query proxy, Arrow bridge, schema registry, SIMD guard) align with these packages — see the tier cards above and
           <a href="https://github.com/nyxis-io/nyxis/blob/main/COMMERCIAL.md" rel="noopener">COMMERCIAL.md</a>.
         </p>
       </div>

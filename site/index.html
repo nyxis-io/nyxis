@@ -295,7 +295,11 @@ Tableau / BI ◄── Apache Arrow bridge ◄── Snowflake ingest (pointer-s
     </li>
     <li>
       <strong>Distributed schema registry &amp; proxy (<code>nxs-registryd</code>)</strong>
-      <span>Centralized gRPC contract management with real-time payload validation and automated runtime schema drift resolution.</span>
+      <span>Centralized gRPC contract management with payload validation and additive-only drift resolution (MVP).</span>
+    </li>
+    <li>
+      <strong>Platform operations (Tier 4 v1)</strong>
+      <span>Encrypt-at-rest (<code>nyxis-encrypt</code>), <code>file://</code> segment replication (<code>nxs-replicate</code>), and read-only query (<code>nxs-queryd</code> with <code>/metrics</code>) — Enterprise Core.</span>
     </li>
   </ul>
   <div class="landing-actions" style="justify-content: flex-start; margin-top: 8px;">
@@ -304,7 +308,7 @@ Tableau / BI ◄── Apache Arrow bridge ◄── Snowflake ingest (pointer-s
   </div>
   <p class="enterprise-footnote">
     Core &amp; CLI: <a href="https://github.com/nyxis-io/nyxis/blob/main/LICENSE" rel="noopener">BSL 1.1</a>
-    (free under $1M revenue / 100&nbsp;GB per month).
+    (free under $5M revenue / 10&nbsp;TB per month).
     SDKs: <a href="https://github.com/nyxis-io/nyxis-drivers" rel="noopener">MIT</a> across ten languages.
   </p>
 </section>
