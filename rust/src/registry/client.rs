@@ -5,8 +5,7 @@ use tonic::Request;
 
 use super::pb::registry_service_client::RegistryServiceClient;
 use super::pb::{
-    GetSchemaByHashRequest, GetSchemaByHashResponse, RegisterSchemaRequest,
-    RegisterSchemaResponse,
+    GetSchemaByHashRequest, GetSchemaByHashResponse, RegisterSchemaRequest, RegisterSchemaResponse,
 };
 
 pub struct RegistryClient {

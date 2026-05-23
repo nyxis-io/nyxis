@@ -95,17 +95,16 @@ fn main() {
 }
 
 fn run_compile(args: CompileArgs) {
-    let mut opts = CompileOptions::default();
-    opts.layout = Layout::parse_name(&args.layout).unwrap_or_else(|| {
+    let layout = Layout::parse_name(&args.layout).unwrap_or_else(|| {
         eprintln!("error: unknown layout (row|columnar|pax)");
         std::process::exit(1);
     });
-    if let Some(n) = args.page_size {
-        opts.page_size = n;
-    }
-    if opts.page_size == 0 && opts.layout == Layout::Pax {
-        opts.page_size = 4096;
-    }
+    let page_size = match args.page_size {
+        Some(n) => n,
+        None if layout == Layout::Pax => 4096,
+        None => 0,
+    };
+    let opts = CompileOptions { layout, page_size };
 
     let output_path = args.output.clone().unwrap_or_else(|| {
         args.input
@@ -262,8 +261,8 @@ fn load_nxb_bytes(path: &Path) -> Result<Vec<u8>, String> {
         .unwrap_or("")
         .to_ascii_lowercase();
     if ext == "nxs" {
-        let source = std::fs::read_to_string(path)
-            .map_err(|e| format!("read {}: {e}", path.display()))?;
+        let source =
+            std::fs::read_to_string(path).map_err(|e| format!("read {}: {e}", path.display()))?;
         nxs::compile_source(&source).map_err(|e| format!("compile {}: {e}", path.display()))
     } else {
         std::fs::read(path).map_err(|e| format!("read {}: {e}", path.display()))
