@@ -11,7 +11,7 @@ Pinned toolchains for reproducible head-to-head runs. Re-run after bumps with ex
 | Cap'n Proto | 1.0.x | Packed encoding where schema allows |
 | Apache Arrow IPC | 18.x (3.11–3.13) / 22+ (3.14) | Workload C columnar comparator (`pyarrow` env markers in `pyproject.toml`) |
 | Rust | 1.75+ | `--release`, LTO via `generators/transcode_rust/Cargo.toml` |
-| Go | 1.22+ | Document `GOAMD64=v3` if used |
+| Go | 1.26+ | Document `GOAMD64=v3` if used |
 | C compiler | GCC 13+ or Clang 16+ | `-O3 -march=native -flto` primary; `-O2 -march=x86-64-v3` portable |
 
 Lockfiles:

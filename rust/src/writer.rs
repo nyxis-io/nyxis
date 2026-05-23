@@ -5,6 +5,11 @@ use std::io::Write;
 /// Precompile a [`Schema`] once, then write records with slot-indexed typed
 /// methods; call [`NxsWriter::finish`] to obtain the complete `.nxb` bytes.
 ///
+/// There is no automatic size cap on the internal buffer: long-lived writers should
+/// call [`NxsWriter::finish`] periodically and start a new writer for the next file
+/// to avoid unbounded growth. Per-record size is bounded by the WAL `MAX_RECORD_BYTES`
+/// guard when using the trace pipeline.
+///
 /// # Example
 ///
 /// ```

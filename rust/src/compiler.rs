@@ -10,6 +10,8 @@ use std::collections::HashMap;
 pub struct Compiler {
     dict: Vec<String>,               // key index → key name
     key_map: HashMap<String, usize>, // key name → index
+    /// Per-slot TypeManifest sigil (0 = unset → defaults to SIGIL_STR in schema).
+    slot_sigils: Vec<u8>,
 }
 
 impl Compiler {
@@ -17,20 +19,28 @@ impl Compiler {
         Compiler {
             dict: Vec::new(),
             key_map: HashMap::new(),
+            slot_sigils: Vec::new(),
         }
     }
 
     // First pass: collect all unique keys into the global dictionary
     pub fn collect_keys(&mut self, fields: &[Field]) {
         for field in fields {
-            self.intern_key(&field.key);
+            let idx = self.intern_key(&field.key);
+            self.mark_slot_sigil(idx, value_sigil_byte(&field.value));
             self.collect_keys_from_value(&field.value);
         }
     }
 
     fn collect_keys_from_value(&mut self, value: &Value) {
         match value {
-            Value::Object(fields) => self.collect_keys(fields),
+            Value::Object(fields) => {
+                for field in fields {
+                    let idx = self.intern_key(&field.key);
+                    self.mark_slot_sigil(idx, value_sigil_byte(&field.value));
+                    self.collect_keys_from_value(&field.value);
+                }
+            }
             Value::List(elems) => {
                 for e in elems {
                     self.collect_keys_from_value(e);
@@ -46,8 +56,19 @@ impl Compiler {
         }
         let idx = self.dict.len();
         self.dict.push(key.to_string());
+        self.slot_sigils.push(0);
         self.key_map.insert(key.to_string(), idx);
         idx
+    }
+
+    fn mark_slot_sigil(&mut self, slot: usize, sigil: u8) {
+        if slot >= self.slot_sigils.len() {
+            return;
+        }
+        let cur = self.slot_sigils[slot];
+        if cur == 0 || (cur == SIGIL_NULL && sigil != SIGIL_NULL) {
+            self.slot_sigils[slot] = sigil;
+        }
     }
 
     pub fn compile(&mut self, fields: &[Field]) -> Result<Vec<u8>> {
@@ -91,10 +112,9 @@ impl Compiler {
         let key_count = self.dict.len() as u16;
         b.extend_from_slice(&key_count.to_le_bytes());
 
-        // TypeManifest: sigil byte for each key (we use a generic "string" sigil for keys)
-        // In our implementation all keys are strings in the dict; value sigils are per-field
-        for _ in &self.dict {
-            b.push(SIGIL_STR);
+        for (i, _) in self.dict.iter().enumerate() {
+            let s = self.slot_sigils.get(i).copied().unwrap_or(0);
+            b.push(if s == 0 { SIGIL_STR } else { s });
         }
 
         // StringPool: null-terminated names
@@ -206,17 +226,7 @@ fn encode_value(v: &Value) -> Result<Vec<u8>> {
             b.extend_from_slice(&[0u8; 7]);
             Ok(b)
         }
-        Value::Keyword(s) => {
-            // encoded as u16 index — we encode the string bytes for simplicity in POC
-            // (a full implementation would look up the dict index)
-            let bytes = s.as_bytes();
-            let len = bytes.len() as u16;
-            let mut b = Vec::new();
-            b.extend_from_slice(&len.to_le_bytes());
-            b.extend_from_slice(bytes);
-            pad_to_8(&mut b);
-            Ok(b)
-        }
+        Value::Keyword(_) => Err(NxsError::UnsupportedFieldType),
         Value::Str(s) => {
             let bytes = s.as_bytes();
             let len = bytes.len() as u32;

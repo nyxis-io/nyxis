@@ -57,12 +57,15 @@ fn sum_f64_dense_le(vals: &[u8], n: usize) -> f64 {
     #[cfg(target_arch = "x86_64")]
     {
         if std::arch::is_x86_feature_detected!("avx2") {
+            // SAFETY: `sum_f64_dense_le` requires `vals.len() >= n * 8` and `n > 0`;
+            // AVX2 was confirmed at runtime via `is_x86_feature_detected!`.
             return unsafe { sum_f64_avx2(vals, n) };
         }
     }
     #[cfg(target_arch = "aarch64")]
     {
         if std::arch::is_aarch64_feature_detected!("neon") {
+            // SAFETY: same length invariants as above; NEON confirmed at runtime.
             return unsafe { sum_f64_neon(vals, n) };
         }
     }
@@ -83,6 +86,8 @@ fn sum_f64_scalar(vals: &[u8], n: usize) -> f64 {
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
 unsafe fn sum_f64_avx2(vals: &[u8], n: usize) -> f64 {
+    // SAFETY: Caller (`sum_f64_dense_le`) ensures `vals.len() >= n * 8`, `n > 0`, and AVX2
+    // is available. `_mm256_loadu_pd` tolerates arbitrary alignment on x86_64.
     use std::arch::x86_64::*;
 
     let ptr = vals.as_ptr() as *const f64;
@@ -112,6 +117,7 @@ unsafe fn sum_f64_avx2(vals: &[u8], n: usize) -> f64 {
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
 unsafe fn hsum_pd256(v: std::arch::x86_64::__m256d) -> f64 {
+    // SAFETY: `__m256d` is a valid register value; stack buffer is 32-byte aligned for store.
     use std::arch::x86_64::*;
     let mut tmp = [0.0f64; 4];
     _mm256_storeu_pd(tmp.as_mut_ptr(), v);
@@ -121,6 +127,7 @@ unsafe fn hsum_pd256(v: std::arch::x86_64::__m256d) -> f64 {
 #[cfg(target_arch = "aarch64")]
 #[target_feature(enable = "neon")]
 unsafe fn sum_f64_neon(vals: &[u8], n: usize) -> f64 {
+    // SAFETY: Caller ensures `vals.len() >= n * 8`, `n > 0`, and NEON is available.
     use std::arch::aarch64::*;
 
     let ptr = vals.as_ptr() as *const f64;

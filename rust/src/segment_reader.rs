@@ -1,6 +1,13 @@
 //! Multi-segment span reader — queries across a set of sealed .nxb files
 //! plus an optional live .nxsw WAL.
 //!
+//! # Memory model
+//!
+//! Each sealed `.nxb` is mapped with [`memmap2::Mmap`] (no full-file `Vec` at open).
+//! Per segment, an in-memory index `trace_id → [absolute offsets]` is built by scanning
+//! the tail index once — **O(records)** heap for the index, not O(file size). WAL bytes
+//! are still loaded into a `Vec` for the live `.nxsw` path.
+//!
 //! # Usage
 //!
 //!   let reader = SegmentReader::open("traces/")? ;
@@ -12,8 +19,9 @@
 use crate::decoder::{decode, decode_record_at, DecodedValue};
 use crate::error::{NxsError, Result};
 use crate::wal::SpanWal;
+use memmap2::Mmap;
 use std::collections::HashMap;
-use std::fs;
+use std::fs::{self, File};
 use std::path::{Path, PathBuf};
 
 /// A decoded span record returned by queries.
@@ -38,7 +46,8 @@ pub struct SegmentReader {
 
 struct SealedSegment {
     path: PathBuf,
-    data: Vec<u8>,
+    _file: File,
+    mmap: Mmap,
     /// (trace_id → [span absolute offsets]) built from the tail-index.
     index: HashMap<u128, Vec<u64>>,
     keys: Vec<String>,
@@ -65,8 +74,7 @@ impl SegmentReader {
             let path = entry.path();
             match path.extension().and_then(|e| e.to_str()) {
                 Some("nxb") => {
-                    let data = fs::read(&path).map_err(|e| NxsError::IoError(e.to_string()))?;
-                    let seg = SealedSegment::load(path, data)?;
+                    let seg = SealedSegment::load(path)?;
                     segments.push(seg);
                 }
                 Some("nxsw") => {
@@ -181,8 +189,13 @@ pub struct ReaderStats {
 }
 
 impl SealedSegment {
-    fn load(path: PathBuf, data: Vec<u8>) -> Result<Self> {
-        let decoded = decode(&data)?;
+    fn load(path: PathBuf) -> Result<Self> {
+        let file = File::open(&path).map_err(|e| NxsError::IoError(e.to_string()))?;
+        let mmap = unsafe {
+            Mmap::map(&file).map_err(|e| NxsError::IoError(format!("mmap {}: {e}", path.display())))?
+        };
+        let data = &mmap[..];
+        let decoded = decode(data)?;
 
         // Build trace_id → [offsets] index from the tail-index.
         // Each tail-index entry: KeyID(u16) + AbsoluteOffset(u64) = 10 bytes
@@ -192,14 +205,22 @@ impl SealedSegment {
 
         let mut pos = tail_start;
         while pos + 10 <= tail_end {
-            let _key_id = u16::from_le_bytes(data[pos..pos + 2].try_into().unwrap());
-            let abs_off = u64::from_le_bytes(data[pos + 2..pos + 10].try_into().unwrap());
+            let _key_id = u16::from_le_bytes(
+                data[pos..pos + 2]
+                    .try_into()
+                    .map_err(|_| NxsError::OutOfBounds)?,
+            );
+            let abs_off = u64::from_le_bytes(
+                data[pos + 2..pos + 10]
+                    .try_into()
+                    .map_err(|_| NxsError::OutOfBounds)?,
+            );
             pos += 10;
 
             // Extract trace_id from the span at abs_off to build the lookup map
             if abs_off as usize + 8 <= data.len() {
                 let fields =
-                    decode_record_at(&data, abs_off as usize, &decoded.keys, &decoded.key_sigils)
+                    decode_record_at(data, abs_off as usize, &decoded.keys, &decoded.key_sigils)
                         .unwrap_or_default();
                 if let Some(trace_id) = extract_trace_id(&fields) {
                     index.entry(trace_id).or_default().push(abs_off);
@@ -209,15 +230,21 @@ impl SealedSegment {
 
         Ok(SealedSegment {
             path,
-            data,
+            _file: file,
+            mmap,
             index,
             keys: decoded.keys,
             sigils: decoded.key_sigils,
         })
     }
 
+    fn data(&self) -> &[u8] {
+        &self.mmap
+    }
+
     fn decode_span_at(&self, abs_off: u64) -> Result<Span> {
-        let fields = decode_record_at(&self.data, abs_off as usize, &self.keys, &self.sigils)?;
+        let fields =
+            decode_record_at(self.data(), abs_off as usize, &self.keys, &self.sigils)?;
         fields_to_span(&fields).ok_or(NxsError::OutOfBounds)
     }
 }

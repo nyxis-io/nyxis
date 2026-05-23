@@ -70,3 +70,17 @@ Organizations above the BSL free tier purchase a commercial production license. 
   * 4-hour critical incident response SLA and legal indemnification.
 
 To purchase a license or request a custom enterprise evaluation contract, reach out directly to **licensing@nyxis.io**.
+
+---
+
+## Extension license verification (nyxis-extensions)
+
+Commercial crates call `nyxis-ext-sdk::check_license` using:
+
+| Variable | Purpose |
+| --- | --- |
+| `NYXIS_LICENSE_PATH` | Path to signed `nyxis-license-v1` JSON (required in production) |
+| `NYXIS_LICENSE_PUBLIC_KEY` | Ed25519 public key (PEM) for signature verification |
+| `NYXIS_LICENSE_ALLOW_DEV_KEY` | Dev-only: accept repo `dev-license.v1.json` without production key material |
+
+**Test-only bypass:** `NYXIS_LICENSE_INSECURE=1` skips cryptographic verification when the license file exists. The bypass is omitted from `--release` builds unless `nyxis-ext-sdk` is built with `--features insecure-license-bypass`; debug/test builds log a `tracing::warn!` when it is active. **Do not set in production.** See also [`nyxis-extensions/docs/OPS_LICENSE.md`](../nyxis-extensions/docs/OPS_LICENSE.md).
