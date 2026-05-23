@@ -520,8 +520,9 @@
         Aggregators embed MIT-licensed <code>nyxis-drivers</code>. Structurally, field schema keys intern into a central
         dictionary stored once.
         A per-record <strong>presence bitmask</strong> encodes sparse optional fields across heterogeneous logs.
-        The proprietary <strong><code>nxs-registryd</code></strong> proxy provides centralized gRPC schema contracts —
-        validating payloads on ingress and resolving runtime drift when pod versions diverge.
+        The proprietary <strong><code>nxs-registryd</code></strong> service and <strong><code>nxs-registry</code></strong>
+        CLI provide centralized gRPC schema contracts — validating payloads on ingress and listing or diffing schemas
+        when pod versions diverge (additive drift in MVP).
       </p>
       <p class="use-case-footnote">
         Key interning and presence bitmask reduce metadata overhead vs JSON. File size vs binary peers depends on field
@@ -710,7 +711,7 @@
 
     <article class="use-case" id="llm-tracing">
       <p class="use-case-tier use-case-tier--enterprise">Enterprise · <code>nyxis-arrow-bridge</code> ·
-        <code>nyxis-simd-guard (roadmap)</code></p>
+        <code>nyxis-simd-guard</code> (MVP)</p>
       <h2>High-fidelity LLM generation tracing &amp; AI observability</h2>
 
       <h3>The high-scale bottleneck</h3>
@@ -727,9 +728,9 @@
         <strong><code>nyxis-arrow-bridge</code></strong>.
         The bridge reads <code>.nxb</code> generation logs and handles immediate zero-copy data projection via the Arrow
         C Data Interface with explicit memory ownership transfer into DataFusion, Polars, or DuckDB.
-        For vectorized batch searches across raw memory buffers, our roadmap includes the
-        <strong><code>nyxis-simd-guard</code></strong> extension to map hardware instruction sets (AVX-512 / ARM NEON)
-        natively over fields.
+        For vectorized batch searches across raw memory buffers, the
+        <strong><code>nyxis-simd-guard</code></strong> extension (MVP) dispatches AVX-512, AVX2, NEON, or scalar paths
+        over dense column buffers — see Workload&nbsp;C in <a href="../BENCHMARK.md#workload-c">BENCHMARK.md</a>.
       </p>
 
       <h3>The system advantage</h3>
