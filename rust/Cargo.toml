@@ -11,6 +11,7 @@ documentation = "https://docs.rs/nyxis"
 readme = "README.md"
 keywords = ["serialization", "binary", "zero-copy", "nxs", "nyxis"]
 categories = ["encoding", "parser-implementations", "command-line-utilities"]
+build = "build.rs"
 
 [lib]
 name = "nxs"
@@ -84,6 +85,17 @@ quick-xml = { version = "0.36", features = ["encoding"] }
 base64 = "0.22"
 tempfile = "3"
 serde_yaml2 = "0.1"
+tonic = "0.12"
+prost = "0.13"
+tokio = { version = "1", features = ["rt", "macros"] }
+
+[build-dependencies]
+tonic-build = "0.12"
+protoc-bin-vendored = "3"
+
+[[test]]
+name = "registry_cli"
+path = "tests/registry_cli.rs"
 
 [[test]]
 name = "exit_codes"
