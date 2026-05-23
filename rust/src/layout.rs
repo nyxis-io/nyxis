@@ -329,12 +329,12 @@ fn encode_var_column(n: usize, col: &[&Cell]) -> Result<Vec<u8>> {
     let mut offsets: Vec<u32> = Vec::with_capacity(n + 1);
     let mut values: Vec<u8> = Vec::new();
     offsets.push(0);
-    for i in 0..n {
-        if !present(i) {
+    for cell in col.iter().take(n) {
+        if !cell_populated(cell) {
             offsets.push(*offsets.last().unwrap_or(&0));
             continue;
         }
-        match col[i] {
+        match cell {
             Cell::Str(s) => values.extend_from_slice(s.as_bytes()),
             Cell::Binary(b) => values.extend_from_slice(b),
             _ => {}
@@ -423,12 +423,12 @@ pub fn finish_columnar(keys: &[String], rows: &[RecordRow]) -> Result<Vec<u8>> {
 
     let mut data = Vec::new();
     let mut tail_entries: Vec<(u16, u64, u64)> = Vec::new();
-    for fi in 0..keys.len() {
+    for (fi, sigil) in sigils.iter().enumerate() {
         let col: Vec<&Cell> = rows
             .iter()
             .map(|r| r.cells.get(fi).unwrap_or(&Cell::Absent))
             .collect();
-        let field_buf = encode_field_column(n, &col, sigils[fi])?;
+        let field_buf = encode_field_column(n, &col, *sigil)?;
         let offset = 32 + schema_bytes.len() as u64 + data.len() as u64;
         let length = field_buf.len() as u64;
         tail_entries.push((fi as u16, offset, length));
