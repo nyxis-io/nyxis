@@ -1,0 +1,26 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Nyxis JavaScript SDK",
+    "version": "1.2.1",
+    "description": "MIT-licensed browser and Node.js reader for Nyxis .nxb files. Served statically at /sdk/."
+  },
+  "servers": [
+    {
+      "url": "https://nyxis.io/sdk",
+      "description": "Static SDK assets"
+    }
+  ],
+  "paths": {
+    "/nxs.js": {
+      "get": {
+        "summary": "Main SDK bundle",
+        "responses": {
+          "200": {
+            "description": "JavaScript module"
+          }
+        }
+      }
+    }
+  }
+}

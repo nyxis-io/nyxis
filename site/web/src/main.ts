@@ -5,8 +5,10 @@ import router from "./router";
 import "./assets/theme.css";
 import "./assets/interactive-pages.css";
 import { initTheme } from "./composables/useTheme";
+import { initWebMcp } from "./agent/webmcp";
 
 initTheme();
+initWebMcp();
 
 const app = createApp(App);
 app.use(createHead());

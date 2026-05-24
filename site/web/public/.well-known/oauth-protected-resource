@@ -1,0 +1,7 @@
+{
+  "resource": "https://nyxis.io/mcp",
+  "authorization_servers": ["https://nyxis.io"],
+  "scopes_supported": ["nxs:read", "nxs:write"],
+  "resource_documentation": "https://nyxis.io/.well-known/mcp/server-card.json",
+  "bearer_methods_supported": ["header"]
+}

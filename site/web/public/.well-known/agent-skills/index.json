@@ -1,0 +1,26 @@
+{
+  "$schema": "https://schemas.agentskills.io/discovery/0.2.0/schema.json",
+  "skills": [
+    {
+      "name": "compile-nxs",
+      "type": "skill-md",
+      "description": "Compile Nyxis .nxs text sources to memory-mapped .nxb binaries and import JSON/CSV/XML.",
+      "url": "https://nyxis.io/.well-known/agent-skills/compile-nxs.md",
+      "digest": "sha256:f25a2f445b79b34d461ddab5a0f06660f10e8c82f03f444653f2ea9061716a02"
+    },
+    {
+      "name": "nyxis-overview",
+      "type": "skill-md",
+      "description": "Navigate the Nyxis zero-copy binary serialization format, layouts, benchmarks, and documentation.",
+      "url": "https://nyxis.io/.well-known/agent-skills/nyxis-overview.md",
+      "digest": "sha256:d3c3b141cbc6afc9e5c01008048dbb68f42660ea90dc845290edcceca8700ce8"
+    },
+    {
+      "name": "query-nxb-files",
+      "type": "skill-md",
+      "description": "Inspect and query Nyxis .nxb binary files using the nxs-mcp MCP server or Rust CLI tools.",
+      "url": "https://nyxis.io/.well-known/agent-skills/query-nxb-files.md",
+      "digest": "sha256:9228c658fe8c4045b32520e246c38fb8edab3c15c855812604891181f8e575c8"
+    }
+  ]
+}
