@@ -22,10 +22,13 @@ FORMATS_OTHER := proto capnp
 
 STREAM_D := $(BENCH)/harness/stream_d/target/release/bench-stream-d
 
+HARNESS_PREFETCH := cd $(DRV)/go && go run $(BENCH)/harness/prefetch/main.go
+
 .PHONY: all gen codegen transcode-nxs transcode-formats transcode harness \
         run run-b run-c run-a run-d run-d-smoke run-d-ttfr run-d-pax-ttfr run-d-throughput \
-        run-e-mixed run-c-strings quick ci matrix bench-cold results results-1m results-1m-fast \
-        setup-venv render-tables render-all freeze-benchmark verdicts clean
+        run-e-mixed run-c-strings run-f run-f-smoke results-f quick ci matrix bench-cold \
+        results results-1m results-1m-fast setup-venv render-tables render-all freeze-benchmark \
+        verdicts clean
 
 all: gen transcode harness
 
@@ -277,6 +280,31 @@ freeze-benchmark:
 
 setup-venv:
 	bash $(BENCH)/scripts/setup_venv.sh
+
+# Workload F: adaptive prefetch (native remote fetch recorder, Go driver)
+BENCH_F_RECORDS ?= $(if $(filter 1000000,$(BENCH_RECORDS)),1000000,$(BENCH_RECORDS))
+BENCH_F_PATH ?= $(DATA_BIN)/workload_B_nxs_$(BENCH_F_RECORDS).nxb
+BENCH_F_LATENCY_US ?= 100
+
+run-f-smoke: BENCH_F_RECORDS=10000
+run-f-smoke: BENCH_F_PATH=$(DATA_BIN)/workload_B_nxs_$(BENCH_F_RECORDS).nxb
+run-f-smoke:
+	@test -f $(BENCH_F_PATH) || $(MAKE) gen transcode BENCH_RECORDS=$(BENCH_F_RECORDS)
+	$(HARNESS_PREFETCH) --path $(BENCH_F_PATH) --scenario all --latency-us $(BENCH_F_LATENCY_US)
+
+run-f:
+	@test -f $(BENCH_F_PATH) || $(MAKE) gen transcode BENCH_RECORDS=$(BENCH_F_RECORDS)
+	$(HARNESS_PREFETCH) --path $(BENCH_F_PATH) --scenario all --latency-us $(BENCH_F_LATENCY_US)
+
+results-f:
+	@test -n "$(RESULT_TAG_F)" || (echo "usage: make -C bench results-f RESULT_TAG_F=2026-05-24_host" >&2; exit 1)
+	@mkdir -p $(ROOT)/bench/results/$(RESULT_TAG_F)/raw
+	$(MAKE) run-f BENCH_F_LATENCY_US=$(BENCH_F_LATENCY_US) \
+	  | tee $(ROOT)/bench/results/$(RESULT_TAG_F)/raw/workload_f.jsonl
+	cp $(BENCH)/methodology/workload_F.md $(ROOT)/bench/results/$(RESULT_TAG_F)/methodology_F.md
+	$(VENV_PY) $(ROOT)/bench/scripts/report.py \
+	  --results $(ROOT)/bench/results/$(RESULT_TAG_F) \
+	  --raw $(ROOT)/bench/results/$(RESULT_TAG_F)/raw/workload_f.jsonl
 
 quick: BENCH_RECORDS=1000
 quick: run-b

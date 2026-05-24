@@ -183,8 +183,36 @@ if [ "${BENCH_E:-1}" != "0" ]; then
   run make -C bench run-e-mixed BENCH_E_RECORDS="$BENCH_E_RECORDS"
 fi
 
+# Workload F — adaptive prefetch (Go fetch recorder)
+if [ "${BENCH_F:-1}" != "0" ]; then
+  BENCH_F_PATH="$ROOT/bench/data/bin/workload_B_nxs_${BENCH_RECORDS}.nxb"
+  BENCH_F_SCENARIO="all"
+  if [ ! -f "$BENCH_F_PATH" ] && [ -f "$ROOT/bench/data/bin/workload_B_nxs_1000000.nxb" ]; then
+    BENCH_F_PATH="$ROOT/bench/data/bin/workload_B_nxs_1000000.nxb"
+    BENCH_F_SCENARIO="smoke"
+  fi
+  if [ -f "$BENCH_F_PATH" ] && [ -d "$ROOT/../nyxis-drivers/go" ]; then
+    echo "Workload F → prefetch harness ($BENCH_F_PATH, scenario=$BENCH_F_SCENARIO)" | tee -a "$LOG"
+    WF="$OUT/raw/workload_f.jsonl"
+    : >"$WF"
+    {
+      echo "=== Workload F prefetch harness ==="
+      (
+        cd "$ROOT/../nyxis-drivers/go" && go run "$ROOT/bench/harness/prefetch/main.go" \
+          --path "$BENCH_F_PATH" \
+          --scenario "$BENCH_F_SCENARIO" \
+          --latency-us "${BENCH_F_LATENCY_US:-100}"
+      ) || true
+    } 2>&1 | tee -a "$LOG" | grep '^{"workload":"F"' >>"$WF" || true
+  else
+    echo "Workload F → skip (fixture or nyxis-drivers/go missing)" | tee -a "$LOG"
+  fi
+fi
+
 if [ -z "${SKIP_REPORT:-}" ]; then
-  "$PY" bench/scripts/report.py --results "$OUT" --raw "$LOG" || true
+  REPORT_RAW=("$LOG")
+  [ -f "$OUT/raw/workload_f.jsonl" ] && REPORT_RAW+=("$OUT/raw/workload_f.jsonl")
+  "$PY" bench/scripts/report.py --results "$OUT" --raw "${REPORT_RAW[@]}" || true
   cat bench/methodology/workload_*.md >"$OUT/methodology.md" 2>/dev/null || true
 fi
 echo "Done → $OUT"

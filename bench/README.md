@@ -58,6 +58,9 @@ At **1M+ records** the Python harness automatically uses fewer samples for `scan
 | B | Cold-open random access | Open → first field readable | Tie zero-copy peers; edge on huge files |
 | C | Dense uniform analytical reducer | `sum` + `count_distinct` | Lose to Arrow; slowest zero-copy |
 | D | Streaming ingest (TTFR) | Time to first complete record (D2 file) | Tie proto on TTFR; publish NXS seal cost |
+| F | Adaptive prefetch | Prefetch-engine fetch count + scroll time | Lazy wins in-memory; prefetch wins remote (browser) |
+
+**Workload F:** `make -C bench run-f-smoke` (10k fixture) or `make -C bench run-f` (1M). Go driver fetch recorder — see `bench/methodology/workload_F.md` and `BENCHMARK.md#workload-f`.
 
 **Workload D (Phase 1):** `make -C bench run-d-smoke` — Rust harness (`bench/harness/stream_d/`), NXS + Protobuf + Cap'n Proto, flat-8 schema. Seal breakdown: `make -C bench run-d-seal-profile`. See `bench/methodology/workload_D.md`. Included in `matrix` by default (`BENCH_D=0` to skip); emits `ttfr` / `seal` / `throughput` JSON lines into `run.log` for `report.py`.
 
@@ -90,8 +93,12 @@ Then:
 
 ```bash
 make -C bench transcode              # NXB + proto/fb/capnp/arrow when deps exist
-make -C bench results BENCH_RECORDS=10000   # full matrix → bench/results/<date>_<host>/
+make -C bench results BENCH_RECORDS=10000   # full matrix → bench/results/<date>_<host>/ (includes Workload F)
 bash bench/scripts/run_all.sh        # same matrix, manual log path
+
+# Workload F only (1M row fixture, Go panel)
+make -C bench run-f
+make -C bench results-f RESULT_TAG_F=$(date +%Y-%m-%d)_$(hostname -s)
 
 # Regenerate markdown + verdicts from a saved run
 make -C bench render-all RESULT_DIR=bench/results/2026-05-21_mmalta

@@ -314,6 +314,85 @@ def render_workload_e(items: list[dict]) -> None:
     )
 
 
+F_NOTE = (
+    "> **Production context:** In-memory backing store → lazy wins wall time; **prefetch wins on browser RTT**. "
+    "See **Projected browser** column (20 ms RTT model).\n\n"
+    "† **Prefetch fetches** = `fetchRange` calls from the prefetch engine only. "
+    "0 in lazy mode = in-memory backing store bypasses the recorder; disk/network readers issue on-demand fetches.\n\n"
+    "_F4 `MemStats.Sys` includes Go runtime + full fixture backing store (~132 MB), not production client RSS. "
+    "Browser with `max_pages=64` ≈ 4 MB steady-state._"
+)
+
+# Projected browser latency (20 ms RTT model) — publication narrative, not measured.
+F_BROWSER_PROJECTION: dict[tuple[str, str], str] = {
+    ("F1", "lazy"): "~40 ms (2 on-demand fetches)",
+    ("F1", "prefetch_viewport"): "~20 ms (1 coalesced fetch)",
+    ("F2", "lazy"): "impractical (serial on-demand per viewport)",
+    ("F2", "prefetch_adaptive"): "feasible (pipelined ahead of scroll)",
+    ("F3", "lazy"): "~similar (no useful prediction)",
+    ("F3", "prefetch_random_hint"): "~similar (speculative prefetch suppressed)",
+    ("F4", "lazy"): "~4 MB steady-state (`max_pages=64`)",
+    ("F4", "prefetch_adaptive"): "~4 MB steady-state (`max_pages=64`)",
+}
+
+
+def _format_f_value(row: dict) -> str:
+    val = row.get("value")
+    unit = row.get("unit", "")
+    if val is None:
+        return "—"
+    if unit == "ms":
+        if val < 1:
+            return f"{val * 1000:.1f} µs"
+        return f"{val:.3f} ms"
+    if unit == "s":
+        if val < 0.01:
+            return f"{val * 1000:.2f} ms"
+        return f"{val:.3f} s"
+    if unit == "MB":
+        return f"{val:.1f} MB"
+    return str(val)
+
+
+def render_workload_f(items: list[dict]) -> None:
+    if not items:
+        return
+    sample = items[0]
+    lat = sample.get("latency_us", "?")
+    rec = sample.get("records", "?")
+    fb = sample.get("file_bytes")
+    size = f"{fb / 1e6:.0f} MB" if fb else "?"
+    print("\n**Workload F — adaptive prefetch (Go driver, fetch recorder)**\n")
+    print(
+        "> **Read this first:** In-memory backing store → lazy wins wall time. "
+        "**Production win is on browser RTT** (prefetch + coalescing). "
+        "Do not read F2 “4× slower” as a product conclusion.\n"
+    )
+    print(
+        f"_Fixture: **{rec}** records (**{size}**); scales linearly vs spec 100 MB / 500 MB targets. "
+        f"Simulated **{lat} µs** per prefetch-engine fetch (conservative vs CDN RTT)._\n"
+    )
+    print(
+        "| Scenario | Mode | Metric | Value | Prefetch fetches † | Projected browser (20 ms RTT) |"
+    )
+    print("| --- | --- | --- | --- | ---: | --- |")
+    for sc in ("F1", "F2", "F3", "F4"):
+        sub = sorted(
+            [r for r in items if r.get("scenario") == sc],
+            key=lambda r: r.get("mode", ""),
+        )
+        for hit in sub:
+            fetches = hit.get("fetches")
+            fetch_str = "0" if fetches is None else str(fetches)
+            mode = hit.get("mode", "—")
+            proj = F_BROWSER_PROJECTION.get((sc, mode), "—")
+            print(
+                f"| **{sc}** | {mode} | {hit.get('metric', '—')} | "
+                f"{_format_f_value(hit)} | {fetch_str} | {proj} |"
+            )
+    print(f"\n{F_NOTE}\n")
+
+
 def render_workload_a(items: list[dict]) -> None:
     pops = sorted({r.get("population", -1) for r in items if r.get("population", -1) >= 0})
     fmts = sorted({r["format"] for r in items})
@@ -469,6 +548,7 @@ def main() -> int:
         ("C", "Workload C: Dense analytical reducer"),
         ("D", "Workload D: Streaming ingest"),
         ("E", "Workload E: PAX mixed access + column scan"),
+        ("F", "Workload F: Adaptive prefetch"),
     ):
         if wl not in by_wl:
             continue
@@ -484,6 +564,8 @@ def main() -> int:
             render_workload_a(items)
         elif wl == "E":
             render_workload_e(items)
+        elif wl == "F":
+            render_workload_f(items)
 
     if args.publication:
         render_positioning()

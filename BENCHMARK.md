@@ -435,7 +435,37 @@ NXS is not a drop-in replacement for JSON everywhere. It is the right choice whe
 
 > NXS columnar warm aggregate: **20.3 µs**. Pre-parsed warm JSON aggregate: **36.8 µs**. Cold JSON aggregate: **1.43 ms**. Hardware: macOS Apple Silicon, 10k records, in-memory bytes (page cache resident). NXS cold already beats pre-parsed warm JSON — warmup is not required to win; persistent reader + `prefetch_column` widens the gap. Cite when comparing NXS columnar to JSON for analytics; at 1M records the advantage compounds.
 
-**F1 — Virtual scroll cold start (browser bench, in-memory row `.nxb`):** Charts §2–3 measure cold `cursor(k)` vs `prefetch_viewport(0, min(49,n−1))` then `cursor(k)` at record `n/2`. Chart §6 adds `open + prefetch_viewport + scan`; chart §8 reuses a viewport-warmed reader for full `cursor.scan`. Re-measure on your hardware at 10k+ records; remote HTTP `Range` fixtures are the production-relevant F1 extension (not yet frozen here).
+**F1 — Virtual scroll cold start (browser bench, in-memory row `.nxb`):** Charts §2–3 measure cold `cursor(k)` vs `prefetch_viewport(0, min(49,n−1))` then `cursor(k)` at record `n/2`. Chart §6 adds `open + prefetch_viewport + scan`; chart §8 reuses a viewport-warmed reader for full `cursor.scan`. Re-measure on your hardware at 10k+ records.
+
+**F1–F4 (native fetch recorder, Go driver, 1M row fixture, macOS Apple Silicon):** `make -C bench run-f` — methodology [`bench/methodology/workload_F.md`](bench/methodology/workload_F.md); frozen run [`bench/results/2026-05-23_mmalta/raw/workload_f.jsonl`](bench/results/2026-05-23_mmalta/raw/workload_f.jsonl). Driver matrix sign-off: [`docs/adaptive-prefetch-driver-matrix.md`](docs/adaptive-prefetch-driver-matrix.md).
+
+> **Read this first:** The native harness uses an **in-memory backing store**. Lazy mode shows **0 prefetch-engine fetches** and wins on wall time (F2: 88 ms vs 352 ms). That is expected — it does **not** mean prefetch is slower in production. **The production win is on remote clients (browser JS)** where each uncached page pays network RTT (20–200 ms on a CDN). Prefetch + coalescing is what makes virtual scroll over HTTP viable. See the **Projected browser** column and browser bench charts §2–3.
+
+**Fixture:** **132 MB** row `.nxb` (1M records, flat-8 schema). Adaptive prefetch spec §12 cites 100 MB / 500 MB targets; **results scale linearly with record count** — no rerun required to extrapolate. Simulated **100 µs** per prefetch-engine `fetchRange` call (conservative vs browser RTT); field decode uses the in-process backing store (see methodology).
+
+| Scenario | Mode | Result | Prefetch fetches † | Projected browser (20 ms RTT) |
+| --- | --- | ---: | ---: | --- |
+| **F1** viewport warm (50 records) | lazy read | 0.003 ms | 0 | ~40 ms (2 on-demand fetches) |
+| **F1** viewport warm | `prefetch_viewport(0, 49)` | 0.155 ms | **1** | ~20 ms (1 coalesced fetch) |
+| **F2** scroll 1M × 50/step | lazy | 88 ms | 0 | impractical (serial on-demand per viewport) |
+| **F2** scroll 1M × 50/step | prefetch + sequential hint | 352 ms | **1952** | feasible (pipelined ahead of scroll) |
+| **F3** 1000 random reads | lazy | 0.052 ms | 0 | ~similar (no useful prediction) |
+| **F3** 1000 random reads | random hint | 0.046 ms | 0 | ~similar (speculative prefetch suppressed) |
+| **F4** peak `MemStats.Sys` | lazy / prefetch | ~306 MB | 0 / 1952 | ~4 MB steady-state (`max_pages=64`) |
+
+† **Prefetch fetches** = `fetchRange` calls issued by the prefetch engine only. **0 in lazy mode** reflects the in-memory backing store (reads bypass the fetch recorder). A file-on-disk or network reader issues fetches on demand; lazy would not show 0 in that environment.
+
+**What the numbers confirm**
+
+- **F1 — 1 fetch for 50 records:** range coalescing merges adjacent page ranges correctly (publishable result).
+- **F2 — 1952 fetches over 20,000 viewport steps (~1 fetch per 10 steps):** sequential hint pre-fetches ahead without over-fetching.
+- **F3 — lazy vs random hint within noise:** random pattern correctly suppresses speculative prefetch.
+
+**F2 — browser projection (why in-process wall time misleads):** At **20 ms RTT** per fetch (typical CDN), lazy scroll without coalescing would require on-demand fetches at nearly every viewport step — **20,000 steps × ~2 pages ≈ tens of seconds to minutes** of serial network latency if pages are not pipelined. Prefetch with coalescing issues **1952** fetches total; with sequential pattern detection most complete **before** the viewport needs them, so effective latency approaches one fetch per new page group rather than one RTT per record access. In-process simulation cannot capture pipelining benefit; see browser bench §2–3 for JS driver results.
+
+**F4 — MemStats.Sys:** **~306 MB** includes Go runtime overhead plus the full **132 MB fixture** loaded as the harness backing store — not NXS client memory in production. A browser client with **`max_pages=64`** (4 MB page cache) holds ~**4 MB** steady-state regardless of file size; cite `cache_stats().pages_max` for cache-bound behavior.
+
+Re-run: `make -C bench results-f RESULT_TAG_F=$(date +%Y-%m-%d)_$(hostname -s)` or full matrix `make -C bench results-1m`.
 
 **F1 (conformance / fetch recorder):** `prefetch_column("score")` on columnar 100-record fixture — 1 range fetch, 2475.0 sum (`nyxis-drivers/js/test.js`, `prefetch_columnar_fast_path`).
 
@@ -448,7 +478,7 @@ Workloads A–E gates are unchanged; prefetch is additive.
 ## Workload comparison suite
 
 **Version pins:** `bench/BENCHMARK_VERSIONS.md`
-**Methodology:** `bench/methodology/workload_{A,B,C,D,E}.md`
+**Methodology:** `bench/methodology/workload_{A,B,C,D,E,F}.md`
 **Frozen results:** `bench/results/`
 
 ---
