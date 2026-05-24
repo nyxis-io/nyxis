@@ -1,0 +1,24 @@
+# Nyxis
+
+> Zero-copy binary serialization (NXS) — row, columnar, and PAX .nxb layouts.
+
+Static markdown versions of each page (no JavaScript required):
+
+- [Nyxis — Zero-Copy Binary Serialization Protocol](https://www.nyxis.io/): https://www.nyxis.io/index.md
+- [Nyxis — High-Throughput System Topologies & Use Cases](https://www.nyxis.io/use-cases/): https://www.nyxis.io/use-cases/index.md
+- [Nyxis — Commercial Pricing](https://www.nyxis.io/pricing/): https://www.nyxis.io/pricing/index.md
+- [Benchmark — Nyxis NXS](https://www.nyxis.io/bench/): https://www.nyxis.io/bench/index.md
+- [Demo — Nyxis NXS](https://www.nyxis.io/demo/): https://www.nyxis.io/demo/index.md
+- [Ticker — Nyxis NXS](https://www.nyxis.io/demo/ticker): https://www.nyxis.io/demo/ticker.md
+- [Workers — Nyxis NXS](https://www.nyxis.io/demo/workers): https://www.nyxis.io/demo/workers.md
+- [Log explorer — Nyxis NXS](https://www.nyxis.io/demo/explorer): https://www.nyxis.io/demo/explorer.md
+- [Report layout — Nyxis NXS](https://www.nyxis.io/demo/report): https://www.nyxis.io/demo/report.md
+- [WAL / spans — Nyxis NXS](https://www.nyxis.io/demo/wal): https://www.nyxis.io/demo/wal.md
+
+## Agent discovery
+
+- API catalog: https://www.nyxis.io/.well-known/api-catalog
+- MCP server card: https://www.nyxis.io/.well-known/mcp/server-card.json
+- Agent skills: https://www.nyxis.io/.well-known/agent-skills/index.json
+- Specification: https://github.com/nyxis-io/nyxis/blob/main/SPEC.md
+
