@@ -574,7 +574,7 @@ impl<'a> Reader<'a> {
             return Err(NxsError::OutOfBounds);
         }
         let bm_len = null_bitmap_bytes(self.record_count);
-        let vals_len = self.record_count * 8;
+        let vals_len = self.record_count.saturating_mul(8);
         if len < bm_len.saturating_add(vals_len) {
             return Err(NxsError::OutOfBounds);
         }
