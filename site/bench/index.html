@@ -211,7 +211,7 @@
 
   <section class="what-tested" aria-label="What this page tests">
     <strong>What this page tests</strong>
-    Seventeen browser workloads plus WAL reference charts. Row <code>.nxb</code> plus <code>records_&lt;N&gt;_columnar.nxb</code> for aggregate comparisons. Use size presets or upload matching fixtures.
+    Eighteen browser workloads plus WAL reference charts. Row <code>.nxb</code> plus <code>records_&lt;N&gt;_columnar.nxb</code> for aggregate comparisons. Use size presets or upload matching fixtures.
   </section>
 
   <p class="bench-legend" id="bench-legend">
@@ -337,21 +337,27 @@
     <div class="chart" id="chart-indexed-sum"></div>
   </section>
 
+  <section class="card card--warm" id="section-column-prefetch">
+    <h2>16. Columnar <code>prefetch_column</code> (§7.4) <span class="warm-tag">· columnar fixture</span></h2>
+    <p class="desc">Compare <code>colSumF64("score")</code> with a fresh reader each iteration vs one <code>prefetch_column</code> before sum, and vs a reader that stays warmed across iterations. Requires <code>records_&lt;N&gt;_columnar.nxb</code>.</p>
+    <div class="chart" id="chart-column-prefetch"></div>
+  </section>
+
   <section class="card">
-    <h2>16. Memory — heap growth (Chrome)</h2>
+    <h2>17. Memory — heap growth (Chrome)</h2>
     <p class="desc">Indicative <code>performance.memory</code> delta after parse vs <code>NxsReader</code> (not file size on disk).</p>
     <div class="sizes-info" id="memory-info"></div>
     <div class="chart" id="chart-memory"></div>
   </section>
 
   <section class="card">
-    <h2>17. Workers — parallel sum score</h2>
+    <h2>18. Workers — parallel sum score</h2>
     <p class="desc">Main-thread <code>sumF64</code> vs four module workers each summing a chunk (buffer copy per worker).</p>
     <div class="chart" id="chart-worker"></div>
   </section>
 
   <section class="card" id="wal-section">
-    <h2>18. WAL span ingestion — append · recover · seal · roundtrip</h2>
+    <h2>19. WAL span ingestion — append · recover · seal · roundtrip</h2>
     <p class="desc">Rust <code>cargo run --release --bin bench</code> on Apple M-series (tmpfs I/O for append). Reference charts below; values match <a href="https://github.com/nyxis-io/nyxis/blob/main/BENCHMARK.md">BENCHMARK.md</a>. Append is amortised <strong>append-batch</strong> (encode + write all spans per run).</p>
 
     <div style="margin-bottom:14px">

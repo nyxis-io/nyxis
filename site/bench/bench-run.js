@@ -521,6 +521,27 @@ export async function runBenchmarks(ctx) {
   }
   drawChart($("#chart-indexed-sum"), indexedRows, recordCount);
 
+  // 12b. Columnar prefetch_column (§7.4)
+  if (colReader && nxbColBuf?.byteLength) {
+    const colWarm = new NxsReader(nxbColBuf);
+    if (colWarm.layout === "columnar") colWarm.prefetch_column("score");
+    drawChart($("#chart-column-prefetch"), [
+      scenario("colSumF64 (new reader each iter)", "nxs-col", false, null, () =>
+        bench(iters.scan, () => new NxsReader(nxbColBuf).colSumF64("score"), pr)),
+      scenario("prefetch_column + colSumF64 (new reader)", "nxs-col", false, null, () =>
+        bench(iters.scan, () => {
+          const r = new NxsReader(nxbColBuf);
+          r.prefetch_column("score");
+          return r.colSumF64("score");
+        }, pr)),
+      scenario("prefetch_column warm + colSumF64", "nxs-col", false, null, () =>
+        bench(iters.scan, () => colWarm.colSumF64("score"), pr)),
+    ], recordCount);
+  } else {
+    const el = $("#chart-column-prefetch");
+    if (el) el.innerHTML = "<p class=\"desc\">Columnar fixture not loaded — chart skipped.</p>";
+  }
+
   // 13. Cold pipeline: open + sum (no pre-parse)
   const coldReduceRows = [
     scenario("JSON parse + sum score", "json", !!jsonFail, jsonFail, () =>
