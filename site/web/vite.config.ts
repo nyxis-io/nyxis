@@ -6,6 +6,20 @@ import { resolve } from "node:path";
 const benchDir = resolve(__dirname, "../bench");
 const benchWorkerSrc = resolve(benchDir, "bench-worker.js");
 const publicDir = resolve(__dirname, "public");
+const webRoot = resolve(__dirname, ".");
+
+type StaticRoute = {
+  path: string;
+  markdown: string;
+  title: string;
+  description: string;
+  interactive?: boolean;
+};
+
+const staticRoutes: StaticRoute[] = JSON.parse(
+  readFileSync(resolve(webRoot, "content/routes.json"), "utf8"),
+);
+const markdownByPath = new Map(staticRoutes.map((r) => [r.path, r.markdown]));
 
 const AGENT_LINK_HEADER =
   '</.well-known/api-catalog>; rel="api-catalog", ' +
@@ -35,6 +49,23 @@ function resolvePublicFile(url: string): string | null {
   }
 }
 
+function serveMarkdown(
+  res: {
+    statusCode: number;
+    setHeader: (k: string, v: string) => void;
+    end: (b: string) => void;
+  },
+  mdPath: string,
+  linkHeader = false,
+): void {
+  const body = readFileSync(mdPath, "utf8");
+  res.statusCode = 200;
+  res.setHeader("Content-Type", "text/markdown");
+  res.setHeader("x-markdown-tokens", String(approxMarkdownTokens(body)));
+  if (linkHeader) res.setHeader("Link", AGENT_LINK_HEADER);
+  res.end(body);
+}
+
 function agentDiscoveryMiddleware(
   req: { url?: string; headers: { accept?: string } },
   res: {
@@ -47,15 +78,19 @@ function agentDiscoveryMiddleware(
   const url = req.url?.split("?")[0] ?? "";
   const accept = req.headers.accept ?? "";
 
-  if (url === "/" && accept.includes("text/markdown")) {
-    const mdPath = resolvePublicFile("/index.md");
+  if (url.endsWith(".md")) {
+    const mdPath = resolvePublicFile(url);
     if (mdPath) {
-      const body = readFileSync(mdPath, "utf8");
-      res.statusCode = 200;
-      res.setHeader("Content-Type", "text/markdown");
-      res.setHeader("x-markdown-tokens", String(approxMarkdownTokens(body)));
-      res.setHeader("Link", AGENT_LINK_HEADER);
-      res.end(body);
+      serveMarkdown(res, mdPath, url === "/index.md");
+      return;
+    }
+  }
+
+  const mdRoute = markdownByPath.get(url);
+  if (mdRoute && accept.includes("text/markdown")) {
+    const mdPath = resolvePublicFile(mdRoute);
+    if (mdPath) {
+      serveMarkdown(res, mdPath, url === "/");
       return;
     }
   }
