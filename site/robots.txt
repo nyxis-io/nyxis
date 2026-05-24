@@ -1,5 +1,6 @@
+# Content-Signals-Version: 1
 User-agent: *
-Content-Signal: ai-train=no, search=yes, ai-input=yes
+Content-Signal: ai-train=no, search=yes, ai-input=no
 Allow: /
 
 Disallow: /examples/

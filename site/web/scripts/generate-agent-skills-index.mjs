@@ -57,3 +57,9 @@ const indexMd = readFileSync(indexMdPath, "utf8");
 const tokens = approxMarkdownTokens(indexMd);
 writeFileSync(markdownTokensPath, `add_header x-markdown-tokens "${tokens}" always;\n`);
 console.log(`Wrote ${markdownTokensPath} (${tokens} tokens)`);
+
+const robotsPath = join(webRoot, "public/robots.txt");
+const legacyRobotsPath = resolve(webRoot, "../../site/robots.txt");
+const robotsBody = readFileSync(robotsPath, "utf8");
+writeFileSync(legacyRobotsPath, robotsBody);
+console.log(`Synced ${legacyRobotsPath}`);
