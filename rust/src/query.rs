@@ -13,6 +13,7 @@
 //! }
 //! ```
 
+use crate::column_prefetch::ColumnWarmState;
 use crate::error::{NxsError, Result};
 use crate::layout::{
     col_var_parts, column_sector_len, is_var_sigil, null_bitmap_bytes, var_str_at,
@@ -68,6 +69,7 @@ pub struct Reader<'a> {
     col_buf_off: Vec<u64>,
     col_buf_len: Vec<u64>,
     prefetch: Option<PrefetchEngine>,
+    column: ColumnWarmState,
 }
 
 impl<'a> Reader<'a> {
@@ -203,6 +205,7 @@ impl<'a> Reader<'a> {
             col_buf_off,
             col_buf_len,
             prefetch: None,
+            column: ColumnWarmState::default(),
         })
     }
 
@@ -241,6 +244,26 @@ impl<'a> Reader<'a> {
         }
     }
 
+    /// Prefetch a single column buffer (columnar layout only; §7.4).
+    pub fn prefetch_column(&self, key: &str) -> Result<()> {
+        if self.layout != Layout::Columnar {
+            return Err(NxsError::ParseError(
+                "prefetch_column requires columnar layout".into(),
+            ));
+        }
+        let slot = *self
+            .key_index
+            .get(key)
+            .ok_or_else(|| NxsError::ParseError(format!("key not found: {key}")))?;
+        let off = *self.col_buf_off.get(slot).ok_or(NxsError::OutOfBounds)? as usize;
+        let len = *self.col_buf_len.get(slot).ok_or(NxsError::OutOfBounds)? as usize;
+        if off.saturating_add(len) > self.data.len() {
+            return Err(NxsError::OutOfBounds);
+        }
+        self.column.prefetch(slot);
+        Ok(())
+    }
+
     /// Prefetch pages covering records `[start_index, end_index]` (row layout only).
     pub fn prefetch_viewport(&self, start_index: usize, end_index: usize) -> Result<()> {
         if self.layout != Layout::Row {
@@ -260,7 +283,7 @@ impl<'a> Reader<'a> {
 
     /// Page cache statistics (zeros when prefetch was not enabled at open).
     pub fn cache_stats(&self) -> CacheStats {
-        if let Some(prefetch) = &self.prefetch {
+        let mut stats = if let Some(prefetch) = &self.prefetch {
             prefetch.cache_stats()
         } else {
             CacheStats {
@@ -270,10 +293,15 @@ impl<'a> Reader<'a> {
                 cache_hits: 0,
                 cache_misses: 0,
                 fetches_issued: 0,
+                column_fetches_issued: 0,
                 strategy: "disabled".to_string(),
                 pattern: "unknown".to_string(),
             }
+        };
+        if self.layout == Layout::Columnar {
+            stats.column_fetches_issued = self.column.fetches();
         }
+        stats
     }
 
     fn touch_record_page(&self, index: usize) {

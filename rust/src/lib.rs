@@ -31,6 +31,7 @@
 
 pub mod arrow_project;
 pub mod col_reduce;
+pub mod column_prefetch;
 pub mod compiler;
 pub mod consts;
 pub mod convert;

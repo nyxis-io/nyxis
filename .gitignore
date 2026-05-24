@@ -91,3 +91,9 @@ nyxis-drivers/
 
 # Para-Programmatic Context
 .para-worktrees/
+
+# CSV fixtures for conformance tests
+conformance/records_*
+
+# Compiled example binaries (sources are examples/*.nxs)
+examples/*.nxb

@@ -179,6 +179,26 @@ console.log(obj.getF64("score"));
 console.log(obj.getBool("active"));
 ```
 
+### Adaptive prefetch
+
+Row layout — warm pages for a viewport before random access (virtual scroll):
+
+```js
+await reader.prefetch_viewport(0, 49);
+for (let i = 0; i <= 49; i++) {
+  console.log(reader.record(i).getStr("username"));
+}
+```
+
+Columnar layout — one range fetch per column buffer (bypasses the row page cache):
+
+```js
+reader.prefetchColumn("score");
+const sum = reader.colSumF64("score");
+```
+
+Pass `fetchRange` in options to count or inject HTTP `Range` fetches in tests and remote I/O.
+
 ### Slot handles (hot path)
 
 ```js

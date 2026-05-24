@@ -407,6 +407,27 @@ NXS is not a drop-in replacement for JSON everywhere. It is the right choice whe
 >
 > NXS leads zero-copy peers on warm selective access (sub-microsecond C driver vs Cap'n Proto ~3 µs macOS / ~5–11 µs Linux and FlatBuffers ~8 µs macOS / ~12–25 µs Linux), TTFR at P50/P95/P99 on Linux inotify (7 µs P50 on EPYC 9R14; 37 µs on Haswell), and file size at 50%+ field population. **NXS columnar layout** (`FLAG_COLUMNAR`, SIMD dense `sum_f64`) reaches **1.3× Arrow IPC** on AMD EPYC 9R14 AVX-512 (gate passes ✅) and **1.7× on Apple Silicon** NEON (gate passes ✅). On Intel Haswell AVX2-only (2013 hardware): ~6× gap — hardware ceiling, not a software gap. **NXS row layout** is **112× slower than Arrow** on dense scan — use columnar layout or the Arrow bridge. NXS loses on cold open vs Cap'n Proto and FlatBuffers on small files, on file size at low population vs FlatBuffers, and on columnar file size vs Arrow (~15% larger at 1M records). Protobuf results are post-parse references; access and scan times are not comparable to zero-copy measurements.
 
+<a id="workload-f"></a>
+
+## Workload F: Adaptive prefetch
+
+**Spec:** `Adaptive-prefetch-spec.md` §12. Measures viewport and columnar prefetch on remote-style byte-range I/O (fetch recorder or HTTP `Range`). JSON baselines are not comparable — they require full-file parse before access.
+
+| Scenario | What it measures |
+| --- | --- |
+| **F1 — Virtual scroll cold start** | Time from open to first warm viewport after `prefetch_viewport` on a cold large row file |
+| **F2 — Viewport scroll throughput** | Sustained scroll (e.g. 50 records/step through 1M rows) with adaptive coalescing |
+| **F3 — Random access, large file** | 1000 random record reads on a 500 MB file; page cache hit rate |
+| **F4 — Memory under scroll** | RSS while scrolling 1M records with default `max_pages` |
+
+**Columnar fast path (§7.4):** `prefetch_column(field)` issues one range fetch per column buffer; `col_sum_f64` does not walk the row page cache. Conformance: `prefetch_columnar_fast_path` (single fetch before sum on `columnar_flat8_dense_100`).
+
+**F1 (JS driver, local fetch recorder, columnar 100-record fixture):** `prefetch_column("score")` + `colSumF64` — 1 range fetch, sum 2475.0 (see `nyxis-drivers/js/test.js`). Full 100 MB row F1 numbers are environment-dependent; publish from `bench/` when a frozen remote fixture lands.
+
+Workloads A–E gates are unchanged; prefetch is additive.
+
+---
+
 <a id="workload-comparison-suite"></a>
 
 ## Workload comparison suite
