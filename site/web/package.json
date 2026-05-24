@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "node scripts/generate-agent-skills-index.mjs && node scripts/generate-page-markdown.mjs && vite build",
+    "build": "node scripts/generate-agent-skills-index.mjs && node scripts/generate-page-markdown.mjs && vite build && node scripts/prerender-static-html.mjs",
     "typecheck": "vue-tsc -b --noEmit",
     "preview": "vite preview"
   },
@@ -15,6 +15,7 @@
   },
   "devDependencies": {
     "@vitejs/plugin-vue": "^5.2.1",
+    "marked": "^15.0.7",
     "playwright": "^1.49.1",
     "typescript": "~5.7.2",
     "vite": "^6.0.7",
