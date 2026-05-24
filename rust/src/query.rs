@@ -247,9 +247,7 @@ impl<'a> Reader<'a> {
     /// Prefetch a single column buffer (columnar layout only; §7.4).
     pub fn prefetch_column(&self, key: &str) -> Result<()> {
         if self.layout != Layout::Columnar {
-            return Err(NxsError::ParseError(
-                "prefetch_column requires columnar layout".into(),
-            ));
+            return Err(NxsError::UnsupportedLayout);
         }
         let slot = *self
             .key_index
@@ -261,7 +259,13 @@ impl<'a> Reader<'a> {
         if end > self.data.len() {
             return Err(NxsError::OutOfBounds);
         }
-        self.column.prefetch(slot);
+        if self.column.prefetch(slot) {
+            const PAGE: usize = 4096;
+            let sector = &self.data[off..end];
+            for page_start in (0..sector.len()).step_by(PAGE) {
+                std::hint::black_box(sector[page_start]);
+            }
+        }
         Ok(())
     }
 
@@ -282,7 +286,8 @@ impl<'a> Reader<'a> {
         Ok(())
     }
 
-    /// Page cache statistics (zeros when prefetch was not enabled at open).
+    /// Page-cache statistics. Row prefetch counters are zero when opened via
+    /// [`Self::new`]; columnar readers may still report [`CacheStats::column_fetches_issued`].
     pub fn cache_stats(&self) -> CacheStats {
         let mut stats = if let Some(prefetch) = &self.prefetch {
             prefetch.cache_stats()

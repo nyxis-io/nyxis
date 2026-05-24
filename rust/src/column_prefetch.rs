@@ -15,12 +15,12 @@ impl ColumnWarmState {
     /// Mark `slot` warmed; returns `true` when a new fetch was issued.
     pub fn prefetch(&self, slot: usize) -> bool {
         let mut warmed = self.warmed.lock().expect("column warm lock");
-        if warmed.contains(&slot) {
-            return false;
+        if warmed.insert(slot) {
+            self.fetches.fetch_add(1, Ordering::Relaxed);
+            true
+        } else {
+            false
         }
-        warmed.insert(slot);
-        self.fetches.fetch_add(1, Ordering::Relaxed);
-        true
     }
 
     pub fn fetches(&self) -> u64 {

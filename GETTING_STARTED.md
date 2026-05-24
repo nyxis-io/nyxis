@@ -193,7 +193,7 @@ for (let i = 0; i <= 49; i++) {
 Columnar layout — one range fetch per column buffer (bypasses the row page cache):
 
 ```js
-reader.prefetchColumn("score");
+reader.prefetch_column("score");
 const sum = reader.colSumF64("score");
 ```
 
