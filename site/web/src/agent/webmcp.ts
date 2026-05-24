@@ -2,7 +2,7 @@
  * WebMCP tool registration for agent discovery (Chrome EPP / WebMCP spec).
  * Registers site navigation and documentation tools when the API is available.
  */
-const SITE_ORIGIN = "https://nyxis.io";
+import type { Router } from "vue-router";
 
 const NAV_ROUTES: Record<string, { title: string; description: string }> = {
   "/": { title: "Home", description: "Nyxis landing page with performance highlights and layout overview" },
@@ -34,7 +34,7 @@ declare global {
   }
 }
 
-export function initWebMcp(): void {
+export function initWebMcp(router: Router): void {
   const mc = navigator.modelContext;
   if (!mc?.registerTool) return;
 
@@ -62,7 +62,7 @@ export function initWebMcp(): void {
         if (!route) {
           return { error: `Unknown path: ${path}`, available: Object.keys(NAV_ROUTES) };
         }
-        window.location.assign(path);
+        await router.push(path);
         return { navigated: path, title: route.title };
       },
     },
@@ -103,7 +103,7 @@ export function initWebMcp(): void {
           health: "/.well-known/health",
         };
         const key = String(input.resource);
-        const url = `${SITE_ORIGIN}${paths[key]}`;
+        const url = paths[key];
         const res = await fetch(url, { headers: { Accept: "application/json" } });
         if (!res.ok) return { error: `HTTP ${res.status}`, url };
         return { url, data: await res.json() };

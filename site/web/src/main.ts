@@ -8,9 +8,9 @@ import { initTheme } from "./composables/useTheme";
 import { initWebMcp } from "./agent/webmcp";
 
 initTheme();
-initWebMcp();
 
 const app = createApp(App);
 app.use(createHead());
 app.use(router);
+initWebMcp(router);
 app.mount("#app");
