@@ -7,7 +7,7 @@
   },
   "servers": [
     {
-      "url": "https://nyxis.io/sdk",
+      "url": "https://www.nyxis.io/sdk",
       "description": "Static SDK assets"
     }
   ],
