@@ -1,0 +1,74 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Nyxis MCP Server (nxs-mcp)",
+    "version": "1.0.0",
+    "description": "Model Context Protocol tools for inspecting, exporting, importing, and compiling Nyxis .nxb binary files. Transport is stdio; install via make build-mcp."
+  },
+  "servers": [
+    {
+      "url": "stdio://nxs-mcp",
+      "description": "Local MCP server (stdio transport)"
+    }
+  ],
+  "paths": {
+    "/tools/nxs_inspect": {
+      "post": {
+        "operationId": "nxs_inspect",
+        "summary": "Inspect a .nxb file (hschema, record count, and decoded records as JSON",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["path"],
+                "properties": {
+                  "path": { "type": "string", "description": "Path to the .nxb file" },
+                  "records": { "type": "string", "default": "3" },
+                  "verify_hash": { "type": "boolean" }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/tools/nxs_schema": {
+      "post": {
+        "operationId": "nxs_schema",
+        "summary": "Return schema keys and sigil types without decoding records"
+      }
+    },
+    "/tools/nxs_record": {
+      "post": {
+        "operationId": "nxs_record",
+        "summary": "Decode a single record by zero-based index"
+      }
+    },
+    "/tools/nxs_export_json": {
+      "post": {
+        "operationId": "nxs_export_json",
+        "summary": "Export records as JSON (default limit 100)"
+      }
+    },
+    "/tools/nxs_export_csv": {
+      "post": {
+        "operationId": "nxs_export_csv",
+        "summary": "Export a .nxb file as CSV"
+      }
+    },
+    "/tools/nxs_import": {
+      "post": {
+        "operationId": "nxs_import",
+        "summary": "Convert JSON, CSV, or XML to .nxb"
+      }
+    },
+    "/tools/nxs_compile": {
+      "post": {
+        "operationId": "nxs_compile",
+        "summary": "Compile .nxs source to .nxb binary"
+      }
+    }
+  }
+}

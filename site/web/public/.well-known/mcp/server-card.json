@@ -1,0 +1,44 @@
+{
+  "serverInfo": {
+    "name": "nxs-mcp",
+    "version": "1.0.0"
+  },
+  "name": "io.nyxis/nxs-mcp",
+  "version": "1.0.0",
+  "title": "Nyxis MCP Server",
+  "description": "MCP server exposing Nyxis .nxb inspection, export, import, and compile tools for AI agents.",
+  "websiteUrl": "https://nyxis.io/",
+  "repository": {
+    "url": "https://github.com/nyxis-io/nyxis",
+    "source": "github",
+    "subfolder": "mcp"
+  },
+  "endpoint": "stdio://nxs-mcp",
+  "capabilities": {
+    "tools": [
+      "nxs_inspect",
+      "nxs_schema",
+      "nxs_record",
+      "nxs_export_json",
+      "nxs_export_csv",
+      "nxs_import",
+      "nxs_compile"
+    ],
+    "resources": ["nxb://{path}", "nxb:///.nxb-index"],
+    "prompts": []
+  },
+  "packages": [
+    {
+      "registryType": "other",
+      "identifier": "nxs-mcp",
+      "version": "1.0.0",
+      "transport": { "type": "stdio" },
+      "packageArguments": [
+        { "type": "positional", "value": "--data-dir" },
+        { "type": "positional", "value": "/path/to/nxb/files" },
+        { "type": "positional", "value": "--bin-dir" },
+        { "type": "positional", "value": "/path/to/rust/target/release" }
+      ]
+    }
+  ]
+}

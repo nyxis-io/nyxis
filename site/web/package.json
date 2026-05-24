@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "node scripts/generate-agent-skills-index.mjs && vite build",
     "typecheck": "vue-tsc -b --noEmit",
     "preview": "vite preview"
   },

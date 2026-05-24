@@ -1,0 +1,40 @@
+{
+  "linkset": [
+    {
+      "anchor": "https://nyxis.io/mcp",
+      "service-desc": [
+        {
+          "href": "https://nyxis.io/.well-known/openapi/nxs-mcp.json",
+          "type": "application/json"
+        }
+      ],
+      "service-doc": [
+        {
+          "href": "https://github.com/nyxis-io/nyxis#mcp-server",
+          "type": "text/html"
+        }
+      ],
+      "status": [
+        {
+          "href": "https://nyxis.io/.well-known/health",
+          "type": "application/json"
+        }
+      ]
+    },
+    {
+      "anchor": "https://nyxis.io/sdk",
+      "service-desc": [
+        {
+          "href": "https://nyxis.io/.well-known/openapi/js-sdk.json",
+          "type": "application/json"
+        }
+      ],
+      "service-doc": [
+        {
+          "href": "https://github.com/nyxis-io/nyxis-drivers/tree/main/js",
+          "type": "text/html"
+        }
+      ]
+    }
+  ]
+}
