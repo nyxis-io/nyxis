@@ -24,7 +24,9 @@ export SKIP_SETUP=1
 export SKIP_REPORT=1
 bash bench/scripts/run_all.sh
 
-"$PY" bench/scripts/report.py --results "$OUT" --raw "$OUT/raw/run.log" || true
+REPORT_RAW=("$OUT/raw/run.log")
+[ -f "$OUT/raw/workload_f.jsonl" ] && REPORT_RAW+=("$OUT/raw/workload_f.jsonl")
+"$PY" bench/scripts/report.py --results "$OUT" --raw "${REPORT_RAW[@]}" || true
 "$PY" bench/scripts/verdicts.py "$OUT/summary.json" --write "$OUT/outcomes.json" || true
 cat bench/methodology/workload_*.md >"$OUT/methodology.md" 2>/dev/null || true
 echo "saved → $OUT/summary.json (+ outcomes.json)"

@@ -28,8 +28,12 @@ Tail-index-driven **viewport prefetch** with a bounded LRU page cache, optional 
 
 - **F0** — columnar aggregate vs JSON (`site/bench/` chart §16)
 - **F1 (browser)** — `prefetch_viewport(0, 49)` on cold read / full scan bars (charts §2–3, §6, warm §8)
-- **F1–F4 (native / remote)** — methodology in `BENCHMARK.md` Workload F; frozen remote numbers TBD
+- **F1–F4 (native)** — Go fetch-recorder harness; frozen 1M numbers in `BENCHMARK.md` with **prefetch fetch counts** and **projected browser (20 ms RTT)** column. In-memory harness: lazy wins wall time; production win is browser RTT + coalescing (see `bench/methodology/workload_F.md`).
+
+## Driver sign-off
+
+§9.1 matrix and maintainer attestation: [`docs/adaptive-prefetch-driver-matrix.md`](adaptive-prefetch-driver-matrix.md).
 
 ## Definition of done (§14)
 
-See spec §14. Remaining optional items: native Workload F1–F4 frozen numbers on large remote fixtures; PAX-specific prefetch (future).
+See spec §14. Optional follow-up: 500 MB F3 fixture; header-only open for native RSS isolation in F4.

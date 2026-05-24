@@ -83,12 +83,30 @@ def _dedupe_key(row: dict) -> tuple:
         row.get("records"),
         row.get("population", -1),
         row.get("layout"),
+        row.get("scenario"),
+        row.get("mode"),
     )
 
 
 def normalize_row(row: dict) -> dict:
     """Map legacy JSONL to current metric names."""
     row = dict(row)
+    if row.get("workload") == "F":
+        row.setdefault("format", "nxs")
+        row.setdefault("population", -1)
+        val = row.get("value")
+        unit = row.get("unit", "")
+        if val is not None:
+            if unit == "ms":
+                row["value_ms"] = val
+                row["p50_us"] = round(float(val) * 1000, 3)
+            elif unit == "s":
+                row["value_s"] = val
+                row["p50_us"] = round(float(val) * 1e6, 1)
+            elif unit == "MB":
+                row["peak_sys_mb"] = val
+        return row
+
     fe = row.get("flush_every")
     samples = int(row.get("samples", 0) or 0)
     met = row.get("metric")
