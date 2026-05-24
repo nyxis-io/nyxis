@@ -758,20 +758,25 @@ mod tests {
 
     #[test]
     fn pause_stops_speculative_prefetch() {
-        let data = make_compact_nxb(200);
-        let reader = Reader::with_options(&data, OpenOptions::new()).unwrap();
-        for i in 0..25 {
+        // Small pages so speculative windows do not overlap after pause/resume.
+        let opts = OpenOptions::new()
+            .page_size(4096)
+            .coalesce_gap_pages(0)
+            .prefetch_depth(4);
+        let data = make_sparse_nxb(50);
+        let reader = Reader::with_options(&data, opts).unwrap();
+        for i in 0..21 {
             let _ = reader.record(i);
         }
         assert_eq!(reader.cache_stats().pattern, "sequential");
         let before = reader.cache_stats().fetches_issued;
         reader.pause_prefetch();
-        let _ = reader.record(26);
-        assert_eq!(reader.cache_stats().fetches_issued, before);
-        reader.resume_prefetch();
-        for i in 27..32 {
+        for i in 21..26 {
             let _ = reader.record(i);
         }
+        assert_eq!(reader.cache_stats().fetches_issued, before);
+        reader.resume_prefetch();
+        let _ = reader.record(26);
         assert!(reader.cache_stats().fetches_issued > before);
     }
 
