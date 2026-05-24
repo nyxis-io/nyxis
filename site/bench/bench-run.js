@@ -104,7 +104,7 @@ export function fmtPerRecord(ms, recordCount) {
 export function drawChart(containerEl, rows, recordCount = 0) {
   containerEl.innerHTML = "";
   const timed = rows.filter(r => !r.failed && (typeof r.ms === "number" || typeof r.barValue === "number"));
-  const maxBar = timed.length ? Math.max(...timed.map(r => r.barValue ?? r.ms)) : 1;
+  const maxBar = timed.length ? Math.max(1, ...timed.map(r => r.barValue ?? r.ms)) : 1;
   for (const r of rows) {
     const label = document.createElement("div");
     label.className = "label";
@@ -155,6 +155,112 @@ function sumScoreFromFieldIndex(idx) {
   return s;
 }
 
+// ── Memory (Chrome) ─────────────────────────────────────────────────────────
+
+function maybeGc() {
+  if (typeof globalThis.gc === "function") globalThis.gc();
+}
+
+/** Hold parsed data alive until after measureUserAgentSpecificMemory's second sample. */
+let _memHold;
+
+async function measureHeapDelta(setupFn) {
+  if (globalThis.crossOriginIsolated && performance.measureUserAgentSpecificMemory) {
+    maybeGc();
+    _memHold = undefined;
+    const before = await performance.measureUserAgentSpecificMemory();
+    _memHold = setupFn();
+    const after = await performance.measureUserAgentSpecificMemory();
+    return Math.max(0, after.bytes - before.bytes);
+  }
+  const mem = performance.memory;
+  if (!mem) return null;
+  maybeGc();
+  const base = mem.usedJSHeapSize;
+  _memHold = setupFn();
+  // Chrome updates usedJSHeapSize asynchronously; yield so accounting can catch up.
+  await new Promise(r => setTimeout(r, 0));
+  return Math.max(0, mem.usedJSHeapSize - base);
+}
+
+async function runMemoryBench(ctx) {
+  const { $, jsonStr, nxbBuf, jsonFailText } = ctx;
+  const memEl = $("#memory-info");
+  const chartEl = $("#chart-memory");
+
+  function renderNa(reason) {
+    memEl.innerHTML = `<span class="tag empty">${reason}</span>`;
+    drawChart(chartEl, [
+      { label: "JSON.parse heap growth", klass: "json", failed: true, failText: "N/A" },
+      { label: "NxsReader heap growth", klass: "nxs", failed: true, failText: "N/A" },
+    ], 0);
+  }
+
+  if (!jsonStr) {
+    renderNa("No JSON fixture — heap comparison unavailable");
+    return;
+  }
+  if (jsonFailText) {
+    renderNa(`JSON unavailable (${jsonFailText})`);
+    return;
+  }
+  if (!performance.memory && !(globalThis.crossOriginIsolated && performance.measureUserAgentSpecificMemory)) {
+    renderNa("performance.memory unavailable — use Chrome for heap comparison");
+    return;
+  }
+
+  let jsonDelta;
+  let nxsDelta;
+  try {
+    jsonDelta = await measureHeapDelta(() => {
+      const hold = JSON.parse(jsonStr);
+      void hold.length;
+      if (hold.length > 0) {
+        void hold[0].username;
+        void hold[hold.length - 1]?.score;
+      }
+      return hold;
+    });
+    _memHold = undefined;
+    maybeGc();
+
+    nxsDelta = await measureHeapDelta(() => {
+      const r = new NxsReader(nxbBuf);
+      void r.recordCount;
+      const slot = r.slot("username");
+      const c = r.cursor();
+      if (r.recordCount > 0) {
+        c.seek(0);
+        void c.getStrBySlot(slot);
+      }
+      return r;
+    });
+  } catch (e) {
+    renderNa(e.message);
+    return;
+  } finally {
+    _memHold = undefined;
+  }
+
+  if (jsonDelta === null || nxsDelta === null) {
+    renderNa("performance.memory unavailable — use Chrome for heap comparison");
+    return;
+  }
+
+  const method = globalThis.crossOriginIsolated && performance.measureUserAgentSpecificMemory
+    ? "measureUserAgentSpecificMemory"
+    : "performance.memory";
+  memEl.innerHTML = `
+    <span class="tag">Heap Δ after JSON.parse: ${fmtBytes(jsonDelta)}</span>
+    <span class="tag">Heap Δ after NxsReader: ${fmtBytes(nxsDelta)}</span>
+    <span class="tag">(${method}; indicative only)</span>
+  `;
+  drawChart(chartEl, [
+    { label: "JSON.parse heap growth", klass: "json", ms: 0, barValue: jsonDelta, displayText: fmtBytes(jsonDelta) },
+    { label: "NxsReader heap growth", klass: "nxs", ms: 0, barValue: nxsDelta, displayText: fmtBytes(nxsDelta) },
+  ], 0);
+}
+
 // ── Main runner ─────────────────────────────────────────────────────────────
 
 /**
@@ -184,6 +290,9 @@ export async function runBenchmarks(ctx) {
     scan: selectedN >= 1e7 ? 2 : selectedN >= 1e6 ? 3 : selectedN >= 1e5 ? 20 : 500,
     coldReduce: selectedN >= 1e7 ? 2 : selectedN >= 1e6 ? 3 : selectedN >= 1e5 ? 10 : 50,
   };
+
+  // Memory first — before parsedJson / NxsReader pollute the heap (§17).
+  await runMemoryBench(ctx);
 
   const reader = new NxsReader(nxbBuf);
   const recordCount = reader.recordCount;
@@ -625,39 +734,6 @@ export async function runBenchmarks(ctx) {
       })),
   ];
   drawChart($("#chart-stream"), streamRows, recordCount);
-
-  // 16. Memory (Chrome performance.memory)
-  const mem = performance.memory;
-  const memEl = $("#memory-info");
-  if (mem && jsonStr) {
-    const base = mem.usedJSHeapSize;
-    let jsonDelta = 0;
-    try {
-      const hold = JSON.parse(jsonStr);
-      jsonDelta = mem.usedJSHeapSize - base;
-      hold.length = 0;
-    } catch { /* ignore */ }
-    const nxbHold = new NxsReader(nxbBuf);
-    const nxsDelta = mem.usedJSHeapSize - base - jsonDelta;
-    void nxbHold.recordCount;
-    memEl.innerHTML = `
-      <span class="tag">Heap Δ after JSON.parse: ${fmtBytes(Math.max(0, jsonDelta))}</span>
-      <span class="tag">Heap Δ after NxsReader: ${fmtBytes(Math.max(0, nxsDelta))}</span>
-      <span class="tag">(Chrome performance.memory; indicative only)</span>
-    `;
-    const jd = Math.max(0, jsonDelta);
-    const nd = Math.max(0, nxsDelta);
-    drawChart($("#chart-memory"), [
-      { label: "JSON.parse heap growth", klass: "json", ms: 0, barValue: jd, displayText: fmtBytes(jd) },
-      { label: "NxsReader heap growth", klass: "nxs", ms: 0, barValue: nd, displayText: fmtBytes(nd) },
-    ], 0);
-  } else {
-    memEl.innerHTML = `<span class="tag empty">performance.memory unavailable — use Chrome for heap comparison</span>`;
-    drawChart($("#chart-memory"), [
-      { label: "JSON heap", klass: "json", failed: true, failText: "N/A" },
-      { label: "NXS heap", klass: "nxs", failed: true, failText: "N/A" },
-    ], 0);
-  }
 
   // 17. Worker parallel sum (optional)
   await runWorkerBench(ctx, recordCount, iters.scan);
