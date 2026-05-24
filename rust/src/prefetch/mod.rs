@@ -769,8 +769,10 @@ mod tests {
         let _ = reader.record(26);
         assert_eq!(reader.cache_stats().fetches_issued, before);
         reader.resume_prefetch();
-        let _ = reader.record(27);
-        assert!(reader.cache_stats().fetches_issued >= before);
+        for i in 27..32 {
+            let _ = reader.record(i);
+        }
+        assert!(reader.cache_stats().fetches_issued > before);
     }
 
     #[test]

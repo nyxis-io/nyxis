@@ -37,11 +37,12 @@ func TestPrefetchCancel(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	issued := r.CacheStats().FetchesIssued
+	beforeClose := fetchCalls.Load()
 	r.Close()
-	after := fetchCalls.Load()
+	time.Sleep(slowFetch * 2)
+	afterClose := fetchCalls.Load()
 	// Close must cancel eager work; no unbounded fetch storm after drop.
-	if after > int32(issued)+10 {
-		t.Fatalf("fetches after close = %d, issued before close = %d", after, issued)
+	if afterClose > beforeClose+10 {
+		t.Fatalf("fetches after close = %d, before close = %d", afterClose, beforeClose)
 	}
 }
