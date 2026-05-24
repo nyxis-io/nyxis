@@ -357,6 +357,7 @@ pub struct PrefetchEngine {
     detector: Mutex<AccessPatternDetector>,
     file_size: usize,
     eager: EagerState,
+    paused: AtomicBool,
 }
 
 impl PrefetchEngine {
@@ -374,7 +375,20 @@ impl PrefetchEngine {
             detector: Mutex::new(AccessPatternDetector::new()),
             file_size,
             eager: EagerState::new(),
+            paused: AtomicBool::new(false),
         }
+    }
+
+    pub fn pause_prefetch(&self) {
+        self.paused.store(true, Ordering::Release);
+    }
+
+    pub fn resume_prefetch(&self) {
+        self.paused.store(false, Ordering::Release);
+    }
+
+    fn is_paused(&self) -> bool {
+        self.paused.load(Ordering::Acquire)
     }
 
     pub fn options(&self) -> &OpenOptions {
@@ -406,7 +420,7 @@ impl PrefetchEngine {
 
     /// Start eager background load of the row data sector (§7.3).
     pub fn start_eager_background(&self, data: Vec<u8>, tail_start: usize) {
-        if self.strategy() != PrefetchStrategy::Eager {
+        if self.strategy() != PrefetchStrategy::Eager || self.is_paused() {
             return;
         }
         if self.eager.started.swap(true, Ordering::AcqRel) {
@@ -475,7 +489,7 @@ impl PrefetchEngine {
     }
 
     pub fn on_access(&self, data: &[u8], tail_start: usize, record_count: usize, index: usize) {
-        if record_count == 0 {
+        if record_count == 0 || self.is_paused() {
             return;
         }
         {
@@ -505,7 +519,7 @@ impl PrefetchEngine {
         tail_start: usize,
     ) {
         let mut strategy = self.strategy.lock().expect("prefetch strategy lock");
-        if *strategy != PrefetchStrategy::Adaptive {
+        if *strategy != PrefetchStrategy::Adaptive || self.is_paused() {
             return;
         }
         if detector.pattern() != AccessPattern::Sequential {
@@ -530,6 +544,9 @@ impl PrefetchEngine {
         record_count: usize,
         detector: &AccessPatternDetector,
     ) {
+        if self.is_paused() || self.eager.cancelled.load(Ordering::Acquire) {
+            return;
+        }
         let depth = self.options.prefetch_depth;
         let predicted = detector.predict_next(depth, record_count);
         let page_size = self.options.page_size;
@@ -737,6 +754,45 @@ mod tests {
         reader.warmup();
         assert_eq!(reader.cache_stats().strategy, "eager");
         assert_eq!(reader.cache_stats().pattern, "sequential");
+    }
+
+    #[test]
+    fn pause_stops_speculative_prefetch() {
+        // Small pages so speculative windows do not overlap after pause/resume.
+        let opts = OpenOptions::new()
+            .page_size(4096)
+            .coalesce_gap_pages(0)
+            .prefetch_depth(4);
+        let data = make_sparse_nxb(50);
+        let reader = Reader::with_options(&data, opts).unwrap();
+        for i in 0..21 {
+            let _ = reader.record(i);
+        }
+        assert_eq!(reader.cache_stats().pattern, "sequential");
+        let before = reader.cache_stats().fetches_issued;
+        reader.pause_prefetch();
+        for i in 21..26 {
+            let _ = reader.record(i);
+        }
+        assert_eq!(reader.cache_stats().fetches_issued, before);
+        reader.resume_prefetch();
+        let _ = reader.record(26);
+        assert!(reader.cache_stats().fetches_issued > before);
+    }
+
+    #[test]
+    fn prefetch_cancel_conformance_vector() {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../conformance/prefetch/prefetch_cancel.nxb");
+        let data = match std::fs::read(&path) {
+            Ok(d) => d,
+            Err(_) => return,
+        };
+        let opts = OpenOptions::new().hint(AccessHint::Full);
+        let reader = Reader::with_options(&data, opts).unwrap();
+        let issued_before_close = reader.cache_stats().fetches_issued;
+        drop(reader);
+        assert!(issued_before_close <= 50);
     }
 
     #[test]
