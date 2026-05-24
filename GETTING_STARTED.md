@@ -199,6 +199,8 @@ const sum = reader.colSumF64("score");
 
 Pass `fetchRange` in options to count or inject HTTP `Range` fetches in tests and remote I/O.
 
+**Other drivers:** same APIs — `prefetch_viewport` / `prefetch_column` (or language casing: `PrefetchColumn`, `prefetch_column`, `nxs_prefetch_column`). See `nyxis-drivers` per-language READMEs and `docs/adaptive-prefetch.md`.
+
 ### Slot handles (hot path)
 
 ```js
