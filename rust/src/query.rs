@@ -257,7 +257,8 @@ impl<'a> Reader<'a> {
             .ok_or_else(|| NxsError::ParseError(format!("key not found: {key}")))?;
         let off = *self.col_buf_off.get(slot).ok_or(NxsError::OutOfBounds)? as usize;
         let len = *self.col_buf_len.get(slot).ok_or(NxsError::OutOfBounds)? as usize;
-        if off.saturating_add(len) > self.data.len() {
+        let end = off.checked_add(len).ok_or(NxsError::OutOfBounds)?;
+        if end > self.data.len() {
             return Err(NxsError::OutOfBounds);
         }
         self.column.prefetch(slot);
@@ -580,10 +581,11 @@ impl<'a> Reader<'a> {
     pub fn col_field_var_parts(&self, slot: usize) -> Result<(&[u8], &[u8], &[u8])> {
         let off = *self.col_buf_off.get(slot).ok_or(NxsError::OutOfBounds)? as usize;
         let len = *self.col_buf_len.get(slot).ok_or(NxsError::OutOfBounds)? as usize;
-        if off + len > self.data.len() {
+        let end = off.checked_add(len).ok_or(NxsError::OutOfBounds)?;
+        if end > self.data.len() {
             return Err(NxsError::OutOfBounds);
         }
-        col_var_parts(&self.data[off..off + len], self.record_count)
+        col_var_parts(&self.data[off..end], self.record_count)
     }
 
     fn col_field_parts(&self, slot: usize) -> Result<(&[u8], &[u8])> {
@@ -598,16 +600,18 @@ impl<'a> Reader<'a> {
         }
         let off = *self.col_buf_off.get(slot).ok_or(NxsError::OutOfBounds)? as usize;
         let len = *self.col_buf_len.get(slot).ok_or(NxsError::OutOfBounds)? as usize;
-        if off + len > self.data.len() {
+        let end = off.checked_add(len).ok_or(NxsError::OutOfBounds)?;
+        if end > self.data.len() {
             return Err(NxsError::OutOfBounds);
         }
         let bm_len = null_bitmap_bytes(self.record_count);
         let vals_len = self.record_count.saturating_mul(8);
-        if len < bm_len.saturating_add(vals_len) {
+        let vals_end = bm_len.checked_add(vals_len).ok_or(NxsError::OutOfBounds)?;
+        if len < vals_end {
             return Err(NxsError::OutOfBounds);
         }
-        let sector = &self.data[off..off + len];
-        Ok((&sector[..bm_len], &sector[bm_len..bm_len + vals_len]))
+        let sector = &self.data[off..end];
+        Ok((&sector[..bm_len], &sector[bm_len..vals_end]))
     }
 
     /// Number of top-level records in the file.
