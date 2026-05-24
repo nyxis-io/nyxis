@@ -8,6 +8,7 @@ import { readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 
 const webRoot = resolve(import.meta.dirname, "..");
+const siteOrigin = "https://www.nyxis.io";
 const skillsDir = join(webRoot, "public/.well-known/agent-skills");
 const outPath = join(skillsDir, "index.json");
 const indexMdPath = join(webRoot, "public/index.md");
@@ -39,7 +40,7 @@ const skills = readdirSync(skillsDir)
       name,
       type: "skill-md",
       description: meta.description ?? "",
-      url: `https://nyxis.io/.well-known/agent-skills/${filename}`,
+      url: `${siteOrigin}/.well-known/agent-skills/${filename}`,
       digest: `sha256:${digest}`,
     };
   });

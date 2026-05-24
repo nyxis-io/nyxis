@@ -1,0 +1,18 @@
+/
+  Link: </.well-known/api-catalog>; rel="api-catalog", </.well-known/agent-skills/index.json>; rel="describedby", </.well-known/mcp/server-card.json>; rel="service-meta", <https://github.com/nyxis-io/nyxis/blob/main/SPEC.md>; rel="service-desc", <https://github.com/nyxis-io/nyxis/blob/main/GETTING_STARTED.md>; rel="service-doc"
+
+/index.md
+  Link: </.well-known/api-catalog>; rel="api-catalog", </.well-known/agent-skills/index.json>; rel="describedby", </.well-known/mcp/server-card.json>; rel="service-meta", <https://github.com/nyxis-io/nyxis/blob/main/SPEC.md>; rel="service-desc", <https://github.com/nyxis-io/nyxis/blob/main/GETTING_STARTED.md>; rel="service-doc"
+  Content-Type: text/markdown
+
+/.well-known/api-catalog
+  Content-Type: application/linkset+json; profile="https://www.rfc-editor.org/info/rfc9727"
+
+/.well-known/oauth-protected-resource
+  Content-Type: application/json
+
+/.well-known/oauth-authorization-server
+  Content-Type: application/json
+
+/robots.txt
+  Content-Type: text/plain

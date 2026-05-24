@@ -19,6 +19,7 @@ services:
     volumes:
       - ./docker/nginx.conf:/etc/nginx/nginx.conf:ro
       - ./docker/markdown-tokens.conf:/etc/nginx/markdown-tokens.conf:ro
+      - ./docker/agent-discovery.conf:/etc/nginx/agent-discovery.conf:ro
       - ./site:/var/www/site:ro
       - ./examples:/var/www/examples:ro
       - ../nyxis-drivers/js:/var/www/sdk:ro
