@@ -227,6 +227,20 @@ impl<'a> Reader<'a> {
         }
     }
 
+    /// Stop scheduling speculative and eager prefetch (§8.1).
+    pub fn pause_prefetch(&self) {
+        if let Some(prefetch) = &self.prefetch {
+            prefetch.pause_prefetch();
+        }
+    }
+
+    /// Resume speculative prefetch after [`Self::pause_prefetch`].
+    pub fn resume_prefetch(&self) {
+        if let Some(prefetch) = &self.prefetch {
+            prefetch.resume_prefetch();
+        }
+    }
+
     /// Prefetch pages covering records `[start_index, end_index]` (row layout only).
     pub fn prefetch_viewport(&self, start_index: usize, end_index: usize) -> Result<()> {
         if self.layout != Layout::Row {
