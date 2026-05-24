@@ -47,7 +47,9 @@ Charts on http://localhost:8000/bench/ are numbered to match the page. Bar label
 | 18 | `chart-worker` | Main-thread vs worker chunk sum |
 | 18–19 | WAL charts | Reference data from Rust WAL bench |
 
-Harness implementation: `bench-run.js` (browser), `bench.js` (Node). §12–13 use `cursor.scan` / cursor filter — not `seekWarm` per row or `Query.count()` allocation.
+Static assets: `bench-worker.js` is served at `/bench/bench-worker.js` (nginx alias to `site/bench/bench-worker.js`). Do not copy it into `site/dist/bench/` — that directory shadows the Vue route `/bench/`.
+
+Harness implementation: `bench-run.js` (browser), `bench.js` (Node). §17 heap deltas are captured **before** the main suite parses JSON (rendered last). §12–13 use `cursor.scan` / cursor filter — not `seekWarm` per row or `Query.count()` allocation.
 
 ## Node benchmark
 

@@ -1,38 +1,4 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<link rel="icon" href="/favicon.svg" type="image/svg+xml">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Nyxis — Commercial Pricing</title>
-<meta name="description" content="Transparent Nyxis open-core pricing: free BSL production tier, Startup/Growth at $3,500/year, Enterprise Core at $15,000/year, and Principal custom quotes for hyper-scale workloads.">
-<link rel="canonical" href="https://nyxis.io/pricing/">
-<meta property="og:site_name" content="Nyxis">
-<meta property="og:type" content="website">
-<meta property="og:url" content="https://nyxis.io/pricing/">
-<meta property="og:title" content="Nyxis — Commercial Pricing">
-<meta property="og:description" content="Transparent Nyxis open-core pricing: free BSL production tier, Startup/Growth at $3,500/year, Enterprise Core at $15,000/year, and Principal custom quotes for hyper-scale workloads.">
-<meta property="og:image" content="https://nyxis.io/favicon.svg">
-<meta property="og:image:alt" content="Nyxis">
-<meta name="twitter:card" content="summary">
-<meta name="twitter:title" content="Nyxis — Commercial Pricing">
-<meta name="twitter:description" content="Transparent Nyxis open-core pricing: free BSL production tier, Startup/Growth at $3,500/year, Enterprise Core at $15,000/year, and Principal custom quotes for hyper-scale workloads.">
-<meta name="twitter:image" content="https://nyxis.io/favicon.svg">
-<!-- Google tag (gtag.js) -->
-<script async src="https://www.googletagmanager.com/gtag/js?id=G-9TP221ZJ9Z"></script>
-<script>
-  window.dataLayer = window.dataLayer || [];
-  function gtag(){dataLayer.push(arguments);}
-  gtag('js', new Date());
-
-  gtag('config', 'G-9TP221ZJ9Z');
-</script>
-<script src="/demo/theme-init.js"></script>
-<link rel="stylesheet" href="/demo/theme.css">
-</head>
-<body data-nav-current="pricing">
-<div id="site-nav-root"></div>
-
+<template>
 <main class="page-main">
   <header class="page-header">
     <p class="page-eyebrow">Open-core licensing</p>
@@ -221,17 +187,6 @@
     </div>
   </section>
 </main>
-
-<footer class="site-footer">
-  <span>© Nyxis · NXS format v1.2</span>
-  <div class="links">
-    <a href="https://github.com/nyxis-io/nyxis">nyxis (compiler &amp; spec)</a>
-    <a href="https://github.com/nyxis-io/nyxis-drivers">nyxis-drivers (SDKs)</a>
-    <a href="https://github.com/nyxis-io/nyxis/blob/main/COMMERCIAL.md" rel="noopener">COMMERCIAL.md</a>
-  </div>
-</footer>
-
-<script src="/demo/nav.js"></script>
-<script src="/demo/theme.js"></script>
-</body>
-</html>
+</template>
+<script setup lang="ts">
+</script>

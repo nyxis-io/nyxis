@@ -1,0 +1,31 @@
+<template>
+<main class="page-main">
+  <header class="page-header">
+    <p class="page-eyebrow">Interactive benchmarks</p>
+    <h1 class="page-title">Browser demos</h1>
+    <p class="page-lead">Live comparisons of NXS versus JSON and CSV — served with COOP/COEP headers so SharedArrayBuffer and worker handoffs work as in production.</p>
+  </header>
+  <ul class="demo-list">
+    <li>
+      <a href="/bench/">Benchmark (NXS vs JSON vs CSV)<span class="meta">Bar charts for five workloads at 1k–10M records; optional upload of matching <code>.nxb</code> / <code>.json</code> / <code>.csv</code> suites.</span><span class="detail"><strong>What is tested:</strong> (1) <em>Open</em> — full <code>JSON.parse</code> and CSV row parse vs <code>NxsReader</code> (header + tail-index, no full parse). (2) <em>Warm random access</em> — read <code>username</code> for a random record index. (3) <em>Multi-field access</em> — four fields per random record (<code>username</code>, <code>age</code>, <code>balance</code>, <code>active</code>). (4) <em>Cold pipeline</em> — fetch + open + first field (realistic page load). (5) <em>Aggregate</em> — sum <code>score</code> over all rows (JSON loop, raw CSV column scan, NXS bulk reducer with optional WASM).</span></a>
+    </li>
+    <li>
+      <a href="/demo/ticker">Ticker<span class="meta">Side-by-side <code>requestAnimationFrame</code> loop: JSON stringify/parse bursts vs an 8-byte in-place <code>float64</code> patch on mapped <code>.nxb</code> bytes.</span><span class="detail"><strong>What is tested:</strong> Updating record 0’s <code>score</code> every frame under adjustable <em>pressure</em> (updates per frame). JSON path mutates then periodically re-serialises and re-parses the full ~15&nbsp;MB document (simulating a pushed payload you cannot patch in place). NXS path writes via <code>DataView.setFloat64</code> at a cached offset — no per-frame allocations. Compare FPS, last/avg/max frame time, frames over a 20&nbsp;ms budget (“drops”), and sparklines.</span></a>
+    </li>
+    <li>
+      <a href="/demo/workers">Workers<span class="meta">Four Web Workers reading the same dataset; JSON uses structured clone per worker, NXS uses one <code>SharedArrayBuffer</code> when cross-origin isolated.</span><span class="detail"><strong>What is tested:</strong> Sender-side <code>postMessage</code> cost — JSON pays full structured-clone time per worker (main thread blocks); NXS passes a SAB view so handoff is O(1) bytes copied when COOP/COEP is enabled. Worker init (module load + reader setup) is timed separately. With the <em>writer</em> checkbox, worker 0 patches record 42’s <code>score</code> every 50&nbsp;ms and workers 1–3 read the same field — updates propagate across threads only when a real <code>SharedArrayBuffer</code> is used; otherwise the UI documents the per-worker copy fallback.</span></a>
+    </li>
+    <li>
+      <a href="/demo/explorer">Log explorer<span class="meta">Large “log line” grid backed by <code>.nxb</code> — virtual scroll, jump-to-line, search — without rendering millions of DOM nodes.</span><span class="detail"><strong>What is tested:</strong> Scrolling and seeking through very large record counts (title uses ~10M lines) using a fixed row pool, a scaled inner spacer, and mapping scroll position to NXS record indices for zero-copy-style field reads (timestamp, component, message, score, flag). Exercises keyboard navigation, in-viewport row reuse, and whether the UI stays smooth while random-accessing the binary tail-index.</span></a>
+    </li>
+    <li>
+      <a href="/demo/report">Report layout<span class="meta">Your CSV → row + columnar <code>.nxb</code> in the browser; three real operations plus a chart from <code>col_buffer</code>.</span><span class="detail"><strong>What this is:</strong> Not a benchmark page — upload or paste data, see which layout fits streaming vs sum vs random access, and render a chart from columnar field buffers (Chart.js). Answers “which layout do I use for my report?” on your own numbers.</span></a>
+    </li>
+    <li>
+      <a href="/demo/wal">WAL / spans<span class="meta">OTel-style span ingestion — append-only WAL vs JSON payloads.</span></a>
+    </li>
+  </ul>
+</main>
+</template>
+<script setup lang="ts">
+</script>

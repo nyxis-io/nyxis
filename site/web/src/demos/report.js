@@ -878,22 +878,24 @@ export function renderResults(results) {
   }
 }
 
-export function wireReportPage() {
-  const fileInput = document.getElementById("csv-file");
-  const paste = document.getElementById("csv-paste");
-  const runBtn = document.getElementById("run-demo");
-  const sampleSel = document.getElementById("sample-dataset");
+export function wireReportPage(root = document) {
+  const q = (id) => root.querySelector(`#${id}`);
+  const fileInput = q("csv-file");
+  const paste = q("csv-paste");
+  const runBtn = q("run-demo");
+  const sampleSel = q("sample-dataset");
+  if (!fileInput || !paste || !runBtn || !sampleSel) return;
 
   async function runWithResults(promise, label) {
     runBtn.disabled = true;
     try {
       const results = await promise;
       renderResults(results);
-      document.getElementById("status").textContent =
+      q("status").textContent =
         `Done — ${label} (${results.n.toLocaleString()} rows) on this device.`;
     } catch (e) {
       const msg = e?.message ?? (typeof e === "string" ? e : String(e));
-      document.getElementById("status").textContent = `Error: ${msg}`;
+      q("status").textContent = `Error: ${msg}`;
       console.error(e);
     } finally {
       runBtn.disabled = false;
@@ -906,8 +908,7 @@ export function wireReportPage() {
       return runWithResults(runReportDemo(pasted), "your paste");
     }
     const sample = SAMPLE_DATASETS[sampleSel.value];
-    document.getElementById("status").textContent =
-      `Building ${sample.label}…`;
+    q("status").textContent = `Building ${sample.label}…`;
     const { headers, rows, types } = sample.generateRows(sample.rowCount);
     return runWithResults(
       runReportFromRecords(headers, rows, types, {
@@ -930,8 +931,7 @@ export function wireReportPage() {
 
   sampleSel.addEventListener("change", () => {
     const s = SAMPLE_DATASETS[sampleSel.value];
-    document.getElementById("sample-desc").textContent = s.description;
+    q("sample-desc").textContent = s.description;
   });
-  document.getElementById("sample-desc").textContent =
-    SAMPLE_DATASETS[sampleSel.value].description;
+  q("sample-desc").textContent = SAMPLE_DATASETS[sampleSel.value].description;
 }

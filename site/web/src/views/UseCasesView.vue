@@ -1,42 +1,5 @@
-<!DOCTYPE html>
-<html lang="en">
-
-<head>
-  <meta charset="UTF-8">
-  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Nyxis — High-Throughput System Topologies &amp; Use Cases</title>
-  <meta name="description"
-    content="Production topologies for the Nyxis zero-copy serialization protocol: mmap .nxb ingestion, streamable v1.2 sealing, row/columnar/PAX layouts, append-only WALs, Arrow bridges, and multi-terabyte data-grid deployments.">
-  <link rel="canonical" href="https://nyxis.io/use-cases/">
-  <meta property="og:site_name" content="Nyxis">
-  <meta property="og:type" content="website">
-  <meta property="og:url" content="https://nyxis.io/use-cases/">
-  <meta property="og:title" content="Nyxis — High-Throughput System Topologies &amp; Use Cases">
-  <meta property="og:description" content="Production topologies for the Nyxis zero-copy serialization protocol: mmap .nxb ingestion, streamable v1.2 sealing, row/columnar/PAX layouts, append-only WALs, Arrow bridges, and multi-terabyte data-grid deployments.">
-  <meta property="og:image" content="https://nyxis.io/favicon.svg">
-  <meta property="og:image:alt" content="Nyxis">
-  <meta name="twitter:card" content="summary">
-  <meta name="twitter:title" content="Nyxis — High-Throughput System Topologies &amp; Use Cases">
-  <meta name="twitter:description" content="Production topologies for the Nyxis zero-copy serialization protocol: mmap .nxb ingestion, streamable v1.2 sealing, row/columnar/PAX layouts, append-only WALs, Arrow bridges, and multi-terabyte data-grid deployments.">
-  <meta name="twitter:image" content="https://nyxis.io/favicon.svg">
-  <!-- Google tag (gtag.js) -->
-  <script async src="https://www.googletagmanager.com/gtag/js?id=G-9TP221ZJ9Z"></script>
-  <script>
-    window.dataLayer = window.dataLayer || [];
-    function gtag(){dataLayer.push(arguments);}
-    gtag('js', new Date());
-
-    gtag('config', 'G-9TP221ZJ9Z');
-  </script>
-  <script src="/demo/theme-init.js"></script>
-  <link rel="stylesheet" href="/demo/theme.css">
-</head>
-
-<body data-nav-current="use-cases">
-  <div id="site-nav-root"></div>
-
-  <main class="page-main">
+<template>
+<main class="page-main">
     <header class="page-header">
       <p class="page-eyebrow">Production architectures</p>
       <h1 class="page-title">From browser limits to production topologies</h1>
@@ -118,7 +81,7 @@
         <div class="bimodal-col">
           <h3>2. Flat heap under virtual scroll</h3>
           <p>
-            Records sit in 8-byte-aligned wire cells. The <a href="/demo/explorer.html">log explorer</a> decodes only
+            Records sit in 8-byte-aligned wire cells. The <a href="/demo/explorer">log explorer</a> decodes only
             the
             rows in the active viewport via tail-index jumps, then recycles — no million-object materialization graph.
           </p>
@@ -409,7 +372,7 @@
         Compiler: <code>nxs compile --layout columnar report.nxs</code>,
         <code>nxs compile --layout pax --page-size 1024 report.nxs</code>, or inline <code>@layout pax</code>.
         C writer: <code>NXS_LAYOUT_COLUMNAR</code> on <code>nxs_writer_open</code> for server-side pivot.
-        <a href="/demo/report.html">See columnar vs row on a real dataset →</a>
+        <a href="/demo/report">See columnar vs row on a real dataset →</a>
       </p>
     </section>
 
@@ -447,14 +410,14 @@
             on every
             write. When a segment threshold is reached, <strong>seal</strong> replays the WAL into a fully indexed
             <code>.nxb</code>
-            in one pass — see the <a href="/demo/wal.html">WAL demo</a> and <code>nxs-trace</code> in the open-core
+            in one pass — see the <a href="/demo/wal">WAL demo</a> and <code>nxs-trace</code> in the open-core
             repo.
           </p>
         </div>
       </div>
       <div class="landing-actions" style="justify-content: flex-start; margin-top: 20px;">
-        <a class="btn btn-secondary" href="/demo/wal.html">WAL / spans demo</a>
-        <a class="btn btn-secondary" href="/demo/explorer.html">Log explorer demo</a>
+        <a class="btn btn-secondary" href="/demo/wal">WAL / spans demo</a>
+        <a class="btn btn-secondary" href="/demo/explorer">Log explorer demo</a>
         <a class="btn btn-secondary" href="/bench/">NXS vs JSON benchmarks</a>
       </div>
     </section>
@@ -506,7 +469,7 @@
         <a href="../BENCHMARK.md#workload-d">BENCHMARK.md Workload D</a>.
       </p>
       <p class="use-case-cta">
-        <a class="btn btn-secondary" href="/demo/wal.html">WAL / streaming demo</a>
+        <a class="btn btn-secondary" href="/demo/wal">WAL / streaming demo</a>
       </p>
     </article>
 
@@ -579,7 +542,7 @@
     <p class="use-case-group">Browser &amp; operations UI</p>
 
     <article class="use-case" id="access-logs">
-      <p class="use-case-tier use-case-tier--oss">Open core · MIT drivers · <a href="/demo/explorer.html">log explorer
+      <p class="use-case-tier use-case-tier--oss">Open core · MIT drivers · <a href="/demo/explorer">log explorer
           demo</a></p>
       <h2>High-volume NGINX, Envoy, &amp; API gateway access log viewers</h2>
 
@@ -604,12 +567,12 @@
         render without full-file deserialization or heap inflation.
       </p>
       <p class="use-case-cta">
-        <a class="btn btn-secondary" href="/demo/explorer.html">Log explorer demo</a>
+        <a class="btn btn-secondary" href="/demo/explorer">Log explorer demo</a>
       </p>
     </article>
 
     <article class="use-case" id="web-workers">
-      <p class="use-case-tier use-case-tier--oss">Open core · <a href="/demo/workers.html">workers demo</a></p>
+      <p class="use-case-tier use-case-tier--oss">Open core · <a href="/demo/workers">workers demo</a></p>
       <h2>Zero-copy Web Worker handoffs (<code>SharedArrayBuffer</code>)</h2>
 
       <h3>The high-scale bottleneck</h3>
@@ -632,7 +595,7 @@
         execute pointer casting concurrently inside the same shared mapping.
       </p>
       <p class="use-case-cta">
-        <a class="btn btn-secondary" href="/demo/workers.html">Workers demo</a>
+        <a class="btn btn-secondary" href="/demo/workers">Workers demo</a>
       </p>
     </article>
 
@@ -658,7 +621,7 @@
         load.
       </p>
       <p class="use-case-cta">
-        <a class="btn btn-secondary" href="/demo/wal.html">WAL / spans demo</a>
+        <a class="btn btn-secondary" href="/demo/wal">WAL / spans demo</a>
       </p>
     </article>
 
@@ -707,9 +670,9 @@
         <a href="../BENCHMARK.md#workload-d">Workload D (streaming TTFR)</a>.
       </p>
       <p class="use-case-cta">
-        <a class="btn btn-primary" href="/demo/report.html">Try it on your data</a>
-        <a class="btn btn-secondary" href="/demo/explorer.html">Log explorer demo</a>
-        <a class="btn btn-secondary" href="/demo/wal.html">WAL / streaming demo</a>
+        <a class="btn btn-primary" href="/demo/report">Try it on your data</a>
+        <a class="btn btn-secondary" href="/demo/explorer">Log explorer demo</a>
+        <a class="btn btn-secondary" href="/demo/wal">WAL / streaming demo</a>
       </p>
     </article>
 
@@ -797,7 +760,7 @@
         (<code>.nxsw</code>), and
         tail-indexes for <strong>delta patching via byte-range offsets</strong> — writers overwrite fixed-width atomic
         cells directly without
-        a full-file rewrite (see <a href="/demo/ticker.html">ticker</a> and <a href="/demo/wal.html">WAL demos</a>).
+        a full-file rewrite (see <a href="/demo/ticker">ticker</a> and <a href="/demo/wal">WAL demos</a>).
         In parallel, the proprietary <strong><code>nxs-compactd</code></strong> daemon can be deployed as a background
         housekeeping service to acquire
         advisory locks, defragment packed sectors on the fly, and atomically swap segments to reclaim data-sector slack.
@@ -812,8 +775,8 @@
         Housekeeping daemons reclaim storage space automatically without racing active ingestion workers.
       </p>
       <p class="use-case-cta">
-        <a class="btn btn-secondary" href="/demo/ticker.html">Ticker demo</a>
-        <a class="btn btn-secondary" href="/demo/wal.html">WAL demo</a>
+        <a class="btn btn-secondary" href="/demo/ticker">Ticker demo</a>
+        <a class="btn btn-secondary" href="/demo/wal">WAL demo</a>
       </p>
     </article>
 
@@ -842,7 +805,7 @@
         than corrupting earlier records.
       </p>
       <p class="use-case-cta">
-        <a class="btn btn-secondary" href="/demo/wal.html">WAL demo</a>
+        <a class="btn btn-secondary" href="/demo/wal">WAL demo</a>
         <a class="btn btn-secondary" href="https://github.com/nyxis-io/nyxis/blob/main/SPEC.md" rel="noopener">Spec
           v1.2</a>
       </p>
@@ -924,18 +887,6 @@
       </div>
     </section>
   </main>
-
-  <footer class="site-footer">
-    <span>© Nyxis · NXS format v1.2</span>
-    <div class="links">
-      <a href="https://github.com/nyxis-io/nyxis">nyxis (compiler &amp; spec)</a>
-      <a href="https://github.com/nyxis-io/nyxis-drivers">nyxis-drivers (SDKs)</a>
-      <a href="/pricing/">Pricing</a>
-    </div>
-  </footer>
-
-  <script src="/demo/nav.js"></script>
-  <script src="/demo/theme.js"></script>
-</body>
-
-</html>
+</template>
+<script setup lang="ts">
+</script>

@@ -101,10 +101,20 @@ export function fmtPerRecord(ms, recordCount) {
   return ns < 1000 ? `${ns.toFixed(0)} ns/rec` : `${(ns / 1000).toFixed(2)} µs/rec`;
 }
 
+/** Let the browser paint between heavy chart sections. */
+export function yieldFrame() {
+  return new Promise((resolve) => requestAnimationFrame(resolve));
+}
+
 export function drawChart(containerEl, rows, recordCount = 0) {
+  if (!containerEl) return;
   containerEl.innerHTML = "";
   const timed = rows.filter(r => !r.failed && (typeof r.ms === "number" || typeof r.barValue === "number"));
-  const maxBar = timed.length ? Math.max(1, ...timed.map(r => r.barValue ?? r.ms)) : 1;
+  // Scale bars to the slowest row in this chart only. Do not floor maxBar at 1 ms — warm/random
+  // paths are often sub-µs per op; a 1 ms floor collapses every bar to the 1% minimum width.
+  const maxBar = timed.length
+    ? Math.max(...timed.map(r => r.barValue ?? r.ms), Number.EPSILON)
+    : 1;
   for (const r of rows) {
     const label = document.createElement("div");
     label.className = "label";
@@ -169,55 +179,60 @@ function maybeGc() {
 /** Hold parsed data alive until after measureUserAgentSpecificMemory's second sample. */
 let _memHold;
 
-async function measureHeapDelta(setupFn) {
-  if (globalThis.crossOriginIsolated && performance.measureUserAgentSpecificMemory) {
+async function measureHeapDeltaChrome(setupFn) {
+  const mem = performance.memory;
+  if (!mem) return null;
+  maybeGc();
+  _memHold = undefined;
+  await new Promise((r) => setTimeout(r, 0));
+  const base = mem.usedJSHeapSize;
+  _memHold = setupFn();
+  // usedJSHeapSize updates asynchronously after large allocations.
+  await new Promise((r) => setTimeout(r, 50));
+  return Math.max(0, mem.usedJSHeapSize - base);
+}
+
+async function measureHeapDeltaUA(setupFn) {
+  if (!(globalThis.crossOriginIsolated && performance.measureUserAgentSpecificMemory)) return null;
+  try {
     maybeGc();
     _memHold = undefined;
     const before = await performance.measureUserAgentSpecificMemory();
     _memHold = setupFn();
+    await new Promise((r) => setTimeout(r, 0));
     const after = await performance.measureUserAgentSpecificMemory();
     return Math.max(0, after.bytes - before.bytes);
+  } catch {
+    return null;
   }
-  const mem = performance.memory;
-  if (!mem) return null;
-  maybeGc();
-  const base = mem.usedJSHeapSize;
-  _memHold = setupFn();
-  // Chrome updates usedJSHeapSize asynchronously; yield so accounting can catch up.
-  await new Promise(r => setTimeout(r, 0));
-  return Math.max(0, mem.usedJSHeapSize - base);
 }
 
-async function runMemoryBench(ctx) {
-  const { $, jsonStr, nxbBuf, jsonFailText } = ctx;
-  const memEl = $("#memory-info");
-  const chartEl = $("#chart-memory");
+/** Prefer Chrome heap counter; fall back to UA API when COOP/COEP is on but delta is 0. */
+async function measureHeapDelta(setupFn) {
+  let delta = await measureHeapDeltaChrome(setupFn);
+  if (delta != null && delta > 0) return delta;
+  const ua = await measureHeapDeltaUA(setupFn);
+  if (ua != null && ua > 0) return ua;
+  if (delta != null) return delta;
+  return ua;
+}
 
-  function renderNa(reason) {
-    memEl.innerHTML = `<span class="tag empty">${reason}</span>`;
-    drawChart(chartEl, [
-      { label: "JSON.parse heap growth", klass: "json", failed: true, failText: "N/A" },
-      { label: "NxsReader heap growth", klass: "nxs", failed: true, failText: "N/A" },
-    ], 0);
-  }
+/** Measure §17 before the main suite mutates the heap; render later via renderMemoryBench. */
+export async function captureMemoryBench(ctx) {
+  const { jsonStr, nxbBuf, jsonFailText } = ctx;
 
   if (!jsonStr) {
-    renderNa("No JSON fixture — heap comparison unavailable");
-    return;
+    return { ok: false, reason: "No JSON fixture — heap comparison unavailable" };
   }
   if (jsonFailText) {
-    renderNa(`JSON unavailable (${jsonFailText})`);
-    return;
+    return { ok: false, reason: `JSON unavailable (${jsonFailText})` };
   }
   if (!performance.memory && !(globalThis.crossOriginIsolated && performance.measureUserAgentSpecificMemory)) {
-    renderNa("performance.memory unavailable — use Chrome for heap comparison");
-    return;
+    return { ok: false, reason: "performance.memory unavailable — use Chrome for heap comparison" };
   }
 
-  let jsonDelta;
-  let nxsDelta;
   try {
-    jsonDelta = await measureHeapDelta(() => {
+    const jsonDelta = await measureHeapDelta(() => {
       const hold = JSON.parse(jsonStr);
       void hold.length;
       if (hold.length > 0) {
@@ -228,8 +243,9 @@ async function runMemoryBench(ctx) {
     });
     _memHold = undefined;
     maybeGc();
+    await new Promise((r) => setTimeout(r, 0));
 
-    nxsDelta = await measureHeapDelta(() => {
+    const nxsDelta = await measureHeapDelta(() => {
       const r = new NxsReader(nxbBuf);
       void r.recordCount;
       const slot = r.slot("username");
@@ -240,26 +256,48 @@ async function runMemoryBench(ctx) {
       }
       return r;
     });
+
+    if (jsonDelta === null || nxsDelta === null) {
+      return { ok: false, reason: "performance.memory unavailable — use Chrome for heap comparison" };
+    }
+
+    const method = performance.memory
+      ? "performance.memory"
+      : "measureUserAgentSpecificMemory";
+    return { ok: true, jsonDelta, nxsDelta, method };
   } catch (e) {
-    renderNa(e.message);
-    return;
+    return { ok: false, reason: e.message };
   } finally {
     _memHold = undefined;
   }
+}
 
-  if (jsonDelta === null || nxsDelta === null) {
-    renderNa("performance.memory unavailable — use Chrome for heap comparison");
+export function renderMemoryBench(ctx, captured) {
+  const { $ } = ctx;
+  const memEl = $("#memory-info");
+  const chartEl = $("#chart-memory");
+
+  function renderNa(reason) {
+    if (memEl) memEl.innerHTML = `<span class="tag empty">${reason}</span>`;
+    drawChart(chartEl, [
+      { label: "JSON.parse heap growth", klass: "json", failed: true, failText: "N/A" },
+      { label: "NxsReader heap growth", klass: "nxs", failed: true, failText: "N/A" },
+    ], 0);
+  }
+
+  if (!captured?.ok) {
+    renderNa(captured?.reason ?? "Memory benchmark skipped");
     return;
   }
 
-  const method = globalThis.crossOriginIsolated && performance.measureUserAgentSpecificMemory
-    ? "measureUserAgentSpecificMemory"
-    : "performance.memory";
-  memEl.innerHTML = `
-    <span class="tag">Heap Δ after JSON.parse: ${fmtBytes(jsonDelta)}</span>
-    <span class="tag">Heap Δ after NxsReader: ${fmtBytes(nxsDelta)}</span>
-    <span class="tag">(${method}; indicative only)</span>
-  `;
+  const { jsonDelta, nxsDelta, method } = captured;
+  if (memEl) {
+    memEl.innerHTML = `
+      <span class="tag">Heap Δ after JSON.parse: ${fmtBytes(jsonDelta)}</span>
+      <span class="tag">Heap Δ after NxsReader: ${fmtBytes(nxsDelta)}</span>
+      <span class="tag">(${method}; measured before other charts)</span>
+    `;
+  }
   drawChart(chartEl, [
     { label: "JSON.parse heap growth", klass: "json", ms: 0, barValue: jsonDelta, displayText: fmtBytes(jsonDelta) },
     { label: "NxsReader heap growth", klass: "nxs", ms: 0, barValue: nxsDelta, displayText: fmtBytes(nxsDelta) },
@@ -279,12 +317,20 @@ async function runMemoryBench(ctx) {
  * @param {string|null} ctx.csvFailText
  * @param {object|null} ctx.wasm — NxsWasm from loadWasm
  * @param {number} ctx.selectedN — UI preset (display only)
+ * @param {(msg: string) => void} [ctx.onProgress] — optional status updates while running
  */
 export async function runBenchmarks(ctx) {
   const {
     $, nxbBuf, nxbColBuf, jsonStr, csvStr,
-    jsonFailText, csvFailText, wasm, selectedN,
+    jsonFailText, csvFailText, wasm, selectedN, onProgress,
   } = ctx;
+
+  const progress = (msg) => onProgress?.(msg);
+  const chart = async (label, el, rows, recordCount = 0) => {
+    progress(label);
+    drawChart(el, rows, recordCount);
+    await yieldFrame();
+  };
 
   const iters = {
     parse: selectedN >= 1e7 ? 3 : selectedN >= 1e6 ? 5 : selectedN >= 1e5 ? 20 : 200,
@@ -296,8 +342,9 @@ export async function runBenchmarks(ctx) {
     coldReduce: selectedN >= 1e7 ? 2 : selectedN >= 1e6 ? 3 : selectedN >= 1e5 ? 10 : 50,
   };
 
-  // Memory first — before parsedJson / NxsReader pollute the heap (§17).
-  await runMemoryBench(ctx);
+  // §17 heap deltas must be captured before JSON.parse / indexes warm the heap (rendered last).
+  progress("§17 Memory (measuring)…");
+  const memoryCaptured = await captureMemoryBench(ctx);
 
   const reader = new NxsReader(nxbBuf);
   const recordCount = reader.recordCount;
@@ -384,14 +431,14 @@ export async function runBenchmarks(ctx) {
     : null;
 
   // 1. Open
-  drawChart($("#chart-open"), [
+  await chart("§1 Open file", $("#chart-open"), [
     scenario("JSON.parse", "json", !!jsonFail, jsonFail, () => bench(iters.parse, () => JSON.parse(jsonStr))),
     scenario("parseCsv", "csv", !!csvFail, csvFail, () => bench(iters.parse, () => parseCsv(csvStr))),
     scenario("new NxsReader", "nxs", false, null, () => bench(iters.parse, () => new NxsReader(nxbBuf))),
   ], recordCount);
 
   // 2. Open + iterate all
-  drawChart($("#chart-iterate-all"), [
+  await chart("§6 Open + iterate all", $("#chart-iterate-all"), [
     scenario("JSON parse + for-of username", "json", !!jsonFail, jsonFail, () =>
       bench(iters.iterateAll, () => {
         let acc = 0;
@@ -435,7 +482,7 @@ export async function runBenchmarks(ctx) {
   ], recordCount);
 
   // 3. Iterate only (warm)
-  drawChart($("#chart-iterate-warm"), [
+  await chart("§8 Warm iterate", $("#chart-iterate-warm"), [
     scenario(`JSON for-of${LABEL_PRE}`, "json", !parsedJson, jsonFail, () =>
       bench(iters.iterateWarm, () => {
         let acc = 0;
@@ -495,10 +542,10 @@ export async function runBenchmarks(ctx) {
       ii = 0; return bench(iters.random, () => usernameIndexWasm.getStrAt(idxs[ii++ % iters.random]));
     }));
   }
-  drawChart($("#chart-random"), randomRows, recordCount);
+  await chart("§9 Random access", $("#chart-random"), randomRows, recordCount);
 
   // 5. Random multi-field
-  drawChart($("#chart-random-multi"), [
+  await chart("§10 Random multi-field", $("#chart-random-multi"), [
     scenario(`JSON 4-field${LABEL_PRE}`, "json", !parsedJson, jsonFail, () => {
       ii = 0;
       return bench(iters.random, () => {
@@ -532,7 +579,7 @@ export async function runBenchmarks(ctx) {
   ], recordCount);
 
   // 6. Scattered access
-  drawChart($("#chart-scattered"), [
+  await chart("§11 Scattered access", $("#chart-scattered"), [
     scenario(`JSON scattered${LABEL_PRE}`, "json", !parsedJson, jsonFail, () =>
       bench(iters.scan, () => {
         let acc = 0;
@@ -557,7 +604,7 @@ export async function runBenchmarks(ctx) {
   ], recordCount);
 
   // 7. Multi-field full scan
-  drawChart($("#chart-multi-scan"), [
+  await chart("§12 Multi-field scan", $("#chart-multi-scan"), [
     scenario("JSON parse + 4-field loop", "json", !!jsonFail, jsonFail, () =>
       bench(iters.iterateAll, () => {
         let acc = 0;
@@ -580,7 +627,7 @@ export async function runBenchmarks(ctx) {
 
   // 8. Filter count (score > 80)
   const scoreThreshold = 80;
-  drawChart($("#chart-filter"), [
+  await chart("§13 Filter", $("#chart-filter"), [
     scenario(`JSON filter count${LABEL_PRE}`, "json", !parsedJson, jsonFail, () =>
       bench(iters.scan, () => {
         let c = 0;
@@ -600,7 +647,7 @@ export async function runBenchmarks(ctx) {
   ], recordCount);
 
   // 9. Cold first field (bytes already in memory)
-  drawChart($("#chart-cold-mem"), [
+  await chart("§2 Cold first field", $("#chart-cold-mem"), [
     scenario("JSON parse + arr[k]", "json", !!jsonFail, jsonFail, () =>
       bench(iters.cold, () => JSON.parse(jsonStr)[k].username)),
     scenario("CSV parse + arr[k]", "csv", !!csvFail, csvFail, () =>
@@ -620,7 +667,7 @@ export async function runBenchmarks(ctx) {
   ], recordCount);
 
   // 10. Cold fetch + first field (same as before)
-  drawChart($("#chart-cold-fetch"), [
+  await chart("§3 Cold pipeline", $("#chart-cold-fetch"), [
     scenario("JSON parse + arr[k]", "json", !!jsonFail, jsonFail, () =>
       bench(iters.cold, () => JSON.parse(jsonStr)[k].username)),
     scenario("CSV parse + arr[k]", "csv", !!csvFail, csvFail, () =>
@@ -656,7 +703,7 @@ export async function runBenchmarks(ctx) {
     reduceRows.push(scenario("NXS columnar colSumF64", "nxs-col", false, null, () =>
       bench(iters.scan, () => colReader.colSumF64("score"), pr)));
   }
-  drawChart($("#chart-reduce"), reduceRows, recordCount);
+  await chart("§14 Aggregate (warm)", $("#chart-reduce"), reduceRows, recordCount);
 
   // 12. Indexed sum vs reducer
   const indexedRows = [
@@ -682,7 +729,7 @@ export async function runBenchmarks(ctx) {
     indexedRows.push(scenario("NXS WASM index + loop", "nxs-wasm", false, null, () =>
       bench(iters.scan, () => sumScoreFromFieldIndex(scoreIndexWasm), pr)));
   }
-  drawChart($("#chart-indexed-sum"), indexedRows, recordCount);
+  await chart("§15 Indexed sum", $("#chart-indexed-sum"), indexedRows, recordCount);
 
   // 12b. Columnar prefetch_column (§7.4) — NXS vs JSON aggregate honesty
   if (colReader && nxbColBuf?.byteLength) {
@@ -712,7 +759,7 @@ export async function runBenchmarks(ctx) {
       scenario("NXS prefetch warm + colSumF64", "nxs-col", false, null, () =>
         bench(iters.scan, () => colWarm.colSumF64("score"), pr)),
     ];
-    drawChart($("#chart-column-prefetch"), colPrefetchRows, recordCount);
+    await chart("§16 Column prefetch", $("#chart-column-prefetch"), colPrefetchRows, recordCount);
   } else {
     const el = $("#chart-column-prefetch");
     if (el) el.innerHTML = "<p class=\"desc\">Columnar fixture not loaded — chart skipped.</p>";
@@ -739,10 +786,10 @@ export async function runBenchmarks(ctx) {
         return r.sumF64("score");
       }), pr));
   }
-  drawChart($("#chart-cold-reduce"), coldReduceRows, recordCount);
+  await chart("§4 Cold aggregate", $("#chart-cold-reduce"), coldReduceRows, recordCount);
 
   // 14. JSON raw scan (no full parse)
-  drawChart($("#chart-json-scan"), [
+  await chart("§7 JSON scan", $("#chart-json-scan"), [
     scenario("JSON.parse + loop", "json", !!jsonFail, jsonFail, () =>
       bench(iters.scan, () => {
         let acc = 0;
@@ -787,10 +834,16 @@ export async function runBenchmarks(ctx) {
         return elapsed;
       })),
   ];
-  drawChart($("#chart-stream"), streamRows, recordCount);
+  await chart("§5 Stream TTFR", $("#chart-stream"), streamRows, recordCount);
 
   // 17. Worker parallel sum (optional)
+  progress("§18 Workers…");
   await runWorkerBench(ctx, recordCount, iters.scan);
+  await yieldFrame();
+
+  progress("§17 Memory…");
+  renderMemoryBench(ctx, memoryCaptured);
+  await yieldFrame();
 
   return recordCount;
 }
@@ -815,13 +868,28 @@ async function runWorkerBench(ctx, recordCount, scanIters) {
         jobs.push(new Promise((resolve, reject) => {
           const worker = new Worker(workerUrl, { type: "module" });
           const chunkBuf = nxbBuf.slice();
-          worker.onmessage = ev => {
-            if (ev.data.type === "sum-result") {
+          const timer = setTimeout(() => {
+            worker.terminate();
+            reject(new Error("worker timed out"));
+          }, 120_000);
+          worker.onmessage = (ev) => {
+            if (ev.data?.type === "sum-error") {
+              clearTimeout(timer);
+              worker.terminate();
+              reject(new Error(ev.data.message ?? "worker error"));
+              return;
+            }
+            if (ev.data?.type === "sum-result") {
+              clearTimeout(timer);
               worker.terminate();
               resolve(ev.data.sum);
             }
           };
-          worker.onerror = reject;
+          worker.onerror = (e) => {
+            clearTimeout(timer);
+            worker.terminate();
+            reject(e.error ?? new Error(e.message || "worker failed"));
+          };
           worker.postMessage({
             type: "sum-chunk",
             workerId: w,
@@ -840,8 +908,10 @@ async function runWorkerBench(ctx, recordCount, scanIters) {
       { label: "Main-thread sumF64", klass: "nxs", ms: mainMs, perRecord: true },
       { label: `${workers} workers sum chunks (buffer copy each)`, klass: "nxs-wasm", ms: workerMs, perRecord: true },
     ], recordCount);
+    await yieldFrame();
   } catch (e) {
     drawChart(el, [{ label: "Worker benchmark", klass: "nxs", failed: true, failText: e.message }], 0);
+    await yieldFrame();
   }
 }
 

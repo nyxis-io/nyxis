@@ -1,38 +1,4 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<link rel="icon" href="/favicon.svg" type="image/svg+xml">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Nyxis — Zero-Copy Binary Serialization Protocol</title>
-<meta name="description" content="Nyxis (NXS): row, columnar, and PAX .nxb layouts. 7 µs streaming TTFR (EPYC 9R14), columnar scan 1.3× Arrow IPC on AVX-512, sub-µs warm access. Public benchmark suite vs Protobuf, FlatBuffers, Cap'n Proto, and Arrow.">
-<link rel="canonical" href="https://nyxis.io/">
-<meta property="og:site_name" content="Nyxis">
-<meta property="og:type" content="website">
-<meta property="og:url" content="https://nyxis.io/">
-<meta property="og:title" content="Nyxis — Zero-Copy Binary Serialization Protocol">
-<meta property="og:description" content="Nyxis (NXS): row, columnar, and PAX .nxb layouts. 7 µs streaming TTFR (EPYC 9R14), columnar scan 1.3× Arrow IPC on AVX-512, sub-µs warm access. Public benchmark suite vs Protobuf, FlatBuffers, Cap'n Proto, and Arrow.">
-<meta property="og:image" content="https://nyxis.io/favicon.svg">
-<meta property="og:image:alt" content="Nyxis">
-<meta name="twitter:card" content="summary">
-<meta name="twitter:title" content="Nyxis — Zero-Copy Binary Serialization Protocol">
-<meta name="twitter:description" content="Nyxis (NXS): row, columnar, and PAX .nxb layouts. 7 µs streaming TTFR (EPYC 9R14), columnar scan 1.3× Arrow IPC on AVX-512, sub-µs warm access. Public benchmark suite vs Protobuf, FlatBuffers, Cap'n Proto, and Arrow.">
-<meta name="twitter:image" content="https://nyxis.io/favicon.svg">
-<!-- Google tag (gtag.js) -->
-<script async src="https://www.googletagmanager.com/gtag/js?id=G-9TP221ZJ9Z"></script>
-<script>
-  window.dataLayer = window.dataLayer || [];
-  function gtag(){dataLayer.push(arguments);}
-  gtag('js', new Date());
-
-  gtag('config', 'G-9TP221ZJ9Z');
-</script>
-<script src="/demo/theme-init.js"></script>
-<link rel="stylesheet" href="/demo/theme.css">
-</head>
-<body data-nav-current="home">
-<div id="site-nav-root"></div>
-
+<template>
 <section class="landing-hero">
   <div class="hero-inner">
     <p class="page-eyebrow">Zero-copy binary serialization</p>
@@ -114,7 +80,7 @@ Sub-µs open cost.
 No per-record traversal for aggregates.</p>
       <p class="layout-use"><strong>1.3× Arrow IPC</strong> on EPYC 9R14 · <strong>1.7×</strong> Apple Silicon (Workload C)<br>
 Chart rendering · OLAP · export pipelines<br>
-<a href="/demo/report.html">Try on your CSV →</a></p>
+<a href="/demo/report">Try on your CSV →</a></p>
     </div>
     <div class="bimodal-col">
       <h3>PAX (<code>.nxb</code>)</h3>
@@ -202,7 +168,7 @@ Chart rendering · OLAP · export pipelines<br>
     </li>
   </ul>
   <div class="landing-actions" style="justify-content: flex-start; margin-top: 20px;">
-    <a class="btn btn-secondary" href="/demo/wal.html">WAL / spans demo</a>
+    <a class="btn btn-secondary" href="/demo/wal">WAL / spans demo</a>
     <a class="btn btn-secondary" href="/use-cases/#streaming">Streaming use cases</a>
     <a class="btn btn-secondary" href="https://github.com/nyxis-io/nyxis/blob/main/SPEC.md" rel="noopener">Spec v1.2</a>
   </div>
@@ -235,25 +201,25 @@ Tableau / BI ◄── Apache Arrow bridge ◄── Snowflake ingest (pointer-s
       </a>
     </li>
     <li>
-      <a href="/demo/ticker.html">
+      <a href="/demo/ticker">
         <div class="title">Ticker</div>
         <div class="desc">Per-frame score updates: full JSON re-parse vs in-place <code>float64</code> patch.</div>
       </a>
     </li>
     <li>
-      <a href="/demo/workers.html">
+      <a href="/demo/workers">
         <div class="title">Workers</div>
         <div class="desc">Four Web Workers — structured clone vs <code>SharedArrayBuffer</code> handoff.</div>
       </a>
     </li>
     <li>
-      <a href="/demo/explorer.html">
+      <a href="/demo/explorer">
         <div class="title">Log explorer</div>
         <div class="desc">Virtual scroll over millions of lines backed by mapped <code>.nxb</code>.</div>
       </a>
     </li>
     <li>
-      <a href="/demo/wal.html">
+      <a href="/demo/wal">
         <div class="title">WAL / spans</div>
         <div class="desc">OTel-style span ingestion — streamable append-only WAL vs JSON payloads.</div>
       </a>
@@ -313,18 +279,6 @@ Tableau / BI ◄── Apache Arrow bridge ◄── Snowflake ingest (pointer-s
     SDKs: <a href="https://github.com/nyxis-io/nyxis-drivers" rel="noopener">MIT</a> across ten languages.
   </p>
 </section>
-
-<footer class="site-footer">
-  <span>© Nyxis · NXS format v1.2</span>
-  <div class="links">
-    <a href="https://github.com/nyxis-io/nyxis">nyxis (compiler &amp; spec)</a>
-    <a href="https://github.com/nyxis-io/nyxis-drivers">nyxis-drivers (SDKs)</a>
-    <a href="/pricing/">Pricing</a>
-    <a href="https://github.com/nyxis-io/nyxis/blob/main/SPEC.md" rel="noopener">Specification</a>
-  </div>
-</footer>
-
-<script src="/demo/nav.js"></script>
-<script src="/demo/theme.js"></script>
-</body>
-</html>
+</template>
+<script setup lang="ts">
+</script>

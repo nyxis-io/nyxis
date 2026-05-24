@@ -23,7 +23,7 @@ CONF ?= $(abspath conformance)
 #   make all            # fix + test + conformance
 #   make install-git-hooks   # pre-commit → make lint (SKIP_HOOKS=1 to bypass once)
 
-.PHONY: all lint fix test conformance fuzz fixtures sdk rust-examples install-git-hooks demo bench bench-node bench-sequential bench-quick bench-cold bench-results-1m \
+.PHONY: all lint fix test conformance fuzz fixtures sdk rust-examples install-git-hooks demo site-build site-dev bench bench-node bench-sequential bench-quick bench-cold bench-results-1m \
         lint-rust  fix-rust  test-rust \
         lint-js    fix-js    test-js \
         lint-py    fix-py    test-py \
@@ -54,7 +54,13 @@ DOTNET_FRAMEWORK ?= net10.0
 
 # ── Demos & benchmarks (core-owned) ───────────────────────────────────────────
 
-demo:
+site-build:
+	cd site/web && npm ci && npm run build
+
+site-dev:
+	cd site/web && npm run dev
+
+demo: site-build
 	docker compose up
 
 bench-node:
