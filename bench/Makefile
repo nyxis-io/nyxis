@@ -286,18 +286,19 @@ BENCH_F_RECORDS ?= $(if $(filter 1000000,$(BENCH_RECORDS)),1000000,$(BENCH_RECOR
 BENCH_F_PATH ?= $(DATA_BIN)/workload_B_nxs_$(BENCH_F_RECORDS).nxb
 BENCH_F_LATENCY_US ?= 100
 
-run-f-smoke: BENCH_F_PATH=$(DATA_BIN)/workload_B_nxs_1000000.nxb
+run-f-smoke: BENCH_F_RECORDS=10000
+run-f-smoke: BENCH_F_PATH=$(DATA_BIN)/workload_B_nxs_$(BENCH_F_RECORDS).nxb
 run-f-smoke:
-	@test -f $(BENCH_F_PATH) || $(MAKE) gen transcode BENCH_RECORDS=1000000
-	$(HARNESS_PREFETCH) --path $(BENCH_F_PATH) --scenario smoke --latency-us $(BENCH_F_LATENCY_US)
+	@test -f $(BENCH_F_PATH) || $(MAKE) gen transcode BENCH_RECORDS=$(BENCH_F_RECORDS)
+	$(HARNESS_PREFETCH) --path $(BENCH_F_PATH) --scenario all --latency-us $(BENCH_F_LATENCY_US)
 
 run-f:
 	@test -f $(BENCH_F_PATH) || $(MAKE) gen transcode BENCH_RECORDS=$(BENCH_F_RECORDS)
 	$(HARNESS_PREFETCH) --path $(BENCH_F_PATH) --scenario all --latency-us $(BENCH_F_LATENCY_US)
 
 results-f:
-	@mkdir -p $(ROOT)/bench/results/$(RESULT_TAG_F)/raw
 	@test -n "$(RESULT_TAG_F)" || (echo "usage: make -C bench results-f RESULT_TAG_F=2026-05-24_host" >&2; exit 1)
+	@mkdir -p $(ROOT)/bench/results/$(RESULT_TAG_F)/raw
 	$(MAKE) run-f BENCH_F_LATENCY_US=$(BENCH_F_LATENCY_US) \
 	  | tee $(ROOT)/bench/results/$(RESULT_TAG_F)/raw/workload_f.jsonl
 	cp $(BENCH)/methodology/workload_F.md $(ROOT)/bench/results/$(RESULT_TAG_F)/methodology_F.md

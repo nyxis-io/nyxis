@@ -60,7 +60,7 @@ At **1M+ records** the Python harness automatically uses fewer samples for `scan
 | D | Streaming ingest (TTFR) | Time to first complete record (D2 file) | Tie proto on TTFR; publish NXS seal cost |
 | F | Adaptive prefetch | Prefetch-engine fetch count + scroll time | Lazy wins in-memory; prefetch wins remote (browser) |
 
-**Workload F:** `make -C bench run-f-smoke` (10k cap) or `make -C bench run-f` (1M). Go driver fetch recorder — see `bench/methodology/workload_F.md` and `BENCHMARK.md#workload-f`.
+**Workload F:** `make -C bench run-f-smoke` (10k fixture) or `make -C bench run-f` (1M). Go driver fetch recorder — see `bench/methodology/workload_F.md` and `BENCHMARK.md#workload-f`.
 
 **Workload D (Phase 1):** `make -C bench run-d-smoke` — Rust harness (`bench/harness/stream_d/`), NXS + Protobuf + Cap'n Proto, flat-8 schema. Seal breakdown: `make -C bench run-d-seal-profile`. See `bench/methodology/workload_D.md`. Included in `matrix` by default (`BENCH_D=0` to skip); emits `ttfr` / `seal` / `throughput` JSON lines into `run.log` for `report.py`.
 

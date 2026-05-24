@@ -27,12 +27,12 @@ Maintainer attestation: MUST cells in §9.1 are implemented; §9.4 vectors pass 
 | --- | --- | --- | --- | --- | --- |
 | **Rust** | `nyxis/rust` | `prefetch` module unit + conformance vectors | ✅ | 2026-05-24 | Memory pressure SHOULD via cache limits |
 | **Go** | `nyxis-drivers/go` | `prefetch_test.go`, `column_prefetch_test.go`, harness | ✅ | 2026-05-24 | Reference remote-bench driver |
-| **C** | `nyxis-drivers/c` | `make test-prefetch` | ✅ | 2026-05-24 | Sync-only; async prefetch optional (`NXS_ASYNC=1`); SHOULD speculative/equvia sequential viewport |
+| **C** | `nyxis-drivers/c` | `make test-prefetch` | ✅ | 2026-05-24 | Sync-only; async prefetch optional (`NXS_ASYNC=1`); SHOULD speculative features via sequential viewport |
 | **Python** | `nyxis-drivers/py` | `test_prefetch.py`, `test_c_ext.py` | ✅ | 2026-05-24 | SHOULD pattern/strategy via pure-Python path |
 | **JavaScript** | `nyxis-drivers/js` | `test/prefetch.test.js` | ✅ | 2026-05-24 | AbortController MUST; browser `fetchRange` |
 | **Ruby** | `nyxis-drivers/ruby` | `test_prefetch.rb` | ✅ | 2026-05-24 | SHOULD adaptive features; GIL limits parallelism |
 | **PHP** | `nyxis-drivers/php` | `test_prefetch.php` | ✅ | 2026-05-24 | MAY async; MUST page cache + viewport + columnar |
-| **Kotlin** (JVM)** | `nyxis-drivers/kotlin` | `PrefetchTest.kt` | ✅ | 2026-05-24 | Memory pressure MUST |
+| **Kotlin** (JVM) | `nyxis-drivers/kotlin` | `PrefetchTest.kt` | ✅ | 2026-05-24 | Memory pressure MUST |
 | **C# (.NET)** | `nyxis-drivers/csharp` | `PrefetchTests.cs` | ✅ | 2026-05-24 | |
 | **Swift** | `nyxis-drivers/swift` | `PrefetchTests.swift` | ✅ | 2026-05-24 | Memory pressure MUST |
 

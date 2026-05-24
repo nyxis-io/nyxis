@@ -251,7 +251,9 @@ func runF4(data []byte, rs *remoteStore, n int, step int, latencyUs int, fileByt
 		for start := 0; start < n; start += step {
 			end := min(start+step-1, n-1)
 			if usePrefetch {
-				_ = r.PrefetchViewport(context.Background(), start, end)
+				if err := r.PrefetchViewport(context.Background(), start, end); err != nil {
+					panic(err)
+				}
 			}
 			for i := start; i <= end; i++ {
 				readField(r, i)
