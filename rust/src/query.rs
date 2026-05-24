@@ -206,14 +206,25 @@ impl<'a> Reader<'a> {
         })
     }
 
-    /// Open with prefetch options (row-layout viewport cache; phase 1).
+    /// Open with prefetch options (row-layout viewport cache; phase 1+2).
     pub fn with_options(data: &'a [u8], options: OpenOptions) -> Result<Self> {
         options.validate()?;
         let mut reader = Self::new(data)?;
         if reader.layout == Layout::Row {
-            reader.prefetch = Some(PrefetchEngine::new(options));
+            let prefetch = PrefetchEngine::new(options, data.len());
+            if prefetch.strategy() == crate::prefetch::PrefetchStrategy::Eager {
+                prefetch.start_eager_background(data.to_vec(), reader.tail_start);
+            }
+            reader.prefetch = Some(prefetch);
         }
         Ok(reader)
+    }
+
+    /// Wait for in-progress eager / background prefetch (§8).
+    pub fn warmup(&self) {
+        if let Some(prefetch) = &self.prefetch {
+            prefetch.warmup();
+        }
     }
 
     /// Prefetch pages covering records `[start_index, end_index]` (row layout only).
@@ -258,12 +269,7 @@ impl<'a> Reader<'a> {
         let Some(prefetch) = &self.prefetch else {
             return;
         };
-        let Some(off) = crate::prefetch::row_record_offset(self.data, self.tail_start, index)
-        else {
-            return;
-        };
-        let page_size = prefetch.options().page_size;
-        prefetch.touch_page((off / page_size) as u32);
+        prefetch.on_access(self.data, self.tail_start, self.record_count, index);
     }
 
     /// Row, columnar, or PAX layout.

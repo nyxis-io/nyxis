@@ -899,6 +899,32 @@ fn make_prefetch_sparse_50() -> Vector {
     }
 }
 
+fn make_prefetch_sequential_upgrade() -> Vector {
+    // 200 compact row records; file < 10 MB for eager upgrade conformance (§9.4).
+    const N: usize = 200;
+    let schema = Schema::new(&["id", "tag"]);
+    let mut w = NxsWriter::new(&schema);
+    let mut records_json: Vec<String> = Vec::with_capacity(N);
+    for i in 0..N {
+        w.begin_object();
+        w.write_i64(Slot(0), i as i64);
+        w.write_str(Slot(1), &format!("r{i}"));
+        w.end_object();
+        records_json.push(format!("{{\"id\":{}}}", i));
+    }
+    let nxb = w.finish();
+    let expected = format!(
+        "{{\"record_count\":{},\"keys\":[\"id\",\"tag\"],\"records\":[{}],\"prefetch\":{{\"strategy\":\"eager\",\"pattern\":\"sequential\"}}}}",
+        N,
+        records_json.join(",")
+    );
+    Vector {
+        name: "prefetch_sequential_upgrade",
+        nxb,
+        expected,
+    }
+}
+
 fn make_pax_sparse_1000() -> Vector {
     let keys = vec![
         "id".to_string(),
@@ -1051,6 +1077,23 @@ fn main() {
         "  wrote prefetch/{}.nxb ({} bytes) + .expected.json",
         prefetch.name,
         prefetch.nxb.len()
+    );
+
+    let prefetch_seq = make_prefetch_sequential_upgrade();
+    fs::write(
+        prefetch_dir.join(format!("{}.nxb", prefetch_seq.name)),
+        &prefetch_seq.nxb,
+    )
+    .unwrap();
+    fs::write(
+        prefetch_dir.join(format!("{}.expected.json", prefetch_seq.name)),
+        &prefetch_seq.expected,
+    )
+    .unwrap();
+    println!(
+        "  wrote prefetch/{}.nxb ({} bytes) + .expected.json",
+        prefetch_seq.name,
+        prefetch_seq.nxb.len()
     );
 
     println!(
