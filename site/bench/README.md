@@ -42,8 +42,9 @@ Charts on http://localhost:8000/bench/ are numbered to match the page. Bar label
 | 13 | `chart-filter` | Warm: count `score > 80` (cursor filter; row bitmask cost) |
 | 14 | `chart-reduce` | Warm: sum `score` (JSON/CSV + row `sumF64` + **columnar `colSumF64`**) |
 | 15 | `chart-indexed-sum` | Row index loop vs `sumF64` vs columnar reducer |
-| 16 | `chart-memory` | Chrome `performance.memory` (indicative) |
-| 17 | `chart-worker` | Main-thread vs worker chunk sum |
+| 16 | `chart-column-prefetch` | F0: JSON warm/cold vs NXS columnar cold / mistaken prefetch / warm persistent reader |
+| 17 | `chart-memory` | Chrome `performance.memory` (indicative) |
+| 18 | `chart-worker` | Main-thread vs worker chunk sum |
 | 18–19 | WAL charts | Reference data from Rust WAL bench |
 
 Harness implementation: `bench-run.js` (browser), `bench.js` (Node). §12–13 use `cursor.scan` / cursor filter — not `seekWarm` per row or `Query.count()` allocation.

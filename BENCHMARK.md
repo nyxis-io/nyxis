@@ -411,16 +411,29 @@ NXS is not a drop-in replacement for JSON everywhere. It is the right choice whe
 
 ## Workload F: Adaptive prefetch
 
-**Spec:** `Adaptive-prefetch-spec.md` §12. Measures viewport and columnar prefetch on remote-style byte-range I/O (fetch recorder or HTTP `Range`). JSON baselines are not comparable — they require full-file parse before access.
+**Spec:** `Adaptive-prefetch-spec.md` §12. Measures viewport and columnar prefetch on remote-style byte-range I/O (fetch recorder or HTTP `Range`). **F0** is the exception: in-browser columnar `colSumF64` vs JSON sum on the same record count (honest warm/cold JSON labels). Remote-fetch F1–F4 scenarios do not use JSON baselines.
 
 | Scenario | What it measures |
 | --- | --- |
+| **F0 — Columnar aggregate vs JSON (browser bench §16)** | `colSumF64("score")` on columnar `.nxb` vs JSON warm/cold sum; highlights cold NXS vs pre-parsed JSON and warm NXS with `prefetch_column` |
 | **F1 — Virtual scroll cold start** | Time from open to first warm viewport after `prefetch_viewport` on a cold large row file |
 | **F2 — Viewport scroll throughput** | Sustained scroll (e.g. 50 records/step through 1M rows) with adaptive coalescing |
 | **F3 — Random access, large file** | 1000 random record reads on a 500 MB file; page cache hit rate |
 | **F4 — Memory under scroll** | RSS while scrolling 1M records with default `max_pages` |
 
 **Columnar fast path (§7.4):** `prefetch_column(field)` issues one range fetch per column buffer; `col_sum_f64` does not walk the row page cache. Conformance: `prefetch_columnar_fast_path` (single fetch before sum on `columnar_flat8_dense_100`).
+
+**F0 (browser bench, JS driver, 10k records, macOS Apple Silicon, in-memory fixtures):** Interactive chart §16 (`site/bench/`). Representative medians from one run — re-measure on your hardware; gap vs JSON cold is the production-relevant headline.
+
+| Scenario | Time (µs unless noted) | vs JSON cold | vs JSON warm |
+| --- | ---: | ---: | ---: |
+| JSON cold (parse + sum each iter) | 1.43 ms | 1× | — |
+| JSON warm (pre-parsed sum) | 36.8 | 39× faster | 1× |
+| NXS columnar cold (new reader + `colSumF64`) | 33.0 | **43× faster** | **~1.1× faster** |
+| NXS `prefetch_column` + sum (new reader; wasted) | 37.0 | 39× faster | ~ties JSON warm |
+| NXS columnar warm (persistent reader + prefetch) | **20.3** | **~70× faster** | **~1.8× faster** |
+
+> NXS columnar warm aggregate: **20.3 µs**. Pre-parsed warm JSON aggregate: **36.8 µs**. Cold JSON aggregate: **1.43 ms**. Hardware: macOS Apple Silicon, 10k records, in-memory bytes (page cache resident). NXS cold already beats pre-parsed warm JSON — warmup is not required to win; persistent reader + `prefetch_column` widens the gap. Cite when comparing NXS columnar to JSON for analytics; at 1M records the advantage compounds.
 
 **F1 (JS driver, local fetch recorder, columnar 100-record fixture):** `prefetch_column("score")` + `colSumF64` — 1 range fetch, sum 2475.0 (see `nyxis-drivers/js/test.js`). Full 100 MB row F1 numbers are environment-dependent; publish from `bench/` when a frozen remote fixture lands.
 

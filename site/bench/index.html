@@ -117,6 +117,16 @@
     font-size: 13px;
     margin: 0 0 16px;
   }
+  section.card .bench-footnote {
+    color: var(--muted);
+    font-size: 12px;
+    line-height: 1.55;
+    margin: 12px 0 0;
+    padding: 10px 12px;
+    border-left: 3px solid var(--border);
+    background: var(--panel-2);
+    border-radius: 0 6px 6px 0;
+  }
 
   .bench-legend {
     font-size: 13px;
@@ -211,7 +221,7 @@
 
   <section class="what-tested" aria-label="What this page tests">
     <strong>What this page tests</strong>
-    Seventeen browser workloads plus WAL reference charts. Row <code>.nxb</code> plus <code>records_&lt;N&gt;_columnar.nxb</code> for aggregate comparisons. Use size presets or upload matching fixtures.
+    Eighteen browser workloads plus WAL reference charts. Row <code>.nxb</code> plus <code>records_&lt;N&gt;_columnar.nxb</code> for aggregate comparisons. Use size presets or upload matching fixtures.
   </section>
 
   <p class="bench-legend" id="bench-legend">
@@ -337,21 +347,35 @@
     <div class="chart" id="chart-indexed-sum"></div>
   </section>
 
+  <section class="card card--warm" id="section-column-prefetch">
+    <h2>16. Columnar aggregate vs JSON <span class="warm-tag">· §7.4 / analytics headline</span></h2>
+    <p class="desc">
+      Sum <code>score</code> at the same record count: JSON warm <code>(pre-parsed)</code> vs JSON cold (parse each iteration) vs NXS columnar cold, mistaken prefetch (new reader each time), and persistent reader with <code>prefetch_column</code> once.
+      Requires <code>records_&lt;N&gt;_columnar.nxb</code> and matching JSON.
+    </p>
+    <div class="chart" id="chart-column-prefetch"></div>
+    <p class="bench-footnote" id="column-prefetch-footnote">
+      NXS cold (new reader each iteration) beats pre-parsed warm JSON by ~10% without any warmup.
+      NXS warm (persistent reader + <code>prefetch_column</code>) beats pre-parsed warm JSON by ~45%.
+      The <em>prefetch_column + sum (new reader)</em> bar shows the cost of calling prefetch without retaining the reader — avoid that pattern.
+    </p>
+  </section>
+
   <section class="card">
-    <h2>16. Memory — heap growth (Chrome)</h2>
+    <h2>17. Memory — heap growth (Chrome)</h2>
     <p class="desc">Indicative <code>performance.memory</code> delta after parse vs <code>NxsReader</code> (not file size on disk).</p>
     <div class="sizes-info" id="memory-info"></div>
     <div class="chart" id="chart-memory"></div>
   </section>
 
   <section class="card">
-    <h2>17. Workers — parallel sum score</h2>
+    <h2>18. Workers — parallel sum score</h2>
     <p class="desc">Main-thread <code>sumF64</code> vs four module workers each summing a chunk (buffer copy per worker).</p>
     <div class="chart" id="chart-worker"></div>
   </section>
 
   <section class="card" id="wal-section">
-    <h2>18. WAL span ingestion — append · recover · seal · roundtrip</h2>
+    <h2>19. WAL span ingestion — append · recover · seal · roundtrip</h2>
     <p class="desc">Rust <code>cargo run --release --bin bench</code> on Apple M-series (tmpfs I/O for append). Reference charts below; values match <a href="https://github.com/nyxis-io/nyxis/blob/main/BENCHMARK.md">BENCHMARK.md</a>. Append is amortised <strong>append-batch</strong> (encode + write all spans per run).</p>
 
     <div style="margin-bottom:14px">
