@@ -265,13 +265,13 @@
 
   <section class="card card--lead">
     <h2>2. Cold first field — bytes already in memory</h2>
-    <p class="desc">Parse/open then read one field at record <code>n/2</code> (no network; isolates decode cost).</p>
+    <p class="desc">Parse/open then read one field at record <code>n/2</code>. Purple prefetch bar: <code>prefetch_viewport(0, min(49,n−1))</code> then <code>cursor(k)</code> (Workload F1 pattern, in-memory).</p>
     <div class="chart" id="chart-cold-mem"></div>
   </section>
 
   <section class="card card--lead">
     <h2>3. Cold pipeline — fetch + parse + one field</h2>
-    <p class="desc">Models the page-load path after <code>fetch()</code>: open or parse, then first field at <code>n/2</code>.</p>
+    <p class="desc">Models the page-load path after <code>fetch()</code>: open or parse, then first field at <code>n/2</code>. Includes the same <code>prefetch_viewport</code> bar as §2.</p>
     <div class="chart" id="chart-cold-fetch"></div>
   </section>
 
@@ -289,7 +289,7 @@
 
   <section class="card">
     <h2>6. Open + iterate all records</h2>
-    <p class="desc">End-to-end: open the format, then walk every record and read <code>username</code> once. JSON/CSV must parse the full file first; NXS opens cheaply then decodes each row on the pass.</p>
+    <p class="desc">End-to-end: open the format, then walk every record and read <code>username</code> once. Includes <code>open + prefetch_viewport(0,49) + scan</code> (virtual-scroll warm path).</p>
     <div class="chart" id="chart-iterate-all"></div>
   </section>
 
@@ -301,7 +301,7 @@
 
   <section class="card card--warm">
     <h2>8. Iterate only — warm structures <span class="warm-tag">· JSON/CSV pre-parsed</span></h2>
-    <p class="desc">Data already parsed/opened; walk every record and read <code>username</code>. Steady-state traversal without open cost.</p>
+    <p class="desc">Data already parsed/opened; walk every record and read <code>username</code>. Includes a reader with <code>prefetch_viewport(0, min(49,n−1))</code> held warm across iterations.</p>
     <div class="chart" id="chart-iterate-warm"></div>
   </section>
 

@@ -141,6 +141,11 @@ export function scenario(label, klass, failed, failText, run, opts = {}) {
   return { label, klass, ms: run(), perRecord: opts.perRecord };
 }
 
+/** Pre-timed bar row (e.g. after benchAsync). */
+export function scenarioMs(label, klass, ms, opts = {}) {
+  return { label, klass, ms, perRecord: opts.perRecord };
+}
+
 function scatteredIndices(recordCount, max = 500) {
   const n = Math.min(max, recordCount);
   const out = new Uint32Array(n);
@@ -352,6 +357,32 @@ export async function runBenchmarks(ctx) {
 
   const pr = { perRecord: true };
 
+  const k = Math.floor(recordCount / 2);
+  const vpEnd = recordCount > 0 ? Math.min(49, recordCount - 1) : 0;
+
+  const prefetchColdReadMs = recordCount > 0
+    ? await benchAsync(Math.max(3, iters.cold), async () => {
+      const r = new NxsReader(nxbBuf);
+      await r.prefetch_viewport(0, vpEnd);
+      const c = r.cursor();
+      c.seek(k);
+      return c.getStrBySlot(uSlot);
+    })
+    : null;
+
+  const vpWarmReader = new NxsReader(nxbBuf);
+  if (recordCount > 0) await vpWarmReader.prefetch_viewport(0, vpEnd);
+
+  const openPrefetchScanMs = recordCount > 0
+    ? await benchAsync(Math.max(2, Math.min(iters.iterateAll, 20)), async () => {
+      const r = new NxsReader(nxbBuf);
+      await r.prefetch_viewport(0, vpEnd);
+      let acc = 0;
+      r.scan(cur => { acc += cur.getStrBySlot(uSlot).length; });
+      return acc;
+    })
+    : null;
+
   // 1. Open
   drawChart($("#chart-open"), [
     scenario("JSON.parse", "json", !!jsonFail, jsonFail, () => bench(iters.parse, () => JSON.parse(jsonStr))),
@@ -395,6 +426,12 @@ export async function runBenchmarks(ctx) {
         for (let i = 0; i < r.recordCount; i++) acc += idx.getStrAt(i).length;
         return acc;
       }), pr),
+    ...(openPrefetchScanMs != null
+      ? [scenarioMs(
+        `NXS open + prefetch_viewport(0,${vpEnd}) + scan`,
+        "nxs", openPrefetchScanMs, pr,
+      )]
+      : []),
   ], recordCount);
 
   // 3. Iterate only (warm)
@@ -421,6 +458,12 @@ export async function runBenchmarks(ctx) {
       bench(iters.iterateWarm, () => {
         let acc = 0;
         for (let i = 0; i < recordCount; i++) acc += usernameIndex.getStrAt(i).length;
+        return acc;
+      }), pr),
+    scenario("NXS prefetch_viewport warm + cursor.scan", "nxs", false, null, () =>
+      bench(iters.iterateWarm, () => {
+        let acc = 0;
+        vpWarmReader.scan(cur => { acc += cur.getStrBySlot(uSlot).length; });
         return acc;
       }), pr),
   ], recordCount);
@@ -557,7 +600,6 @@ export async function runBenchmarks(ctx) {
   ], recordCount);
 
   // 9. Cold first field (bytes already in memory)
-  const k = Math.floor(recordCount / 2);
   drawChart($("#chart-cold-mem"), [
     scenario("JSON parse + arr[k]", "json", !!jsonFail, jsonFail, () =>
       bench(iters.cold, () => JSON.parse(jsonStr)[k].username)),
@@ -569,6 +611,12 @@ export async function runBenchmarks(ctx) {
         c.seek(k);
         return c.getStrBySlot(uSlot);
       })),
+    ...(prefetchColdReadMs != null
+      ? [scenarioMs(
+        `NXS prefetch_viewport(0,${vpEnd}) + cursor(k)`,
+        "nxs", prefetchColdReadMs, pr,
+      )]
+      : []),
   ], recordCount);
 
   // 10. Cold fetch + first field (same as before)
@@ -583,6 +631,12 @@ export async function runBenchmarks(ctx) {
         c.seek(k);
         return c.getStrBySlot(uSlot);
       })),
+    ...(prefetchColdReadMs != null
+      ? [scenarioMs(
+        `NXS prefetch_viewport(0,${vpEnd}) + cursor(k)`,
+        "nxs", prefetchColdReadMs, pr,
+      )]
+      : []),
   ], recordCount);
 
   // 11. Aggregate (warm)

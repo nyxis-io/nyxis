@@ -435,7 +435,9 @@ NXS is not a drop-in replacement for JSON everywhere. It is the right choice whe
 
 > NXS columnar warm aggregate: **20.3 µs**. Pre-parsed warm JSON aggregate: **36.8 µs**. Cold JSON aggregate: **1.43 ms**. Hardware: macOS Apple Silicon, 10k records, in-memory bytes (page cache resident). NXS cold already beats pre-parsed warm JSON — warmup is not required to win; persistent reader + `prefetch_column` widens the gap. Cite when comparing NXS columnar to JSON for analytics; at 1M records the advantage compounds.
 
-**F1 (JS driver, local fetch recorder, columnar 100-record fixture):** `prefetch_column("score")` + `colSumF64` — 1 range fetch, sum 2475.0 (see `nyxis-drivers/js/test.js`). Full 100 MB row F1 numbers are environment-dependent; publish from `bench/` when a frozen remote fixture lands.
+**F1 — Virtual scroll cold start (browser bench, in-memory row `.nxb`):** Charts §2–3 measure cold `cursor(k)` vs `prefetch_viewport(0, min(49,n−1))` then `cursor(k)` at record `n/2`. Chart §6 adds `open + prefetch_viewport + scan`; chart §8 reuses a viewport-warmed reader for full `cursor.scan`. Re-measure on your hardware at 10k+ records; remote HTTP `Range` fixtures are the production-relevant F1 extension (not yet frozen here).
+
+**F1 (conformance / fetch recorder):** `prefetch_column("score")` on columnar 100-record fixture — 1 range fetch, 2475.0 sum (`nyxis-drivers/js/test.js`, `prefetch_columnar_fast_path`).
 
 Workloads A–E gates are unchanged; prefetch is additive.
 

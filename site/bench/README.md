@@ -28,13 +28,13 @@ Charts on http://localhost:8000/bench/ are numbered to match the page. Bar label
 | § | Chart id | What it measures |
 |---|----------|------------------|
 | 1 | `chart-open` | Open / parse entire file |
-| 2 | `chart-cold-mem` | Cold: parse/open + one field at `n/2` (bytes in memory) |
-| 3 | `chart-cold-fetch` | Cold: same as §2 after `fetch()` |
+| 2 | `chart-cold-mem` | Cold: one field at `n/2` + optional `prefetch_viewport` bar (F1) |
+| 3 | `chart-cold-fetch` | Cold: same as §2 (fetch path label) |
 | 4 | `chart-cold-reduce` | Cold: open/parse + sum `score` (no warm state) |
 | 5 | `chart-stream` | Time to first usable record (stream vs `JSON.parse`) |
-| 6 | `chart-iterate-all` | Open + walk all rows, read `username` once |
+| 6 | `chart-iterate-all` | Open + walk all rows; includes `prefetch_viewport` + scan |
 | 7 | `chart-json-scan` | JSON substring scan vs parse+loop vs NXS `cursor.scan` |
-| 8 | `chart-iterate-warm` | Warm: iterate `username` (JSON/CSV pre-parsed) |
+| 8 | `chart-iterate-warm` | Warm iterate + `prefetch_viewport` warm scan bar |
 | 9 | `chart-random` | Warm: random one-field access |
 | 10 | `chart-random-multi` | Warm: random four-field access |
 | 11 | `chart-scattered` | Warm: ~500 strided random reads |
