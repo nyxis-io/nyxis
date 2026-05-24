@@ -11,6 +11,9 @@ const webRoot = resolve(import.meta.dirname, "..");
 const publicDir = join(webRoot, "public");
 const distDir = resolve(webRoot, "../dist");
 const siteOrigin = "https://www.nyxis.io";
+const ogImageUrl = `${siteOrigin}/og-image.png`;
+const ogImageAlt =
+  "NXS — Nexus Standard: human-readable source, compiled binary, O(log N) lookup, zero-copy access";
 
 const routes = JSON.parse(readFileSync(join(webRoot, "content/routes.json"), "utf8"));
 const viteIndex = readFileSync(join(distDir, "index.html"), "utf8");
@@ -39,6 +42,20 @@ function pageHtml(route, articleHtml) {
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>${route.title}</title>
     <meta name="description" content="${desc}" />
+    <meta property="og:site_name" content="Nyxis" />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="${canonical}" />
+    <meta property="og:title" content="${route.title.replace(/"/g, "&quot;")}" />
+    <meta property="og:description" content="${desc}" />
+    <meta property="og:image" content="${ogImageUrl}" />
+    <meta property="og:image:type" content="image/png" />
+    <meta property="og:image:width" content="1400" />
+    <meta property="og:image:height" content="933" />
+    <meta property="og:image:alt" content="${ogImageAlt.replace(/"/g, "&quot;")}" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="${route.title.replace(/"/g, "&quot;")}" />
+    <meta name="twitter:description" content="${desc}" />
+    <meta name="twitter:image" content="${ogImageUrl}" />
     <link rel="canonical" href="${canonical}" />
     <link rel="alternate" type="text/markdown" href="${route.markdown}" />
     ${css}

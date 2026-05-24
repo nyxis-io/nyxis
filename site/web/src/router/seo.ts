@@ -8,6 +8,11 @@ export type PageSeo = {
 
 export const GA_ID = "G-9TP221ZJ9Z";
 
+/** Social preview card (NXS hero infographic). Served from /public/og-image.png */
+export const OG_IMAGE_URL = "https://nyxis.io/og-image.png";
+export const OG_IMAGE_ALT =
+  "NXS — Nexus Standard: human-readable source, compiled binary, O(log N) lookup, zero-copy access";
+
 export function usePageSeo(meta: PageSeo) {
   return {
     title: meta.title,
@@ -24,15 +29,19 @@ export function usePageSeo(meta: PageSeo) {
         property: "og:description",
         content: meta.ogDescription ?? meta.description,
       },
-      { property: "og:image", content: "https://nyxis.io/favicon.svg" },
-      { property: "og:image:alt", content: "Nyxis" },
-      { name: "twitter:card", content: "summary" },
+      { property: "og:image", content: OG_IMAGE_URL },
+      { property: "og:image:type", content: "image/png" },
+      { property: "og:image:width", content: "1400" },
+      { property: "og:image:height", content: "933" },
+      { property: "og:image:alt", content: OG_IMAGE_ALT },
+      { name: "twitter:card", content: "summary_large_image" },
       { name: "twitter:title", content: meta.ogTitle ?? meta.title },
       {
         name: "twitter:description",
         content: meta.ogDescription ?? meta.description,
       },
-      { name: "twitter:image", content: "https://nyxis.io/favicon.svg" },
+      { name: "twitter:image", content: OG_IMAGE_URL },
+      { name: "twitter:image:alt", content: OG_IMAGE_ALT },
     ],
     link: [{ rel: "canonical", href: meta.canonical }],
   };

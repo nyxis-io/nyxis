@@ -78,6 +78,7 @@ swift/.swiftlint-cache/
 
 # Screenshot artifacts
 *.png
+!site/web/public/og-image.png
 workers-*.png
 index-*.png
 bench-*.png
