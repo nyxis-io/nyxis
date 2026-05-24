@@ -13,6 +13,7 @@
 //! }
 //! ```
 
+use crate::column_prefetch::ColumnWarmState;
 use crate::error::{NxsError, Result};
 use crate::layout::{
     col_var_parts, column_sector_len, is_var_sigil, null_bitmap_bytes, var_str_at,
@@ -68,6 +69,7 @@ pub struct Reader<'a> {
     col_buf_off: Vec<u64>,
     col_buf_len: Vec<u64>,
     prefetch: Option<PrefetchEngine>,
+    column: ColumnWarmState,
 }
 
 impl<'a> Reader<'a> {
@@ -203,6 +205,7 @@ impl<'a> Reader<'a> {
             col_buf_off,
             col_buf_len,
             prefetch: None,
+            column: ColumnWarmState::default(),
         })
     }
 
@@ -241,6 +244,31 @@ impl<'a> Reader<'a> {
         }
     }
 
+    /// Prefetch a single column buffer (columnar layout only; §7.4).
+    pub fn prefetch_column(&self, key: &str) -> Result<()> {
+        if self.layout != Layout::Columnar {
+            return Err(NxsError::UnsupportedLayout);
+        }
+        let slot = *self
+            .key_index
+            .get(key)
+            .ok_or_else(|| NxsError::ParseError(format!("key not found: {key}")))?;
+        let off = *self.col_buf_off.get(slot).ok_or(NxsError::OutOfBounds)? as usize;
+        let len = *self.col_buf_len.get(slot).ok_or(NxsError::OutOfBounds)? as usize;
+        let end = off.checked_add(len).ok_or(NxsError::OutOfBounds)?;
+        if end > self.data.len() {
+            return Err(NxsError::OutOfBounds);
+        }
+        if self.column.prefetch(slot) {
+            const PAGE: usize = 4096;
+            let sector = &self.data[off..end];
+            for page_start in (0..sector.len()).step_by(PAGE) {
+                std::hint::black_box(sector[page_start]);
+            }
+        }
+        Ok(())
+    }
+
     /// Prefetch pages covering records `[start_index, end_index]` (row layout only).
     pub fn prefetch_viewport(&self, start_index: usize, end_index: usize) -> Result<()> {
         if self.layout != Layout::Row {
@@ -258,9 +286,10 @@ impl<'a> Reader<'a> {
         Ok(())
     }
 
-    /// Page cache statistics (zeros when prefetch was not enabled at open).
+    /// Page-cache statistics. Row prefetch counters are zero when opened via
+    /// [`Self::new`]; columnar readers may still report [`CacheStats::column_fetches_issued`].
     pub fn cache_stats(&self) -> CacheStats {
-        if let Some(prefetch) = &self.prefetch {
+        let mut stats = if let Some(prefetch) = &self.prefetch {
             prefetch.cache_stats()
         } else {
             CacheStats {
@@ -270,10 +299,15 @@ impl<'a> Reader<'a> {
                 cache_hits: 0,
                 cache_misses: 0,
                 fetches_issued: 0,
+                column_fetches_issued: 0,
                 strategy: "disabled".to_string(),
                 pattern: "unknown".to_string(),
             }
+        };
+        if self.layout == Layout::Columnar {
+            stats.column_fetches_issued = self.column.fetches();
         }
+        stats
     }
 
     fn touch_record_page(&self, index: usize) {
@@ -552,10 +586,11 @@ impl<'a> Reader<'a> {
     pub fn col_field_var_parts(&self, slot: usize) -> Result<(&[u8], &[u8], &[u8])> {
         let off = *self.col_buf_off.get(slot).ok_or(NxsError::OutOfBounds)? as usize;
         let len = *self.col_buf_len.get(slot).ok_or(NxsError::OutOfBounds)? as usize;
-        if off + len > self.data.len() {
+        let end = off.checked_add(len).ok_or(NxsError::OutOfBounds)?;
+        if end > self.data.len() {
             return Err(NxsError::OutOfBounds);
         }
-        col_var_parts(&self.data[off..off + len], self.record_count)
+        col_var_parts(&self.data[off..end], self.record_count)
     }
 
     fn col_field_parts(&self, slot: usize) -> Result<(&[u8], &[u8])> {
@@ -570,16 +605,18 @@ impl<'a> Reader<'a> {
         }
         let off = *self.col_buf_off.get(slot).ok_or(NxsError::OutOfBounds)? as usize;
         let len = *self.col_buf_len.get(slot).ok_or(NxsError::OutOfBounds)? as usize;
-        if off + len > self.data.len() {
+        let end = off.checked_add(len).ok_or(NxsError::OutOfBounds)?;
+        if end > self.data.len() {
             return Err(NxsError::OutOfBounds);
         }
         let bm_len = null_bitmap_bytes(self.record_count);
         let vals_len = self.record_count.saturating_mul(8);
-        if len < bm_len.saturating_add(vals_len) {
+        let vals_end = bm_len.checked_add(vals_len).ok_or(NxsError::OutOfBounds)?;
+        if len < vals_end {
             return Err(NxsError::OutOfBounds);
         }
-        let sector = &self.data[off..off + len];
-        Ok((&sector[..bm_len], &sector[bm_len..bm_len + vals_len]))
+        let sector = &self.data[off..end];
+        Ok((&sector[..bm_len], &sector[bm_len..vals_end]))
     }
 
     /// Number of top-level records in the file.

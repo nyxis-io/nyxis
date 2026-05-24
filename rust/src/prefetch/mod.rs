@@ -325,6 +325,7 @@ pub struct CacheStats {
     pub cache_hits: u64,
     pub cache_misses: u64,
     pub fetches_issued: u64,
+    pub column_fetches_issued: u64,
     pub strategy: String,
     pub pattern: String,
 }
@@ -413,6 +414,7 @@ impl PrefetchEngine {
             cache_hits: cache.hits(),
             cache_misses: cache.misses(),
             fetches_issued: self.fetches_issued.load(Ordering::Relaxed),
+            column_fetches_issued: 0,
             strategy: self.strategy().as_str().to_string(),
             pattern: detector.pattern().as_str().to_string(),
         }
@@ -706,7 +708,7 @@ pub fn page_indices_for_viewport(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::query::Reader;
+    use crate::query::{Layout, Reader};
     use crate::writer::{NxsWriter, Schema};
 
     fn make_sparse_nxb(n: usize) -> Vec<u8> {
@@ -818,6 +820,24 @@ mod tests {
         let reader = Reader::with_options(&data, OpenOptions::new()).unwrap();
         reader.prefetch_viewport(0, 49).unwrap();
         assert!(reader.cache_stats().pages_cached > 0);
+    }
+
+    #[test]
+    fn prefetch_columnar_fast_path_conformance_vector() {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../conformance/prefetch/prefetch_columnar_fast_path.nxb");
+        let data = match std::fs::read(&path) {
+            Ok(d) => d,
+            Err(_) => return,
+        };
+        let reader = Reader::new(&data).unwrap();
+        assert_eq!(reader.layout(), Layout::Columnar);
+        reader.prefetch_column("score").unwrap();
+        assert_eq!(reader.cache_stats().column_fetches_issued, 1);
+        reader.prefetch_column("score").unwrap();
+        assert_eq!(reader.cache_stats().column_fetches_issued, 1);
+        let sum = reader.col_sum_f64("score").unwrap();
+        assert!((sum - 2475.0).abs() < 1e-9);
     }
 
     #[test]

@@ -899,6 +899,15 @@ fn make_prefetch_sparse_50() -> Vector {
     }
 }
 
+fn make_prefetch_columnar_fast_path() -> Vector {
+    let v = make_columnar_dense_100();
+    Vector {
+        name: "prefetch_columnar_fast_path",
+        nxb: v.nxb,
+        expected: r#"{"col_sum_score":2475.0}"#.to_string(),
+    }
+}
+
 fn make_prefetch_cancel() -> Vector {
     // Large compact row file; eager prefetch starts at open with HINT_FULL.
     const N: usize = 500;
@@ -1137,6 +1146,23 @@ fn main() {
         "  wrote prefetch/{}.nxb ({} bytes) + .expected.json",
         prefetch_cancel.name,
         prefetch_cancel.nxb.len()
+    );
+
+    let prefetch_col = make_prefetch_columnar_fast_path();
+    fs::write(
+        prefetch_dir.join(format!("{}.nxb", prefetch_col.name)),
+        &prefetch_col.nxb,
+    )
+    .unwrap();
+    fs::write(
+        prefetch_dir.join(format!("{}.expected.json", prefetch_col.name)),
+        &prefetch_col.expected,
+    )
+    .unwrap();
+    println!(
+        "  wrote prefetch/{}.nxb ({} bytes) + .expected.json",
+        prefetch_col.name,
+        prefetch_col.nxb.len()
     );
 
     println!(
