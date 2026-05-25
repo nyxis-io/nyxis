@@ -30,9 +30,9 @@ const routes: RouteRecordRaw[] = [
       nav: "home",
       footer: true,
       seo: {
-        title: "Nyxis — Zero-Copy Binary Serialization Protocol",
+        title: "Nyxis — Zero-Copy Binary Serialization (NXS)",
         description:
-          "Nyxis (NXS): row, columnar, and PAX .nxb layouts. 7 µs streaming TTFR (EPYC 9R14), columnar scan 1.3× Arrow IPC on AVX-512, sub-µs warm access. Public benchmark suite vs Protobuf, FlatBuffers, Cap'n Proto, and Arrow.",
+          "Nyxis is a bi-modal serialization format: .nxs source compiles to memory-mapped .nxb with row, columnar, and PAX layouts. Read one record without JSON.parse — open core, MIT drivers, MCP for agents.",
         canonical: "https://nyxis.io/",
       },
     } satisfies AppRouteMeta,

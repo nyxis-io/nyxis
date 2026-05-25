@@ -2,12 +2,15 @@
   <nav class="site-nav">
     <RouterLink class="nav-brand" to="/">
       <svg class="nav-logo" width="22" height="22" viewBox="0 0 24 24" aria-hidden="true">
-        <rect x="2" y="2" width="9" height="9" rx="1.5" fill="currentColor" opacity="0.9" />
-        <rect x="13" y="2" width="9" height="9" rx="1.5" fill="currentColor" opacity="0.45" />
-        <rect x="2" y="13" width="9" height="9" rx="1.5" fill="currentColor" opacity="0.45" />
+        <rect x="2" y="2" width="9" height="9" rx="1.5" fill="currentColor" opacity="0.95" />
+        <rect x="13" y="2" width="9" height="9" rx="1.5" fill="currentColor" opacity="0.5" />
+        <rect x="2" y="13" width="9" height="9" rx="1.5" fill="currentColor" opacity="0.5" />
         <rect x="13" y="13" width="9" height="9" rx="1.5" fill="currentColor" />
       </svg>
-      <span class="nav-wordmark">Nyxis</span>
+      <span>
+        <span class="nav-wordmark">Nyxis</span>
+        <span class="nav-sub">Zero-copy NXS</span>
+      </span>
       <span class="nav-tag">NXS</span>
     </RouterLink>
     <div class="nav-links">
@@ -48,8 +51,8 @@ const themeBtn = ref<HTMLButtonElement | null>(null);
 const globalLinks = [
   { id: "home", label: "Home", to: "/" },
   { id: "use-cases", label: "Use cases", to: "/use-cases/" },
-  { id: "pricing", label: "Commercial pricing", to: "/pricing/" },
-  { id: "demo", label: "Demo", to: "/demo/" },
+  { id: "pricing", label: "Pricing", to: "/pricing/" },
+  { id: "demo", label: "Demos", to: "/demo/" },
   { id: "bench", label: "Benchmark", to: "/bench/" },
 ] as const;
 
