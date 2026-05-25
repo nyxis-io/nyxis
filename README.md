@@ -1,161 +1,72 @@
-# NXS — Nyxis
+# NXS - Nyxis
 
-**A bi-modal serialization format that opens a 1.5 GB dataset in under 2 microseconds.**
+**A bi-modal serialization format for zero-copy `.nxb` payloads and human-readable `.nxs` source files.**
 
-**Author:** Micael Malta · [Live demos →](https://nyxis.io/demo)
+Nyxis is built for workloads where the first query matters: open a large payload, seek to one record, decode one field, or run a column reducer without parsing the whole file into objects first.
 
----
+**Author:** Micael Malta | [Live demos](https://nyxis.io/demo)
 
-## The Problem
+## What Lives Here
 
-JSON was designed to be read by humans and transmitted over HTTP — not to serve as an in-memory query layer for millions of records. At scale, the parsing overhead becomes the bottleneck: every field is a heap allocation, every number is a string that must be converted, and the entire payload must be decoded before the first record can be accessed. CSV has the same decode cost with no type information at all. Protobuf solves the type problem but sacrifices human readability and requires schema compilation tooling that couples producers and consumers. None of them can be memory-mapped and queried without a full parse pass, and none are safe to share across threads or web workers without copying.
+This repository is the open core for the NXS format:
 
----
-
-## What is NXS
-
-NXS (Nyxis) is a bi-modal data format with two representations. The text format (`.nxs`) is a sigil-typed, human-readable source language compiled by a Rust tool. The binary format (`.nxb`) is a zero-copy wire format designed around CPU-native memory alignment. Because the binary layout encodes type and offset information at write time, a reader can locate any record by index, decode any single field by key, and run columnar reducers over millions of records — all without parsing the file.
-
----
-
-## The Four Pillars
-
-
-| Pillar             | Mechanism                                                                                                          |
-| ------------------ | ------------------------------------------------------------------------------------------------------------------ |
-| **Fast**           | 8-byte aligned atomic cells enable zero-copy reads. No deserialization pass required to access a field.            |
-| **Flexible**       | LEB128 bitmask tracks field presence per record. Sparse objects carry no overhead for absent fields.               |
-| **Compressible**   | All field names are interned into a dictionary. Records store 2-byte indices, not repeated strings.                |
-| **Human Readable** | The `.nxs` source format is self-describing plain text. Each value carries its type via a leading sigil character. |
-
-
----
-
-## Benchmark Numbers
-
-All benchmarks use an 8-field record schema on an Apple M-series (arm64), macOS. See `[BENCHMARK.md](./BENCHMARK.md)` for the full cross-language results.
-
-### Open / cold read (1M records)
-
-
-| Language       | NXS open | JSON baseline | Speedup        |
-| -------------- | -------- | ------------- | -------------- |
-| Go             | 279 ns   | 1.04 s        | **3,700,000×** |
-| PHP (C ext)    | 291 ns   | 532 ms        | **1,829,000×** |
-| Python (C ext) | 367 ns   | 774 ms        | **2,109,000×** |
-| Ruby (C ext)   | 667 ns   | 339 ms        | **508,000×**   |
-| JavaScript     | 620 ns   | 310 ms        | **500,000×**   |
-
-
-### Reducer `sum_f64("score")` (1M records)
-
-
-| Language          | NXS     | JSON baseline                | NXS faster by |
-| ----------------- | ------- | ---------------------------- | ------------- |
-| C                 | 6.8 ms  | 56 ms (raw scan)             | **8×**        |
-| Go indexed (hot)  | 249 µs  | 252 µs (pre-parsed)          | **ties**      |
-| Kotlin            | 4.3 ms  | 1,286 ms (org.json)          | **296×**      |
-| Python (C ext)    | 3.48 ms | 31 ms                        | **8.9×**      |
-| Swift             | 8.2 ms  | 2,038 ms (JSONSerialization) | **249×**      |
-| C#                | 8.8 ms  | 292 ms (System.Text.Json)    | **33×**       |
-| JavaScript (WASM) | 8.1 ms  | ~10 ms (pre-parsed)          | **ties**      |
-| Ruby (C ext)      | 7.49 ms | 39 ms                        | **5.2×**      |
-| PHP (C ext)       | 2.21 ms | 30.9 ms                      | **14×**       |
-
-
-### WAL / span ingestion (10k spans, 14 services, 20 OTel ops)
-
-
-| Language          | NXS WAL   | JSON baseline | NXS faster by |
-| ----------------- | --------- | ------------- | ------------- |
-| C (C99)           | 82 ns     | 262 ns        | **3.2×**      |
-| Go                | 138 ns    | 289 ns        | **2.1×**      |
-| Python (C ext)    | 438 ns    | 1,383 ns      | **3.2×**      |
-| Ruby (C ext)      | 336 ns    | 383 ns        | **1.1×**      |
-| JavaScript (fast) | ~250 ns   | ~620 ns       | **~2.5×**     |
-| JavaScript (WASM) | ~280 ns   | ~620 ns       | **~2.2×**     |
-| Python (pure)     | 3,800 ns  | 1,383 ns      | 0.4× (slower) |
-| Ruby (pure)       | 5,300 ns  | 383 ns        | 0.1× (slower) |
-
-Span schema: 14 services, 20 OTel operation names, realistic per-op duration distributions, ~15% payload rate.
-
-### File size (1M records)
-
-
-| Format | Size    | vs JSON |
-| ------ | ------- | ------- |
-| NXS    | 131 MB  | 89%     |
-| JSON   | 147 MB  | 100%    |
-| CSV    | 73 MB   | 49%     |
-| XML    | ~209 MB | 142%    |
-
-
----
-
-## Language drivers ([`nyxis-drivers`](https://github.com/nyxis-io/nyxis-drivers))
-
-This repository (**nyxis**) contains the Rust compiler, format spec, conformance vectors, browser demos, benchmarks, and MCP server. The **ten language SDKs** (readers, writers, and native extensions) live in the MIT-licensed sibling repo [**nyxis-io/nyxis-drivers**](https://github.com/nyxis-io/nyxis-drivers): C, Go, Python, JavaScript, Ruby, PHP, Kotlin, C#, and Swift.
-
-| Registry / channel | Install |
+| Area | Contents |
 | --- | --- |
-| **PyPI** | `pip install nyxis` |
-| **RubyGems** | `gem install nyxis` |
-| **NuGet** | `dotnet add package nyxis` |
-| **Packagist** | `composer require nyxis/nyxis` |
-| **npm** | `npm install nyxis` |
-| **Go** | `go get github.com/nyxis-io/nyxis-drivers/go` |
-| **C (source)** | [GitHub Releases](https://github.com/nyxis-io/nyxis-drivers/releases) (`c/v*` tags) |
-| **From source** | Clone [nyxis-drivers](https://github.com/nyxis-io/nyxis-drivers) — see its [README](https://github.com/nyxis-io/nyxis-drivers/blob/main/README.md) |
+| Format | `SPEC.md`, `RFC.md`, conformance vectors, and the `.nxb` binary contract |
+| Rust core | Compiler, writer, reader, import/export CLIs, WAL utilities, and tests |
+| Benchmarks | Reproducible benchmark harnesses and published methodology |
+| Demos | Browser demos for random access, SharedArrayBuffer workers, WAL ingest, and bench charts |
+| MCP | `nxs-mcp`, a Model Context Protocol server for querying `.nxb` files from agents |
 
-For the split-repo layout and licensing boundaries, see [COMMERCIAL.md](./COMMERCIAL.md).
+Language SDKs live in the MIT-licensed sibling repo [`nyxis-drivers`](https://github.com/nyxis-io/nyxis-drivers). Commercial extensions live in the private [`nyxis-extensions`](https://github.com/nyxis-io/nyxis-extensions) repo. See [`COMMERCIAL.md`](./COMMERCIAL.md) for licensing and repository boundaries.
 
----
+## Why NXS
 
-## Language Support
+JSON, CSV, XML, and many schema-based formats make a reader parse or materialize large amounts of data before a single record is useful. NXS moves the expensive work to write time:
 
+| Goal | Mechanism |
+| --- | --- |
+| Fast first access | Tail-indexed records allow O(1) random access by record index |
+| Zero-copy reads | 8-byte aligned atomic cells can be read directly from mapped bytes |
+| Sparse records | LEB128 presence bitmasks encode missing fields without per-field payload cost |
+| Compact keys | Field names are interned once in the schema header and referenced by slot |
+| Human-editable source | `.nxs` text uses sigils to declare machine types without a separate schema file |
 
-| Language       | Reader              | C extension      | Bulk reducers                                              | Tests                 |
-| -------------- | ------------------- | ---------------- | ---------------------------------------------------------- | --------------------- |
-| **Rust**       | ✅ compiler + writer | —                | `sum_f64`, `sum_f64_fast`, `sum_f64_fast_par`              | `cargo test`          |
-| **JavaScript** | ✅ Node + Browser    | WASM (`encode_span`, `WasmSpanWriter`) | `sumF64`, `minF64`, `maxF64`, `sumI64` | `node test.js` |
-| **Python**     | ✅ pure + C ext      | `_nxs.so`        | `sum_f64`, `min_f64`, `max_f64`, `sum_i64`                 | `python test_nxs.py`  |
-| **Go**         | ✅                   | —                | `SumF64`, `SumF64Fast`, `SumF64FastPar`, `BuildFieldIndex` | `go test ./...`       |
-| **Ruby**       | ✅ pure + C ext      | `nxs_ext.bundle` | `sum_f64`, `min_f64`, `max_f64`, `sum_i64`                 | `ruby test.rb`        |
-| **PHP**        | ✅ pure + C ext      | `nxs.so`         | `sumF64`, `minF64`, `maxF64`, `sumI64`                     | `php test.php`        |
-| **C/C++**      | ✅ C99, zero deps    | —                | `nxs_sum_f64`, `nxs_min_f64`, `nxs_max_f64`, `nxs_sum_i64` | `make test && ./test` |
-| **Swift**      | ✅ Swift 5.9+        | —                | `sumF64`, `minF64`, `maxF64`, `sumI64`                     | `swift run nxs-test`  |
-| **Kotlin**     | ✅ JVM, JDK 17+      | —                | `sumF64`, `minF64`, `maxF64`, `sumI64`                     | `gradle run`          |
-| **C#**         | ✅ .NET 9+           | —                | `SumF64`, `MinF64`, `MaxF64`, `SumI64`                     | `dotnet run`          |
+For dense analytics, NXS also supports columnar and PAX layouts. See [`OLAP.md`](./OLAP.md) for `FLAG_COLUMNAR`, `FLAG_PAX`, and page-level CRC details.
 
+## Quick Start
 
-All ten implementations live in [**nyxis-drivers**](https://github.com/nyxis-io/nyxis-drivers) and read the same `.nxb` binary produced by the Rust compiler in this repo.
-
----
-
-## Browser Demos
-
-Live at **[nyxis.io](https://nyxis.io/demo)**
-
-
-| Demo                                | What it shows                                                                        |
-| ----------------------------------- | ------------------------------------------------------------------------------------ |
-| `[site/bench/](site/bench/)`               | NXS vs JSON vs CSV — open, random access, reducer, cold pipeline — up to 14M records |
-| `/demo/ticker`     | 60 FPS in-place byte patch vs full JSON re-parse — jank visible in sparkline         |
-| `/demo/workers`   | 4 Web Workers, 1 `SharedArrayBuffer`, 0 bytes copied — vs 57 MB × 4 for JSON         |
-| `/demo/explorer` | 10M-line log explorer — virtual scroll, live search, zero-copy                       |
-| `/demo/wal`           | WAL ingestion — 5 encoders (generic, fast, sealed, WASM, JSON) — live cross-language chart |
-
+Build the core CLI and compile a source file:
 
 ```bash
-make demo   # Docker — serves /demo/, /bench/, and driver SDK assets
-# or: cd demo && python3 server.py   # COOP/COEP headers for SharedArrayBuffer
+make fixtures
+cd rust
+cargo build --release
+./target/release/nxs ../examples/user_profile.nxs ../examples/user_profile.nxb
 ```
 
----
+Run the core test suite:
 
-## Example
+```bash
+make test
+```
 
-Every value in a `.nxs` file carries a sigil that declares its machine type — no schema file, no generated code:
+Run browser demos and benchmark pages through Docker:
+
+```bash
+make demo
+```
+
+In the multi-repo workspace, run driver tests after generating core fixtures:
+
+```bash
+make -C nyxis fixtures
+make -C nyxis-drivers test
+```
+
+## Source Example
+
+Every value in a `.nxs` file carries a sigil that declares its binary encoding:
 
 ```text
 user {
@@ -175,133 +86,108 @@ user {
 }
 ```
 
+| Sigil | Type | Binary encoding |
+| --- | --- | --- |
+| `=` | Int64 | 8 bytes little-endian |
+| `~` | Float64 | 8 bytes IEEE 754 little-endian |
+| `?` | Bool | 1 byte plus alignment padding |
+| `$` | Keyword | 2-byte interned dictionary index |
+| `"` | String | u32 length plus UTF-8 bytes |
+| `@` | Timestamp | Unix nanoseconds, 8 bytes little-endian |
+| `<>` | Binary blob | u32 length plus raw bytes |
+| `&` | Link | 4-byte relative offset |
+| `!` | Macro | Resolved at compile time |
+| `^` | Null | Zero-width value tracked by bitmask |
 
-| Sigil | Type                | Binary encoding              |
-| ----- | ------------------- | ---------------------------- |
-| `=`   | Int64               | 8 bytes LE                   |
-| `~`   | Float64             | 8 bytes IEEE 754 LE          |
-| `?`   | Bool                | 1 byte + 7 bytes padding     |
-| `$`   | Keyword (interned)  | 2-byte dict index            |
-| `"`   | String              | u32 length + UTF-8 bytes     |
-| `@`   | Timestamp (Unix ns) | 8 bytes LE                   |
-| `<>`  | Binary blob         | u32 length + raw bytes       |
-| `&`   | Link                | 4-byte relative offset       |
-| `!`   | Macro               | Resolved at compile time     |
-| `^`   | Null                | Zero-width (bitmask bit set) |
+More examples are in [`examples/`](./examples/) and [`GETTING_STARTED.md`](./GETTING_STARTED.md).
 
+## Binary Layout
 
-More examples in `[examples/](./examples/)` and full API usage in `[GETTING_STARTED.md](./GETTING_STARTED.md)`.
+A `.nxb` file is composed of a fixed preamble, embedded schema, data sector, and tail-index:
 
----
-
-## Format Overview
-
-A `.nxb` file is four segments: a 32-byte preamble, an embedded schema header, a data sector, and a tail-index. The tail-index holds one `(KeyID u16, AbsoluteOffset u64)` pair per top-level record and is located by reading the final `FooterTailPtr` before `MagicFooter` — enabling O(1) random access with a single seek. All atomic values are 8-byte aligned, allowing zero-copy reads on any little-endian platform.
-
-```
+```text
 [Preamble 32B][Schema Header][Data Sector][Tail-Index]
 ```
 
----
+The tail-index stores `(KeyID u16, AbsoluteOffset u64)` entries for top-level records, so readers can find a record with one indexed lookup and then decode only the requested field.
 
-## Quick Start
+## Language Support
 
-```bash
-# Core (this repo) — fixtures + compiler
-make fixtures                    # → site/bench/fixtures/
-cargo build --release
-./rust/target/release/nxs examples/user_profile.nxs
+The Rust implementation in this repo is the reference compiler and reader. Application-facing SDKs are maintained in [`nyxis-drivers`](https://github.com/nyxis-io/nyxis-drivers):
 
-# Drivers — clone https://github.com/nyxis-io/nyxis-drivers (sibling or monorepo)
-git clone https://github.com/nyxis-io/nyxis-drivers.git
-cd nyxis-drivers && make fixtures && make test
-```
+| Language | Package or source | Notes |
+| --- | --- | --- |
+| Rust | this repo | Reference compiler, writer, reader, import/export, WAL |
+| C/C++ | GitHub Releases / `nyxis-drivers/c` | C99 reader and writer, no runtime dependencies |
+| Go | `go get github.com/nyxis-io/nyxis-drivers/go` | Reader, writer, reducers, adaptive prefetch |
+| Python | `pip install nyxis` | Pure implementation plus optional C extension |
+| JavaScript | `npm install nyxis` | Node/browser reader, writer, WASM helpers |
+| Ruby | `gem install nyxis` | Pure implementation plus C extension |
+| PHP | `composer require nyxis/nyxis` | Pure implementation plus C extension |
+| Kotlin | Maven/Gradle project | JVM reader and reducers |
+| C# | `dotnet add package nyxis` | .NET reader and reducers |
+| Swift | Swift package | macOS/iOS reader |
 
-In the [nyxis monorepo](https://github.com/nyxis-io/nyxis) workspace, use `make -C nyxis-drivers test` after `make -C nyxis fixtures`.
+## Benchmarks
 
----
+The benchmark suite covers sparse access, warm zero-copy access, dense columnar analytics, streaming ingest time-to-first-record, PAX mixed access, adaptive prefetch, and cross-language driver behavior. Published results live in [`BENCHMARK.md`](./BENCHMARK.md), with scenario definitions and repeatable harnesses in [`BENCHMARK_SUITE.md`](./BENCHMARK_SUITE.md) and [`bench/`](./bench/).
 
-## Documentation
+High-level guidance:
 
+- Use row layout for fast open, random access, sparse records, and first-query latency.
+- Use columnar or PAX layout for dense analytical scans.
+- Use the Arrow bridge in `nyxis-extensions` when Arrow-native ecosystems are the integration target.
 
-| Document                                     | Purpose                                                                         |
-| -------------------------------------------- | ------------------------------------------------------------------------------- |
-| `[SPEC.md](./SPEC.md)`                       | Canonical binary format specification (ground truth for all implementations)    |
-| `[RFC.md](./RFC.md)`                         | Formal RFC with motivation, security guidance, and implementation notes         |
-| `[GETTING_STARTED.md](./GETTING_STARTED.md)` | Code examples for all ten languages                                             |
-| `[BENCHMARK.md](./BENCHMARK.md)`             | Full benchmark results with methodology for all languages and scenarios         |
-| `[SCENARIOS.md](./SCENARIOS.md)`             | Browser stress scenarios (large files, 60 FPS, SharedArrayBuffer, log explorer) |
-| `[CONTRIBUTING.md](./CONTRIBUTING.md)`       | How to add a new language implementation or report spec ambiguities             |
+## Browser Demos
 
+Live demos are served at [nyxis.io/demo](https://nyxis.io/demo).
 
----
+| Demo | What it shows |
+| --- | --- |
+| [`site/bench/`](./site/bench/) | NXS vs JSON/CSV benchmark charts |
+| `/demo/ticker` | In-place byte patching vs full JSON reparse |
+| `/demo/workers` | SharedArrayBuffer workers with zero copied payload bytes |
+| `/demo/explorer` | Large log exploration with virtual scrolling and search |
+| `/demo/wal` | WAL ingestion across generic, fast, sealed, WASM, and JSON encoders |
 
 ## MCP Server
 
-`nxs-mcp` is a [Model Context Protocol](https://modelcontextprotocol.io) server that lets an AI agent (Claude, Cursor, etc.) query `.nxb` files directly. It wraps the Rust CLI binaries as typed MCP tools with no additional parsing logic.
-
-### Build
+`nxs-mcp` exposes `.nxb` inspection, conversion, and record lookup as typed Model Context Protocol tools.
 
 ```bash
-# Rust binaries must be built first
 cd rust && cargo build --release && cd ..
-
-make build-mcp          # → bin/nxs-mcp
-make install-mcp        # install to /usr/local/bin (PREFIX=~/.local to override)
-make test-mcp           # run unit tests
-make lint-mcp           # gofmt + go vet
+make build-mcp
+make test-mcp
 ```
 
-### Tools
+Available tools include `nxs_schema`, `nxs_inspect`, `nxs_record`, `nxs_export_json`, `nxs_export_csv`, `nxs_import`, and `nxs_compile`. The server can discover `.nxb` resources through `--data-dir` and locate compiled Rust binaries through `--bin-dir`.
 
-| Tool | Description |
-|------|-------------|
-| `nxs_schema` | Return the schema (key names + sigil types) of a `.nxb` file |
-| `nxs_inspect` | Decode schema + N records (default 3) as JSON |
-| `nxs_record` | Decode a single record by zero-based index |
-| `nxs_export_json` | Export up to N records as JSON (default 100; pass `-1` for all) |
-| `nxs_export_csv` | Export as CSV with optional column selection |
-| `nxs_import` | Convert JSON / CSV / XML → `.nxb` |
-| `nxs_compile` | Compile a `.nxs` text source → `.nxb` binary |
+## Documentation
 
-### Wire into Claude Code
+| Document | Purpose |
+| --- | --- |
+| [`SPEC.md`](./SPEC.md) | Canonical binary format specification |
+| [`RFC.md`](./RFC.md) | Motivation, security guidance, and implementation notes |
+| [`GETTING_STARTED.md`](./GETTING_STARTED.md) | Code examples for supported languages |
+| [`BENCHMARK.md`](./BENCHMARK.md) | Published benchmark results and methodology |
+| [`BENCHMARK_SUITE.md`](./BENCHMARK_SUITE.md) | Workload definitions and harness overview |
+| [`CONFORMANCE.md`](./CONFORMANCE.md) | Cross-language vector generation and validation |
+| [`CONTRIBUTING.md`](./CONTRIBUTING.md) | Contribution process and implementation guidance |
 
-Add to `.claude/settings.json`:
+## CI And Conformance
 
-```json
-{
-  "mcpServers": {
-    "nxs": {
-      "command": "/absolute/path/to/bin/nxs-mcp",
-      "args": [
-        "--data-dir", "/absolute/path/to/js/fixtures/",
-        "--bin-dir", "/absolute/path/to/rust/target/release/"
-      ]
-    }
-  }
-}
+Core CI builds Rust, generates conformance vectors, builds WASM artifacts, and runs cross-language conformance jobs against [`nyxis-drivers`](https://github.com/nyxis-io/nyxis-drivers). Run the full matrix from the workspace root with:
+
+```bash
+make conformance
 ```
-
-`--data-dir` makes all `.nxb` files in that directory discoverable as `nxb:///` resources. `--bin-dir` tells the server where to find the Rust binaries (`nxs-inspect`, `nxs-export`, `nxs-import`, `nxs`). If omitted, the server searches `../rust/target/release/` relative to its own location, then `$PATH`.
-
----
-
-## CI
-
-**This repo:** Rust build, conformance vector generation, WASM build, and cross-language conformance jobs (each checks out [**nyxis-drivers**](https://github.com/nyxis-io/nyxis-drivers)). See [`.github/workflows/`](.github/workflows/).
-
-**Drivers repo:** per-language test and publish workflows on [nyxis-io/nyxis-drivers](https://github.com/nyxis-io/nyxis-drivers/tree/main/.github/workflows).
-
----
-
-## Licensing
-
-Nyxis is published under the **Business Source License 1.1 (BSL)**. It is completely free for development, testing, and production environments for organizations with less than $5M in annual revenue or processing under 10TB of data per month.
-
-Production use outside of these parameters requires a commercial license. See [COMMERCIAL.md](./COMMERCIAL.md) for pricing packages, enterprise support tiers, and proprietary data connectors, or contact **licensing@nyxis.io**.
-
----
 
 ## Status
 
-**Stable (v1.2).** The spec now supports Columnar and PAX layouts (`FLAG_COLUMNAR`, `FLAG_PAX`) for OLAP workloads, PAX page-level streaming, and per-page CRC (`FLAG_PAGE_CRC`). See [OLAP.md](./OLAP.md) for the full columnar/PAX wire layout. The `conformance/` directory contains vectors validated by runners in this repo (Rust) and in [nyxis-drivers](https://github.com/nyxis-io/nyxis-drivers) (JS, Python, Go, Ruby, PHP, C, Swift, Kotlin, C#).
+The current spec is stable at v1.2. It includes row, columnar, and PAX layouts; adaptive prefetch conformance; page-level CRC support; and conformance runners for Rust plus the driver languages.
+
+## License
+
+Nyxis core is published under the **Business Source License 1.1 (BSL)**. Development, testing, research, and qualifying production use are permitted under the free tier described in [`COMMERCIAL.md`](./COMMERCIAL.md). The wire format specification and conformance vectors are documented for clean-room implementations with attribution.
+
+Commercial production use outside the free tier requires a license. Contact **licensing@nyxis.io**.
