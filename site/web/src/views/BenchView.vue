@@ -3,8 +3,33 @@
   <header class="page-header">
     <p class="page-eyebrow">NXS · Nyxis</p>
     <h1 class="page-title">Browser benchmark</h1>
-    <p class="page-lead">NXS vs JSON vs CSV — the same fixtures used in the Node and Go benches, run in your browser over <code>fetch()</code>. Scenarios are ordered so NXS strengths (open, cold read, cold analytics, streaming) appear first; warm field access (where pre-parsed JSON wins) appears later with explicit bar labels.</p>
+    <p class="page-lead">
+      Workflow outcomes first — time to interactive, filter latency, stream responsiveness, and browser memory — then
+      raw throughput. The same fixtures used in Node and Go benches, run in your browser over <code>fetch()</code>.
+    </p>
   </header>
+
+  <section class="landing-section bench-workflow-intro">
+    <h2>What we measure first</h2>
+    <ul class="pillars">
+      <li>
+        <strong>Time to interactive</strong>
+        <span>Open or stream until the first row is usable — sections 1–5 below.</span>
+      </li>
+      <li>
+        <strong>Browser memory</strong>
+        <span><code>performance.memory</code> delta after parse vs <code>NxsReader</code> — section 17.</span>
+      </li>
+      <li>
+        <strong>Filter &amp; scan latency</strong>
+        <span>Predicate and aggregate passes — sections 12–16.</span>
+      </li>
+      <li>
+        <strong>Raw throughput</strong>
+        <span>Warm random access and WAL reference charts — sections 8–11 and 19.</span>
+      </li>
+    </ul>
+  </section>
 
   <section class="what-tested" aria-label="What this page tests">
     <strong>What this page tests</strong>
@@ -186,6 +211,32 @@
 
     <h3 style="font-size:13px;font-weight:600;margin:16px 0 8px;color:var(--muted)">File size vs JSON NDJSON baseline</h3>
     <div class="chart" id="chart-wal-size"></div>
+  </section>
+
+  <section class="card bench-tradeoffs">
+    <h2>Honest tradeoffs</h2>
+    <p class="desc">
+      Nyxis is not a drop-in replacement for your entire data stack. Published comparisons acknowledge where other
+      formats win.
+    </p>
+    <ul>
+      <li><strong>Apache Arrow</strong> remains superior for dense analytical scans — use NXS <code>columnar</code> layout or the Arrow bridge for hybrid pipelines.</li>
+      <li><strong>FlatBuffers / Cap'n Proto</strong> may cold-open faster on tiny warm-cache files — see <a href="../BENCHMARK.md#workload-b">Workload B</a>.</li>
+      <li><strong>Parquet</strong> remains excellent warehouse storage — NXS targets transport, browser UIs, and streaming ingest.</li>
+      <li><strong>JSON (warm)</strong> can tie NXS on simple field access when the entire document is already parsed — bars label <strong>pre-parsed</strong> explicitly.</li>
+    </ul>
+  </section>
+
+  <section class="card bench-repro">
+    <h2>Reproducibility</h2>
+    <p class="desc">Re-run the same workloads locally or in CI.</p>
+    <ul>
+      <li><strong>Public fixtures</strong> — <code>nyxis/site/bench/fixtures/records_*.nxb</code> (+ matching <code>.json</code> / <code>.csv</code>)</li>
+      <li><strong>Browser harness</strong> — this page (<code>site/web/src/demos/bench-page.js</code>)</li>
+      <li><strong>Native benches</strong> — <code>cargo run --release --bin bench</code> in <a href="https://github.com/nyxis-io/nyxis" rel="noopener">nyxis</a></li>
+      <li><strong>Methodology &amp; hardware</strong> — <a href="../BENCHMARK.md#workload-comparison-suite">BENCHMARK.md</a> (Apple Silicon dev hosts, Linux x86_64, EPYC AVX-512 rows)</li>
+      <li><strong>Generate fixtures</strong> — <code>make -C nyxis bench-fixtures</code> (see repo <code>Makefile</code>)</li>
+    </ul>
   </section>
 
   <section class="card" id="wal-lang-section">

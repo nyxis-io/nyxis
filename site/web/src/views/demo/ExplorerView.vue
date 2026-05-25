@@ -5,8 +5,14 @@
       <div class="title-block">
         <p class="page-eyebrow">NXS · Nyxis · Demo</p>
         <h1 class="page-title">Log explorer</h1>
-        <p class="page-lead">10M-line viewer — virtual scroll, in-place search, zero-copy parsing</p>
+        <p class="page-lead">Millions of rows — virtual scroll, search, and zero-copy reads in the browser</p>
       </div>
+      <ul class="explorer-context" aria-label="Dataset context">
+        <li><strong>1M+ records</strong> built-in fixtures</li>
+        <li><strong>Fully browser-side</strong></li>
+        <li><strong>No hydration pass</strong></li>
+        <li><strong>No server-side filtering</strong></li>
+      </ul>
       <div class="hint" id="drop-hint">
         Drop <code>.nxb</code>, <code>.nxs</code>, or <code>.json</code> here, <label for="file" class="upload-label">browse</label>, or
       </div>
@@ -16,9 +22,28 @@
     </div>
   </header>
 
+  <section class="explorer-telemetry" aria-label="Live instrumentation">
+    <div class="tel-grid">
+      <div class="tel-item"><span class="tel-label">Open</span><span class="tel-value" id="tel-open">—</span></div>
+      <div class="tel-item"><span class="tel-label">Filter / search</span><span class="tel-value" id="tel-filter">—</span></div>
+      <div class="tel-item"><span class="tel-label">Heap Δ (Chrome)</span><span class="tel-value" id="tel-memory">—</span></div>
+      <div class="tel-item"><span class="tel-label">Rows streamed</span><span class="tel-value" id="tel-streamed">—</span></div>
+      <div class="tel-item"><span class="tel-label">Rows loaded</span><span class="tel-value" id="tel-loaded">—</span></div>
+      <div class="tel-item"><span class="tel-label">Format</span><span class="tel-value" id="tel-format">—</span></div>
+    </div>
+    <div class="explorer-compare-bar" id="compare-bar" hidden>
+      <span id="compare-nxs">NXS: —</span>
+      <span class="sep">│</span>
+      <span id="compare-json">JSON: —</span>
+      <button type="button" id="compare-run" class="compare-run-btn">Run JSON vs NXS at this size</button>
+    </div>
+  </section>
+
   <section class="what-tested" aria-label="What this page tests">
     <strong>What this page tests</strong>
-    UI scalability for a <strong>very large</strong> log-shaped dataset (millions of rows): a fixed <strong>row pool</strong> and a tall inner <strong>spacer</strong> with scroll scaling map viewport position to record indices without creating one DOM node per line. With <code>.nxb</code>, loads use <code>NxsStreamReader</code> so schema and records parse while bytes arrive (v1.2 streamable row layout); after the footer seals, <code>NxsReader</code> tail-index enables <strong>random access</strong> without a full JS object graph. With <code>.nxs</code>, the server returns <code>text/plain</code> (readable in DevTools Network → Response); the page compiles source to <code>.nxb</code> in-browser via WASM, then uses the same zero-copy reader. With <code>.json</code>, the file is parsed once into an array, then the same virtual list runs over that in-memory model (useful for comparison). Search, jump-to-line, and the status bar’s <strong>render</strong> timing show whether scrolling stays smooth under load.
+    Virtual scroll over very large log-shaped datasets: a fixed row pool maps scroll position to record indices without one DOM node per line.
+    <code>.nxb</code> uses <code>NxsStreamReader</code> then tail-index random access; <code>.json</code> parses once into a full in-memory graph — use
+    <strong>Run JSON vs NXS</strong> after loading a fixture to see open latency side by side.
   </section>
 
   <div class="toolbar">
@@ -57,6 +82,16 @@
       <kbd>Enter</kbd> next match
     </span>
   </div>
+
+  <section class="explorer-how" aria-label="How it works">
+    <h2>How it works (short)</h2>
+    <ul>
+      <li><strong>Zero-copy reads</strong> — mapped wire cells; no <code>JSON.parse()</code> graph.</li>
+      <li><strong>Selective access</strong> — tail-index jumps to the rows your viewport needs.</li>
+      <li><strong>Progressive loading</strong> — stream records before the file footer seals.</li>
+      <li><strong>Append-friendly layout</strong> — same row format from ingest through seal.</li>
+    </ul>
+  </section>
 </main>
 </template>
 

@@ -4,12 +4,14 @@ The public site at [nyxis.io](https://nyxis.io) — landing pages, browser demos
 
 ## Develop
 
-From `nyxis/` (with Docker on port 8000 for `/sdk` and fixtures, or adjust `vite.config.ts` proxies):
+From `nyxis/`:
 
 ```bash
 make sdk          # once: clone nyxis-drivers for /sdk
 make site-dev     # Vite on http://localhost:5173
 ```
+
+Vite resolves `import "/sdk/…"` from `nyxis-drivers/js` directly. Keep something on port **8000** (e.g. `make demo` or the static server) so `/bench/fixtures` and `/examples` proxy correctly when you run benchmarks or load demo fixtures.
 
 ## Production build
 

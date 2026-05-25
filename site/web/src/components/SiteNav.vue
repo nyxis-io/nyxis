@@ -50,6 +50,7 @@ const themeBtn = ref<HTMLButtonElement | null>(null);
 
 const globalLinks = [
   { id: "home", label: "Home", to: "/" },
+  { id: "docs", label: "Docs", to: "/docs/" },
   { id: "use-cases", label: "Use cases", to: "/use-cases/" },
   { id: "pricing", label: "Pricing", to: "/pricing/" },
   { id: "demo", label: "Demos", to: "/demo/" },
