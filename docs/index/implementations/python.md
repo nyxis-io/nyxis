@@ -5,7 +5,7 @@ file_count: 6
 architectural_health: normal
 security_tier: normal
 hot_paths: [nxs.py, _nxs.c]
-see_also: [implementations/c.md, spec/format.md]
+see_also: [implementations/c.md, spec_format.md]
 ---
 
 # _nxs.c

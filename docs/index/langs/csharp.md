@@ -2,7 +2,7 @@
 room: csharp
 subdomain: langs
 source_paths: csharp/
-see_also: langs/kotlin.md, langs/swift.md
+see_also: ["langs/kotlin.md", "langs/swift.md"]
 hot_paths: NxsReader.cs, NxsWriter.cs
 architectural_health: normal
 security_tier: normal

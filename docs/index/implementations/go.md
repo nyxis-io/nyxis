@@ -5,7 +5,7 @@ file_count: 5
 architectural_health: normal
 security_tier: normal
 hot_paths: [fast.go, nxs.go]
-see_also: [implementations/c.md, implementations/rust.md, spec/format.md]
+see_also: [implementations/c.md, implementations/rust.md, spec_format.md]
 ---
 
 # cmd/bench/main.go

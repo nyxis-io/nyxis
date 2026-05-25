@@ -1,8 +1,8 @@
 ---
 room: tests_fuzz
 subdomain: rust
-source_paths: rust/tests/convert/, rust/fuzz/fuzz_targets/
-see_also: rust/convert.md, rust/bins.md, rust/writer_decoder.md
+source_paths: [rust/tests/, rust/tests/convert/, rust/fuzz/fuzz_targets/]
+see_also: ["rust/convert.md", "rust/bins.md", "rust/writer_decoder.md", "rust/registry.md"]
 hot_paths: e2e.rs, fuzz_decode.rs, fuzz_writer_roundtrip.rs
 architectural_health: normal
 security_tier: normal
@@ -11,7 +11,7 @@ security_tier: normal
 # rust/ — Integration Tests & Fuzz Targets
 
 Subdomain: rust/
-Source paths: rust/tests/convert/, rust/fuzz/fuzz_targets/
+Source paths: rust/tests/, rust/tests/convert/, rust/fuzz/fuzz_targets/
 
 ## TASK → LOAD
 
@@ -92,6 +92,16 @@ USE WHEN: Fuzzing the full writer-to-decoder pipeline; use `fuzz_decode.rs` inst
 
 ---
 
+# go_producer_roundtrip.rs
+
+DOES: Integration test that roundtrips records through the Go producer API and Rust decoder to verify cross-language wire compatibility.
+SYMBOLS:
+- go_producer_roundtrip test fn
+DEPENDS: nxs::decoder, external Go test helper
+PATTERNS: cross-language-roundtrip
+
+---
+
 # json_import.rs
 
 DOES: Integration tests for `nxs-import --from json` covering stdin-to-stdout pass-through (spill path), stdin-to-file with NYXB magic verification, and `--schema` hint behaviour that skips the two-pass inference step.
@@ -104,3 +114,15 @@ SYMBOLS:
 DEPENDS: assert_cmd, predicates, tempfile
 PATTERNS: subprocess-integration-test, stdin-spill-verify, schema-hint-single-pass
 USE WHEN: Testing the JSON import path specifically (stdin, spill, schema hint); use `e2e.rs` for full import→export roundtrips.
+
+---
+
+# registry_cli.rs
+
+DOES: CLI smoke tests for `nxs registry` subcommands (help text, list pagination flags) without requiring a live registryd.
+SYMBOLS:
+- nxs_help_mentions_registry() -> ()
+- registry_help_lists_subcommands() -> ()
+- registry_list_help_shows_pagination() -> ()
+DEPENDS: assert_cmd, predicates
+USE WHEN: Verifying registry CLI surface; use registry.md for gRPC client behavior.

@@ -2,7 +2,7 @@
 room: compiler_pipeline
 subdomain: rust
 source_paths: rust/src/lexer.rs, rust/src/parser.rs, rust/src/compiler.rs, rust/src/error.rs
-see_also: rust/writer_decoder.md, rust/convert.md
+see_also: ["rust/writer_decoder.md", "rust/convert.md"]
 hot_paths: compiler.rs, lexer.rs
 architectural_health: normal
 security_tier: normal
@@ -41,7 +41,7 @@ TYPE: Compiler { dict: Vec<String>, key_map: HashMap<String, usize> }
 DEPENDS: crate::error, crate::parser
 PATTERNS: two-pass-compile, leb128-bitmask, rule-of-8-alignment
 USE WHEN: Converting an in-memory AST to `.nxb` bytes; prefer `crate::writer` (NxsWriter) for hot-path fixture generation that bypasses text parsing entirely.
-DISAMBIGUATION: `murmur3_64` also appears as a standalone function in `nxs.c` (`c/reader.md`) and `nxs.go` (`go/reader.md`). Those are independent re-implementations for DictHash verification in their respective languages. If the question is about cross-language hash parity or the spec hash algorithm itself, load `c/reader.md` or `go/reader.md` alongside this room.
+DISAMBIGUATION: `murmur3_64` also appears as a standalone function in `nxs.c` (`c_reader.md`) and `nxs.go` (`go_reader.md`). Those are independent re-implementations for DictHash verification in their respective languages. If the question is about cross-language hash parity or the spec hash algorithm itself, load `c_reader.md` or `go_reader.md` alongside this room.
 
 ---
 

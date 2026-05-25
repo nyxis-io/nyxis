@@ -1,8 +1,8 @@
 ---
-room: reader
-subdomain: go
+room: go_reader
+subdomain: (top-level)
 source_paths: go/
-see_also: c/reader.md, langs/kotlin.md
+see_also: ["c_reader.md", "langs/kotlin.md"]
 hot_paths: nxs.go, fast.go, writer.go
 architectural_health: normal
 security_tier: normal
@@ -110,7 +110,7 @@ SYMBOLS:
 DEPENDS: encoding/binary, fmt, math
 PATTERNS: lazy Object stage promotion, LEB128 bitmask walk, tail-index O(1) record lookup, inline-rank single-field fast path
 USE WHEN: Reading existing .nxb files; use fast.go variants for aggregate scans over uniform datasets.
-DISAMBIGUATION: `murmur3_64` also appears in `compiler.rs` (`rust/compiler_pipeline.md`) and `nxs.c` (`c/reader.md`). The Go implementation is used only at reader open-time for DictHash verification. For the canonical hash algorithm spec, load `rust/compiler_pipeline.md`.
+DISAMBIGUATION: `murmur3_64` also appears in `compiler.rs` (`rust/compiler_pipeline.md`) and `nxs.c` (`c_reader.md`). The Go implementation is used only at reader open-time for DictHash verification. For the canonical hash algorithm spec, load `rust/compiler_pipeline.md`.
 
 ---
 

@@ -1,5 +1,5 @@
 ---
-room: spec/format
+room: spec_format
 source_paths: [SPEC.md, RFC.md]
 file_count: 2
 architectural_health: normal

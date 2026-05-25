@@ -2,7 +2,7 @@
 room: wasm_workers
 subdomain: js
 source_paths: js/wasm.js, js/wasm/nxs_reducers.c, js/nxs_worker.js, js/explorer_worker.js, js/json_worker.js, js/test_wasm.js, js/theme.js, js/server.py
-see_also: js/reader.md
+see_also: ["js/reader.md"]
 hot_paths: wasm.js, nxs_reducers.c, explorer_worker.js
 architectural_health: normal
 security_tier: normal

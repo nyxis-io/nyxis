@@ -5,7 +5,7 @@ file_count: 14
 architectural_health: normal
 security_tier: normal
 hot_paths: [json_in.rs, csv_in.rs, xml_in.rs]
-see_also: [implementations/rust.md, spec/format.md]
+see_also: [implementations/rust.md, spec_format.md]
 ---
 
 # bin/nxs_export.rs

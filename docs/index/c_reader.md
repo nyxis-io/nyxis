@@ -1,8 +1,8 @@
 ---
-room: reader
-subdomain: c
+room: c_reader
+subdomain: (top-level)
 source_paths: c/
-see_also: go/reader.md, langs/ruby.md, langs/php.md
+see_also: ["go_reader.md", "langs/ruby.md", "langs/php.md"]
 hot_paths: nxs.c, nxs_writer.c
 architectural_health: normal
 security_tier: sensitive
@@ -81,7 +81,7 @@ SYMBOLS:
 DEPENDS: nxs.h, string.h, math.h
 PATTERNS: memcpy-based LE reads (no UB), LEB128 bitmask walk, MurmurHash3-64 schema integrity check, linear key lookup
 USE WHEN: Reading .nxb buffers from C; pair with nxs_slot() to pre-resolve keys for hot-loop column scans.
-DISAMBIGUATION: `murmur3_64` also appears in `compiler.rs` (`rust/compiler_pipeline.md`) and `nxs.go` (`go/reader.md`). This C implementation is used at both read-open time (verify DictHash) and write-finish time (compute DictHash via `nxs_writer.c`). Load `rust/compiler_pipeline.md` if the question is about the Rust crate's hash computation.
+DISAMBIGUATION: `murmur3_64` also appears in `compiler.rs` (`rust/compiler_pipeline.md`) and `nxs.go` (`go_reader.md`). This C implementation is used at both read-open time (verify DictHash) and write-finish time (compute DictHash via `nxs_writer.c`). Load `rust/compiler_pipeline.md` if the question is about the Rust crate's hash computation.
 
 ---
 

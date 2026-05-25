@@ -5,7 +5,7 @@ file_count: 3
 architectural_health: normal
 security_tier: normal
 hot_paths: [NxsReader.cs]
-see_also: [spec/format.md]
+see_also: [spec_format.md]
 ---
 
 # Bench.cs

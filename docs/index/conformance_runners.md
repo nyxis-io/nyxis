@@ -1,11 +1,11 @@
 ---
-room: conformance/runners
+room: conformance_runners
 source_paths: [conformance/]
 file_count: 21
 architectural_health: normal
 security_tier: normal
 hot_paths: [generate.rs]
-see_also: [implementations/rust.md, spec/format.md]
+see_also: [implementations/rust.md, spec_format.md]
 ---
 
 # generate.rs

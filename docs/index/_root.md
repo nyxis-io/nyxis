@@ -1,7 +1,7 @@
 # LOI Index
 
-Generated: 2026-05-15
-Source paths: rust/, js/, py/, go/, c/, ruby/, php/, kotlin/, csharp/, swift/, conformance/
+Generated: 2026-05-24
+Source paths: rust/, js/, py/, go/, c/, ruby/, php/, kotlin/, csharp/, swift/, conformance/, bench/, mcp/, site/
 
 NXS is a bi-modal serialization format: a sigil-typed text source (`.nxs`) compiled by a Rust compiler into a zero-copy binary format (`.nxb`) read by ten language implementations via memory-mapped tail-index + LEB128-bitmask object headers.
 
@@ -9,8 +9,8 @@ NXS is a bi-modal serialization format: a sigil-typed text source (`.nxs`) compi
 
 | Task | Load |
 |------|------|
-| Understand the NXS binary format (preamble, schema, tail-index, bitmask) | spec/format.md |
-| Implement a new language reader | spec/format.md → implementations/_root.md |
+| Understand the NXS binary format (preamble, schema, tail-index, bitmask) | spec_format.md |
+| Implement a new language reader | spec_format.md → implementations/_root.md |
 | Compile .nxs source text to .nxb binary | rust/_root.md |
 | Understand the NXS lexer, parser, or AST types | rust/compiler_pipeline.md |
 | Add or match an NxsError variant / error code | rust/compiler_pipeline.md |
@@ -27,18 +27,26 @@ NXS is a bi-modal serialization format: a sigil-typed text source (`.nxs`) compi
 | Add WASM reducers or browser Web Workers | js/wasm_workers.md |
 | Read or write .nxb from Python | py/_root.md |
 | Use the Python C extension for max throughput | py/c_ext.md |
-| Read or write .nxb from Go | go/_root.md |
-| Use Go unsafe fast-path aggregate reducers | go/reader.md |
-| Read or write .nxb from C or C++ | c/_root.md |
+| Read or write .nxb from Go | go_reader.md |
+| Use Go unsafe fast-path aggregate reducers | go_reader.md |
+| Read or write .nxb from C or C++ | c_reader.md |
 | Read or write .nxb from Ruby | langs/ruby.md |
 | Read or write .nxb from PHP | langs/php.md |
 | Read or write .nxb from Kotlin/JVM | langs/kotlin.md |
 | Read or write .nxb from C# (.NET 8) | langs/csharp.md |
 | Read or write .nxb from Swift | langs/swift.md |
-| Generate or run conformance test vectors | conformance.md |
-| Add a positive or negative conformance vector | conformance.md |
-| Debug or add a GitHub Actions CI workflow | ci/workflows.md |
+| Generate or run conformance test vectors | conformance.md, conformance_runners.md |
+| Add a positive or negative conformance vector | conformance.md, conformance_runners.md |
+| Debug or add a GitHub Actions CI workflow | ci_workflows.md |
 | Regenerate js/fixtures/ for benchmarks | rust/writer_decoder.md |
+| Run cross-format benchmark harness or Workload F prefetch bench | bench/_root.md |
+| Generate or transcode benchmark workload JSON/binaries | bench/generators.md |
+| Expose nxs CLI tools via MCP (inspect, import, export) | mcp_server.md |
+| Change marketing site, Vue demos, or prerender pipeline | site/_root.md |
+| Zero-copy .nxb query predicates or columnar/PAX layout | rust/runtime.md |
+| Adaptive prefetch engine or column warmup | rust/prefetch.md |
+| Schema registry gRPC client or dict-hash helpers | rust/registry.md |
+| Registry or Go-producer integration tests | rust/tests_fuzz.md |
 
 ## PATTERN → LOAD
 
@@ -46,21 +54,24 @@ Cross-cutting behavioral patterns that span multiple rooms.
 
 | Pattern | Load |
 |---------|------|
-| LEB128 bitmask + offset-table object header | rust/compiler_pipeline.md, rust/writer_decoder.md, c/reader.md |
-| Tail-index O(1) random record access | rust/writer_decoder.md, js/reader.md, go/reader.md |
-| Schema-once / write-many slot-indexed emit | rust/writer_decoder.md, js/reader.md, py/reader.md, go/reader.md |
+| LEB128 bitmask + offset-table object header | rust/compiler_pipeline.md, rust/writer_decoder.md, c_reader.md |
+| Tail-index O(1) random record access | rust/writer_decoder.md, js/reader.md, go_reader.md |
+| Schema-once / write-many slot-indexed emit | rust/writer_decoder.md, js/reader.md, py/reader.md, go_reader.md |
 | Two-pass streaming import (infer schema + emit) | rust/convert.md |
 | WAL append-only + seal-to-segment | rust/writer_decoder.md, rust/bins.md |
 | Entity-expansion guard (XML) | rust/convert.md |
 | Coverage-guided fuzzing (panic-freedom) | rust/tests_fuzz.md |
-| MurmurHash3-64 DictHash integrity | rust/compiler_pipeline.md, c/reader.md, go/reader.md |
+| MurmurHash3-64 DictHash integrity | rust/compiler_pipeline.md, c_reader.md, go_reader.md |
 | CPython buffer-protocol C extension | py/c_ext.md |
 | Freestanding WASM no-libc reducers | js/wasm_workers.md |
-| Unsafe-pointer parallel aggregate (Go) | go/reader.md |
+| Unsafe-pointer parallel aggregate (Go) | go_reader.md |
 | C extension for interpreter languages | py/c_ext.md, langs/ruby.md, langs/php.md |
-| Uniform-schema fast path (skip per-record bitmask walk) | go/reader.md, rust/writer_decoder.md |
+| Uniform-schema fast path (skip per-record bitmask walk) | go_reader.md, rust/writer_decoder.md |
 | Conformance vector positive/negative dispatch | conformance.md |
-| Reusable workflow + artifact-passing in CI | ci/workflows.md |
+| Reusable workflow + artifact-passing in CI | ci_workflows.md |
+| Adaptive prefetch with simulated remote fetch (Workload F) | bench/harness.md, rust/prefetch.md |
+| COOP/COEP static server for browser SharedArrayBuffer | site/demo_bench.md |
+| MCP stdio bridge to nxs CLI binaries | mcp_server.md |
 
 ## GOVERNANCE WATCHLIST
 
@@ -69,7 +80,7 @@ Rooms flagged by the Committee for security review.
 | Room | Health | Security | Committee Note |
 |------|--------|----------|----------------|
 | `rust/convert.md` | normal | sensitive | xml_in.rs hard-rejects DOCTYPE/ENTITY; this room processes untrusted external data |
-| `c/reader.md` | normal | sensitive | nxs_writer.h/c shared as include by py/_nxs.c and ruby/ext/nxs/nxs_ext.c; changes propagate |
+| `c_reader.md` | normal | sensitive | nxs_writer.h/c shared as include by py/_nxs.c and ruby/ext/nxs/nxs_ext.c; changes propagate |
 | `py/c_ext.md` | normal | sensitive | _nxs.c performs raw CPython buffer-protocol pointer arithmetic |
 | `langs/ruby.md` | normal | sensitive | nxs_ext.c inline LEB128 scan over Ruby string data |
 | `langs/php.md` | normal | sensitive | nxs_ext.c Zend object lifecycle with ecalloc over PHP string data |
@@ -78,13 +89,11 @@ Rooms flagged by the Committee for security review.
 
 | Subdomain | Description | Rooms |
 |-----------|-------------|-------|
-| spec/ | Binary format specification and RFC | format.md |
-| rust/ | Compiler pipeline, writer/decoder, WAL, convert, CLI binaries, tests/fuzz | compiler_pipeline.md, writer_decoder.md, convert.md, bins.md, tests_fuzz.md |
+| flat/ | Campus-level flat rooms (spec, c, go, ci, mcp, conformance) | see flat/_root.md |
+| rust/ | Compiler, writer/decoder, WAL, convert, CLI, query/layout, prefetch, registry, tests | compiler_pipeline.md, writer_decoder.md, convert.md, bins.md, runtime.md, prefetch.md, registry.md, tests_fuzz.md |
 | js/ | JavaScript reader/writer, WASM reducers, Web Workers, browser demo | reader.md, wasm_workers.md |
 | py/ | Python reader/writer and C extension | reader.md, c_ext.md |
-| go/ | Go reader, fast-path reducers, writer, tests, benchmarks | reader.md |
-| c/ | C99 reader/writer headers and benchmarks | reader.md |
 | langs/ | Ruby, PHP, Kotlin, C#, Swift implementations | ruby.md, php.md, kotlin.md, csharp.md, swift.md |
-| conformance.md | Conformance suite — vector generator + 10 language runners | (flat file) |
 | implementations/ | Legacy index — per-language summary rooms | rust.md, rust_convert.md, javascript.md, python.md, go.md, c.md, ruby.md, php.md, kotlin.md, csharp.md, swift.md |
-| ci/ | GitHub Actions workflows for all languages and publish pipelines | workflows.md |
+| bench/ | Benchmark generators, multi-language harnesses, results scripts | harness.md, generators.md, scripts.md |
+| site/ | Vue marketing site, interactive demos, browser bench, demo server | web_app.md, web_scripts.md, demo_bench.md |

@@ -2,7 +2,7 @@
 room: reader
 subdomain: py
 source_paths: py/nxs.py, py/nxs_writer.py, py/test_nxs.py, py/bench.py
-see_also: py/c_ext.md
+see_also: ["py/c_ext.md"]
 hot_paths: nxs.py, nxs_writer.py
 architectural_health: normal
 security_tier: normal

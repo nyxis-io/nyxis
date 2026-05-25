@@ -2,7 +2,7 @@
 room: writer_decoder
 subdomain: rust
 source_paths: rust/src/writer.rs, rust/src/decoder.rs, rust/src/lib.rs, rust/src/main.rs, rust/src/gen_fixtures.rs, rust/src/bench.rs, rust/src/wal.rs, rust/src/segment_reader.rs
-see_also: rust/compiler_pipeline.md, rust/convert.md, rust/bins.md
+see_also: ["rust/compiler_pipeline.md", "rust/convert.md", "rust/bins.md"]
 hot_paths: writer.rs, wal.rs, segment_reader.rs
 architectural_health: normal
 security_tier: normal

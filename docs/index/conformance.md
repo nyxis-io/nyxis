@@ -2,7 +2,7 @@
 room: conformance
 subdomain: (top-level)
 source_paths: conformance/
-see_also: rust/tests_fuzz.md
+see_also: ["conformance_runners.md", "rust/tests_fuzz.md"]
 hot_paths: generate.rs, run_rust.rs
 architectural_health: normal
 security_tier: normal
@@ -20,7 +20,7 @@ Source paths: conformance/
 | Run conformance against a specific language | conformance.md |
 | Add a new positive or negative test vector | conformance.md |
 | Understand the expected JSON format for vectors | conformance.md |
-| Debug conformance failures in any language | conformance.md |
+| Debug conformance failures in any language | conformance_runners.md |
 
 ---
 

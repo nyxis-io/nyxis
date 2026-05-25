@@ -2,7 +2,7 @@
 room: swift
 subdomain: langs
 source_paths: swift/
-see_also: langs/csharp.md, langs/kotlin.md
+see_also: ["langs/csharp.md", "langs/kotlin.md"]
 hot_paths: NXSReader.swift, NXSWriter.swift
 architectural_health: normal
 security_tier: normal

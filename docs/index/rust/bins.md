@@ -2,7 +2,7 @@
 room: bins
 subdomain: rust
 source_paths: rust/src/bin/
-see_also: rust/convert.md, rust/writer_decoder.md
+see_also: ["rust/convert.md", "rust/writer_decoder.md"]
 hot_paths: nxs_import.rs, nxs_export.rs
 architectural_health: normal
 security_tier: normal

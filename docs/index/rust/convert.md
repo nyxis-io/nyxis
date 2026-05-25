@@ -2,7 +2,7 @@
 room: convert
 subdomain: rust
 source_paths: rust/src/convert/
-see_also: rust/bins.md, rust/writer_decoder.md
+see_also: ["rust/bins.md", "rust/writer_decoder.md"]
 hot_paths: mod.rs, json_in.rs, xml_in.rs
 architectural_health: normal
 security_tier: sensitive

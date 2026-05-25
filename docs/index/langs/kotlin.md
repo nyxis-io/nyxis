@@ -2,7 +2,7 @@
 room: kotlin
 subdomain: langs
 source_paths: kotlin/src/main/kotlin/nxs/
-see_also: langs/csharp.md
+see_also: ["langs/csharp.md"]
 hot_paths: NxsReader.kt, NxsWriter.kt
 architectural_health: normal
 security_tier: normal

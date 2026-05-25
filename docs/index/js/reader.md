@@ -2,7 +2,7 @@
 room: reader
 subdomain: js
 source_paths: js/nxs.js, js/nxs_writer.js, js/test.js, js/bench.js, js/eslint.config.js
-see_also: js/wasm_workers.md
+see_also: ["js/wasm_workers.md"]
 hot_paths: nxs.js, nxs_writer.js
 architectural_health: normal
 security_tier: normal

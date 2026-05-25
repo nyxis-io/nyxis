@@ -2,7 +2,7 @@
 room: php
 subdomain: langs
 source_paths: php/
-see_also: langs/ruby.md, c/reader.md
+see_also: ["langs/ruby.md", "c_reader.md"]
 hot_paths: Nxs.php, nxs_ext.c
 architectural_health: normal
 security_tier: sensitive

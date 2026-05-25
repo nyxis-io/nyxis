@@ -5,7 +5,7 @@ file_count: 10
 architectural_health: normal
 security_tier: normal
 hot_paths: [nxs.js, wasm.js]
-see_also: [implementations/rust.md, spec/format.md]
+see_also: [implementations/rust.md, spec_format.md]
 ---
 
 # bench.js

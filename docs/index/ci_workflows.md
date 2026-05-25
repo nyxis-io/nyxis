@@ -1,11 +1,11 @@
 ---
-room: ci/workflows
+room: ci_workflows
 source_paths: [.github/workflows/]
 file_count: 11
 architectural_health: normal
 security_tier: normal
 hot_paths: [fixtures.yml]
-see_also: []
+see_also: ["../rust/bins.md", "../conformance.md"]
 ---
 
 # c.yml

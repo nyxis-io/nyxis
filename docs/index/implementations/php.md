@@ -5,7 +5,7 @@ file_count: 7
 architectural_health: normal
 security_tier: normal
 hot_paths: [Nxs.php, nxs_ext/nxs_ext.c]
-see_also: [implementations/c.md, spec/format.md]
+see_also: [implementations/c.md, spec_format.md]
 ---
 
 # bench.php

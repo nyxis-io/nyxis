@@ -5,7 +5,7 @@ file_count: 13
 architectural_health: normal
 security_tier: normal
 hot_paths: [writer.rs, compiler.rs]
-see_also: [implementations/rust_convert.md, implementations/c.md, spec/format.md]
+see_also: [implementations/rust_convert.md, implementations/c.md, spec_format.md]
 ---
 
 # bench.rs

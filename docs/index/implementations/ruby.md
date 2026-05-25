@@ -5,7 +5,7 @@ file_count: 6
 architectural_health: normal
 security_tier: normal
 hot_paths: [nxs.rb, ext/nxs/nxs_ext.c]
-see_also: [implementations/c.md, spec/format.md]
+see_also: [implementations/c.md, spec_format.md]
 ---
 
 # bench.rb

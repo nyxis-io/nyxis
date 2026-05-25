@@ -28,6 +28,9 @@ Source paths: rust/src/, rust/fuzz/, rust/tests/
 | Run the nxs-trace WAL pipeline | bins.md |
 | Add integration or fuzz tests | tests_fuzz.md |
 | Verify exit-code contract for error paths | tests_fuzz.md |
+| Query .nxb with predicates or columnar layout | runtime.md |
+| Tune adaptive prefetch or column warmup | prefetch.md |
+| Use schema registry gRPC client | registry.md |
 
 ## Rooms
 
@@ -37,4 +40,7 @@ Source paths: rust/src/, rust/fuzz/, rust/tests/
 | writer_decoder.md | rust/src/writer.rs, decoder.rs, lib.rs, main.rs, gen_fixtures.rs, bench.rs, wal.rs, segment_reader.rs | 8 |
 | convert.md | rust/src/convert/ | 8 |
 | bins.md | rust/src/bin/ | 4 |
-| tests_fuzz.md | rust/tests/convert/, rust/fuzz/fuzz_targets/ | 6 |
+| tests_fuzz.md | rust/tests/, rust/tests/convert/, rust/fuzz/fuzz_targets/ | 8 |
+| prefetch.md | rust/src/prefetch/, rust/src/column_prefetch.rs | 3 |
+| registry.md | rust/src/registry/ | 3 |
+| runtime.md | rust/src/query.rs, layout.rs, arrow_project.rs, pax_stream.rs, col_reduce.rs, stream_reader.rs, wasm_api.rs, consts.rs, rust/build.rs | 9 |
