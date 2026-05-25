@@ -5,6 +5,7 @@
 Static markdown versions of each page (no JavaScript required):
 
 - [Nyxis — Zero-Copy Binary Serialization Protocol](https://www.nyxis.io/): https://www.nyxis.io/index.md
+- [Documentation — Nyxis NXS quickstart](https://www.nyxis.io/docs/): https://www.nyxis.io/docs/index.md
 - [Nyxis — High-Throughput System Topologies & Use Cases](https://www.nyxis.io/use-cases/): https://www.nyxis.io/use-cases/index.md
 - [Nyxis — Commercial Pricing](https://www.nyxis.io/pricing/): https://www.nyxis.io/pricing/index.md
 - [Benchmark — Nyxis NXS](https://www.nyxis.io/bench/): https://www.nyxis.io/bench/index.md

@@ -3,6 +3,7 @@ import { useHead } from "@unhead/vue";
 import { GA_ID, usePageSeo, type PageSeo } from "./seo";
 
 const HomeView = () => import("@/views/HomeView.vue");
+const DocsView = () => import("@/views/DocsView.vue");
 const UseCasesView = () => import("@/views/UseCasesView.vue");
 const PricingView = () => import("@/views/PricingView.vue");
 const BenchView = () => import("@/views/BenchView.vue");
@@ -30,10 +31,25 @@ const routes: RouteRecordRaw[] = [
       nav: "home",
       footer: true,
       seo: {
-        title: "Nyxis — Zero-Copy Binary Serialization (NXS)",
+        title: "Nyxis — Open massive structured datasets in the browser",
         description:
-          "Nyxis is a bi-modal serialization format: .nxs source compiles to memory-mapped .nxb with row, columnar, and PAX layouts. Read one record without JSON.parse — open core, MIT drivers, MCP for agents.",
+          "Stream, filter, and explore GB-scale structured data without JSON hydration bottlenecks. Zero-copy .nxb, browser demos, and honest benchmarks.",
         canonical: "https://nyxis.io/",
+      },
+    } satisfies AppRouteMeta,
+  },
+  {
+    path: "/docs/",
+    name: "docs",
+    component: DocsView,
+    meta: {
+      nav: "docs",
+      footer: true,
+      seo: {
+        title: "Documentation — Nyxis NXS quickstart",
+        description:
+          "5-minute quickstart for the MIT JavaScript reader: open .nxb, filter with cursor, render virtual scroll, and stream before seal.",
+        canonical: "https://nyxis.io/docs/",
       },
     } satisfies AppRouteMeta,
   },
@@ -138,7 +154,8 @@ const routes: RouteRecordRaw[] = [
       footer: false,
       seo: {
         title: "Log explorer — Nyxis NXS",
-        description: "Virtual scroll over millions of lines backed by mapped .nxb.",
+        description:
+          "Virtual scroll over millions of rows in the browser. Live telemetry, JSON vs NXS comparison, zero-copy .nxb streaming.",
         canonical: "https://nyxis.io/demo/explorer",
       },
     } satisfies AppRouteMeta,
@@ -175,6 +192,7 @@ const routes: RouteRecordRaw[] = [
     } satisfies AppRouteMeta,
   },
   // Legacy paths without trailing slash
+  { path: "/docs", redirect: "/docs/" },
   { path: "/use-cases", redirect: "/use-cases/" },
   { path: "/pricing", redirect: "/pricing/" },
   { path: "/bench", redirect: "/bench/" },

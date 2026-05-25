@@ -7,6 +7,38 @@ const benchDir = resolve(__dirname, "../bench");
 const benchWorkerSrc = resolve(benchDir, "bench-worker.js");
 const publicDir = resolve(__dirname, "public");
 const webRoot = resolve(__dirname, ".");
+/** MIT reader served at /sdk/ in production; resolved from nyxis-drivers in Vite dev. */
+const sdkDir = resolve(__dirname, "../../../nyxis-drivers/js");
+
+function sdkExists(): boolean {
+  try {
+    statSync(resolve(sdkDir, "nxs.js"));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Map `import … from "/sdk/…"` to nyxis-drivers/js so Vite dev does not fail import-analysis.
+ * Production build keeps /sdk/* external (nginx or compose serves the same URLs).
+ */
+function sdkDevResolvePlugin(): Plugin {
+  return {
+    name: "sdk-dev-resolve",
+    resolveId(id) {
+      if (!id.startsWith("/sdk/")) return null;
+      const rel = id.slice("/sdk/".length);
+      const file = resolve(sdkDir, rel);
+      try {
+        statSync(file);
+        return file;
+      } catch {
+        return null;
+      }
+    },
+  };
+}
 
 type StaticRoute = {
   path: string;
@@ -158,8 +190,16 @@ function benchWorkerPlugin(): Plugin {
   };
 }
 
+if (!sdkExists()) {
+  console.warn(
+    "[vite] nyxis-drivers/js not found at",
+    sdkDir,
+    "— run `make sdk` from nyxis/ or clone nyxis-drivers; /sdk imports will fail in dev.",
+  );
+}
+
 export default defineConfig({
-  plugins: [vue(), benchWorkerPlugin(), agentDiscoveryPlugin()],
+  plugins: [vue(), sdkDevResolvePlugin(), benchWorkerPlugin(), agentDiscoveryPlugin()],
   resolve: {
     alias: {
       "@": resolve(__dirname, "src"),

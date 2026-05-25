@@ -29,6 +29,16 @@ function initDemo(){
   const statusPos = $("#status-pos");
   const statusMatches = $("#status-matches");
   const statusFrame = $("#status-frame");
+  const telOpen = $("#tel-open");
+  const telFilter = $("#tel-filter");
+  const telMemory = $("#tel-memory");
+  const telStreamed = $("#tel-streamed");
+  const telLoaded = $("#tel-loaded");
+  const telFormat = $("#tel-format");
+  const compareBar = $("#compare-bar");
+  const compareNxs = $("#compare-nxs");
+  const compareJson = $("#compare-json");
+  const compareRunBtn = $("#compare-run");
   const dropEl = $("#drop");
   const fileInput = $("#file");
   const fileInfoEl = $("#file-info");
@@ -147,6 +157,9 @@ function initDemo(){
   
     const tag = sourceLabel ? `${escapeHtml(name)} <span style="color:var(--muted)">(${sourceLabel})</span>` : escapeHtml(name);
     fileInfoEl.innerHTML = `<strong>${tag}</strong> — ${fmtBytes(sizeBytes)} — ${fmtInt(recordCount)} records`;
+    rowsStreamedPeak = recordCount;
+    activeFormat = sourceLabel || (jsonRecords !== null ? "JSON" : "NXB");
+    updateTelemetry();
     overlayEl.classList.add("hide");
   
     ensureRowPool();
@@ -336,7 +349,35 @@ function initDemo(){
   let lastFirstVr = -1;
   let lastWindowSize = 0;
   let frameAvgMs = 0;
+  let lastOpenMs = null;
+  let lastFilterMs = null;
+  let rowsStreamedPeak = 0;
+  let activeFormat = "—";
+  let lastFixtureBase = null; // e.g. records_1000000 for comparison
   const matchesSet = new Set();  // O(1) lookup of record idx -> is-a-match
+
+  function heapMb() {
+    const m = performance.memory;
+    return m ? m.usedJSHeapSize / 1048576 : null;
+  }
+
+  function updateTelemetry() {
+    if (telOpen) telOpen.textContent = lastOpenMs != null ? `${lastOpenMs.toFixed(1)} ms` : "—";
+    if (telFilter) telFilter.textContent = lastFilterMs != null ? `${lastFilterMs.toFixed(1)} ms` : "—";
+    if (telMemory) {
+      const mb = heapMb();
+      telMemory.textContent = mb != null ? `${mb.toFixed(0)} MB` : "n/a";
+    }
+    if (telStreamed) telStreamed.textContent = rowsStreamedPeak > 0 ? fmtInt(rowsStreamedPeak) : "—";
+    if (telLoaded) telLoaded.textContent = recordCount > 0 ? fmtInt(recordCount) : "—";
+    if (telFormat) telFormat.textContent = activeFormat;
+    if (compareBar && lastFixtureBase) compareBar.hidden = false;
+  }
+
+  function fixtureBaseFromPath(path) {
+    const m = (path || "").match(/records_(\d+)(?:_columnar)?\.nxb/i);
+    return m ? `records_${m[1]}` : null;
+  }
   
   let rafPending = false;
   function scheduleRender() {
@@ -466,6 +507,7 @@ function initDemo(){
   }
   
   async function loadFromReadableStream(body, name, sizeBytes) {
+    const tOpen = performance.now();
     const gen = ++loadGeneration;
     jsonRecords = null;
     reader = null;
@@ -475,6 +517,8 @@ function initDemo(){
     rawBuffer = null;
     recordCount = 0;
     virtualHeight = 0;
+    rowsStreamedPeak = 0;
+    lastOpenMs = null;
     clearColumns();
     teardownExplorerWorker();
   
@@ -499,8 +543,11 @@ function initDemo(){
           }
           recordOffsets[idx] = obj.offset;
           recordCount = idx + 1;
+          rowsStreamedPeak = Math.max(rowsStreamedPeak, recordCount);
+          if (idx === 0) lastOpenMs = performance.now() - tOpen;
           if (idx === 0 || (idx & 0x3fff) === 0) {
             applyStreamingProgress(name, 0, sizeBytes);
+            updateTelemetry();
           }
         },
         onError(err) {
@@ -538,14 +585,17 @@ function initDemo(){
       const view = reader.bytes;
       rawBuffer = view.buffer.slice(view.byteOffset, view.byteOffset + view.byteLength);
       attachWorkerForNxb();
+      if (lastOpenMs == null) lastOpenMs = performance.now() - tOpen;
+      activeFormat = "NXB (streamed)";
       applyViewportLayout(name, sizeBytes || received);
     } catch (e) {
       if (gen !== loadGeneration) return;
       showError(`Failed to load ${name}: ${e.message}`);
     }
   }
-  
+
   async function loadBuffer(buffer, name, sizeBytes, sourceLabel = null) {
+    const tOpen = performance.now();
     const gen = ++loadGeneration;
     jsonRecords = null;
     streamReader = null;
@@ -572,9 +622,11 @@ function initDemo(){
     cursor = reader.cursor();
     applyColumns(buildColumnsFromReader(reader));
     attachWorkerForNxb();
+    lastOpenMs = performance.now() - tOpen;
+    activeFormat = sourceLabel || "NXB";
     applyViewportLayout(name, sizeBytes, sourceLabel);
   }
-  
+
   async function loadNxsString(text, name, sourceBytes) {
     const gen = ++loadGeneration;
     _lastLoadedUrl = null;
@@ -593,6 +645,7 @@ function initDemo(){
   }
   
   async function loadJsonString(text, name, sizeBytes) {
+    const tParse = performance.now();
     loadGeneration++;
     let parsed;
     try {
@@ -621,9 +674,11 @@ function initDemo(){
     recordCount = jsonRecords.length;
     _lastLoadedUrl = null;
     applyColumns(prepared.columns);
+    lastOpenMs = performance.now() - tParse;
+    activeFormat = "JSON (full parse)";
     applyViewportLayout(name, sizeBytes, "JSON");
   }
-  
+
   function ensureWorker() {
     if (worker) return;
     try {
@@ -653,6 +708,10 @@ function initDemo(){
     } else if (msg.type === "search-done") {
       if (msg.token !== searchToken) return;
       if (msg.aborted) return;
+      if (msg.elapsedMs != null) {
+        lastFilterMs = msg.elapsedMs;
+        updateTelemetry();
+      }
       currentMatches = msg.matches;
       matchesSet.clear();
       for (let i = 0; i < currentMatches.length; i++) matchesSet.add(currentMatches[i]);
@@ -695,6 +754,7 @@ function initDemo(){
     // Defer to a microtask so the UI paints the "scanning" badge first.
     Promise.resolve().then(() => {
       if (token !== searchToken) return;
+      const t0 = performance.now();
       const needle = query.toLowerCase();
       const results = [];
       if (!searchColumn) return;
@@ -719,6 +779,8 @@ function initDemo(){
         }
       }
       if (token !== searchToken) return;
+      lastFilterMs = performance.now() - t0;
+      updateTelemetry();
       currentMatches = new Int32Array(results);
       matchesSet.clear();
       for (const i of results) matchesSet.add(i);
@@ -996,6 +1058,7 @@ function initDemo(){
           applyViewportLayout(name, buffer.byteLength, "NXS source");
         } else {
           _lastLoadedUrl = path;
+          lastFixtureBase = fixtureBaseFromPath(path);
           const res = await fetch(path);
           if (!res.ok) throw new Error(`HTTP ${res.status}`);
           const len = parseInt(res.headers.get("content-length") || "0", 10) || 0;
@@ -1016,4 +1079,42 @@ function initDemo(){
       }
     });
   });
+
+  async function runJsonNxsComparison() {
+    if (!lastFixtureBase) {
+      compareJson.textContent = "JSON: load a records_* fixture first";
+      return;
+    }
+    const jsonPath = `/bench/fixtures/${lastFixtureBase}.json`;
+    const nxbPath = `/bench/fixtures/${lastFixtureBase}.nxb`;
+    compareRunBtn.disabled = true;
+    compareJson.textContent = "JSON: fetching…";
+    compareNxs.textContent = "NXS: fetching…";
+    try {
+      const jsonRes = await fetch(jsonPath);
+      if (!jsonRes.ok) throw new Error(`no ${lastFixtureBase}.json`);
+      const jsonText = await jsonRes.text();
+      const tJson = performance.now();
+      JSON.parse(jsonText);
+      const jsonMs = performance.now() - tJson;
+      compareJson.textContent = `JSON: parse ${jsonMs.toFixed(0)} ms (UI blocked)`;
+
+      const nxbRes = await fetch(nxbPath);
+      if (!nxbRes.ok) throw new Error(`no ${lastFixtureBase}.nxb`);
+      const buf = await nxbRes.arrayBuffer();
+      const tNxs = performance.now();
+      const r = new NxsReader(buf);
+      const nxsMs = performance.now() - tNxs;
+      compareNxs.textContent = `NXS: open ${nxsMs.toFixed(2)} ms · ${fmtInt(r.recordCount)} rows`;
+    } catch (e) {
+      compareJson.textContent = `JSON: ${e.message}`;
+    } finally {
+      compareRunBtn.disabled = false;
+    }
+  }
+
+  if (compareRunBtn) {
+    compareRunBtn.addEventListener("click", () => runJsonNxsComparison());
+  }
+  updateTelemetry();
 }

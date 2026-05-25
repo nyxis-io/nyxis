@@ -6,6 +6,12 @@
     "description": "Nyxis (NXS): row, columnar, and PAX .nxb layouts. 7 µs streaming TTFR (EPYC 9R14), columnar scan 1.3× Arrow IPC on AVX-512, sub-µs warm access."
   },
   {
+    "path": "/docs/",
+    "markdown": "/docs/index.md",
+    "title": "Documentation — Nyxis NXS quickstart",
+    "description": "5-minute quickstart for the MIT JavaScript reader: open .nxb, filter, render, and stream before seal."
+  },
+  {
     "path": "/use-cases/",
     "markdown": "/use-cases/index.md",
     "title": "Nyxis — High-Throughput System Topologies & Use Cases",

@@ -2,38 +2,33 @@
 <section class="landing-hero">
   <div class="hero-grid">
     <div class="hero-copy">
-      <p class="page-eyebrow">NXS · zero-copy serialization</p>
-      <h1 class="page-title">Read one record from a gigabyte file <em>without</em> parsing JSON</h1>
+      <p class="page-eyebrow">Browser-scale structured data</p>
+      <h1 class="page-title">Open massive structured datasets instantly in the browser</h1>
       <p class="page-lead">
-        Nyxis is a bi-modal wire format for infrastructure: human-readable <code>.nxs</code> source compiles to
-        memory-mapped <code>.nxb</code> binaries. Query by tail-index, decode aligned cells in place — alongside
-        Protobuf, FlatBuffers, and Cap'n Proto, not application software.
+        Stream, filter, and explore GB-scale structured data without JSON hydration bottlenecks, browser freezes,
+        or memory blowups.
       </p>
       <div class="landing-actions">
-        <a class="btn btn-primary" href="/demo/">Try live demos</a>
-        <a class="btn btn-secondary" href="/use-cases/">Production use cases</a>
-        <a class="btn btn-secondary" href="https://github.com/nyxis-io/nyxis/blob/main/SPEC.md" rel="noopener">Specification</a>
+        <a class="btn btn-primary" href="/demo/explorer">Try the Explorer</a>
+        <a class="btn btn-secondary" href="/bench/">See Benchmarks</a>
+        <a class="btn btn-secondary" href="/docs/">Quickstart</a>
       </div>
-      <p class="hero-v8-link">
-        <a href="/use-cases/#v8-limits">Why <code>JSON.parse()</code> fails on 512&nbsp;MB+ datasets →</a>
-      </p>
     </div>
 
-    <aside class="hero-visual" aria-label="Bimodal format preview">
-      <div class="hero-visual__tabs">
-        <span class="hero-visual__tab hero-visual__tab--active">.nxs source</span>
-        <span class="hero-visual__tab">.nxb binary</span>
+    <aside class="hero-visual" aria-label="Workflow comparison">
+      <div class="workflow-compare">
+        <div class="workflow-compare__col workflow-compare__col--slow">
+          <span class="workflow-compare__label">Typical JSON workflow</span>
+          <span class="workflow-compare__metric">12s+ before interaction</span>
+          <span class="workflow-compare__detail">Full parse · heap inflation · UI freeze</span>
+        </div>
+        <div class="workflow-compare__vs" aria-hidden="true">vs</div>
+        <div class="workflow-compare__col workflow-compare__col--fast">
+          <span class="workflow-compare__label">Nyxis in the browser</span>
+          <span class="workflow-compare__metric">Interactive immediately</span>
+          <span class="workflow-compare__detail">Stream · selective reads · virtual scroll</span>
+        </div>
       </div>
-      <pre class="hero-visual__body"><span class="key">user</span> {
-  <span class="key">id</span> <span class="sigil">=</span> 42
-  <span class="key">name</span> <span class="sigil">"</span>ada_lovelace"
-  <span class="key">score</span> <span class="sigil">~</span> 98.6
-  <span class="key">active</span> <span class="sigil">?</span> true
-}</pre>
-      <div class="hero-visual__arrow" aria-hidden="true">compile · mmap · seek</div>
-      <pre class="hero-visual__body" style="color: var(--text); font-size: 11px;">NYXB │ schema │ records │ tail-index
-       └─ O(1) record offset
-       └─ zero-copy field reads</pre>
     </aside>
   </div>
 </section>
@@ -61,51 +56,136 @@
   </a>
 </div>
 
-<div class="stat-row">
+<section class="landing-section explorer-proof" id="explorer">
+  <h2>See it work — log explorer</h2>
+  <p class="section-intro">
+    Scroll, search, and jump across millions of rows in the browser. The Explorer is the fastest way to feel the
+    difference — no install, built-in fixtures up to 10M records.
+  </p>
+  <ul class="explorer-proof__labels" aria-label="What the demo proves">
+    <li><strong>1M+ records</strong> in-browser</li>
+    <li><strong>Fully browser-side</strong> — no server filter pass</li>
+    <li><strong>No hydration pass</strong> — mapped <code>.nxb</code> bytes</li>
+  </ul>
+  <div class="explorer-proof__actions">
+    <a class="btn btn-primary" href="/demo/explorer">Open the Explorer</a>
+    <a class="btn btn-secondary" href="/demo/workers">Workers handoff demo</a>
+  </div>
+</section>
+
+<div class="stat-row stat-row--workflow">
   <div class="stat">
-    <div class="value">7&nbsp;µs</div>
-    <div class="label">Row time-to-first-record P50 — EPYC 9R14 streaming (<a href="../BENCHMARK.md#workload-d">D</a>)</div>
+    <div class="value">Immediate</div>
+    <div class="label">Time to first scroll on streamed <code>.nxb</code> — before download finishes</div>
   </div>
   <div class="stat">
-    <div class="value">1.3×</div>
-    <div class="label">Columnar vs Arrow IPC — EPYC AVX-512 (<a href="../BENCHMARK.md#workload-c">C</a>)</div>
+    <div class="value">142&nbsp;µs</div>
+    <div class="label">Time to first record P50 — streamable row layout (<a href="../BENCHMARK.md#workload-d">Workload D</a>)</div>
   </div>
   <div class="stat">
-    <div class="value">&lt;1&nbsp;µs</div>
-    <div class="label">Warm selective field read — all platforms (<a href="../BENCHMARK.md#workload-a">A</a>)</div>
+    <div class="value">~0&nbsp;MB</div>
+    <div class="label">Extra heap for multi-GB files — viewport-only decode vs full JSON graph</div>
   </div>
 </div>
 <p class="proof-strip">
-  macOS Apple Silicon · Linux x86_64 (Haswell, AVX2) · AWS EPYC 9R14 (AVX-512) —
-  <a href="../BENCHMARK.md#workload-comparison-suite">methodology &amp; full tables</a> ·
-  <a href="/bench/">interactive charts</a>
+  <a href="/bench/">Interactive browser benchmarks</a> ·
+  <a href="../BENCHMARK.md#workload-comparison-suite">full methodology</a> ·
+  <a href="/use-cases/#v8-limits">why JSON breaks at scale</a>
 </p>
 
+<section class="landing-section" id="why-json-breaks">
+  <h2>Why JSON breaks in the browser</h2>
+  <p class="section-intro">
+    Modern observability and ops UIs ship multi-hundred-megabyte JSON exports. The pain is familiar before any wire
+    format debate.
+  </p>
+  <ul class="pain-grid">
+    <li>
+      <strong>V8 string limits</strong>
+      <span>Single strings above ~512&nbsp;MB–1&nbsp;GB throw <code>RangeError</code> before <code>JSON.parse()</code> runs.</span>
+    </li>
+    <li>
+      <strong>AST memory inflation</strong>
+      <span>A 100&nbsp;MB file can expand to 500&nbsp;MB+ of live objects — GC pauses lock the main thread.</span>
+    </li>
+    <li>
+      <strong>Hydration overhead</strong>
+      <span>Every field becomes a JS object before the grid can render one row.</span>
+    </li>
+    <li>
+      <strong>Memory pressure</strong>
+      <span>Virtual scroll on a parsed array still holds the entire graph in RAM.</span>
+    </li>
+    <li>
+      <strong>Silent integer truncation</strong>
+      <span>IDs above <code>2^53−1</code> lose precision with no error — only wrong analytics.</span>
+    </li>
+  </ul>
+  <p class="section-intro section-intro--tail">
+    <a href="/use-cases/#v8-limits">Full constraint breakdown →</a>
+  </p>
+</section>
+
+<section class="landing-section">
+  <h2>Outcome comparison</h2>
+  <p class="section-intro">Compare what users experience — not which ecosystem you must rip out.</p>
+  <table class="parity-matrix">
+    <thead>
+      <tr>
+        <th scope="col">Workflow moment</th>
+        <th scope="col">JSON in the browser</th>
+        <th scope="col">Nyxis <code>.nxb</code></th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Open a large export</td>
+        <td class="col-bad">Wait for full download + parse</td>
+        <td class="col-good">Header + tail-index — stream rows as bytes arrive</td>
+      </tr>
+      <tr>
+        <td>First interaction</td>
+        <td class="col-bad">Often 10–15+ seconds on 100&nbsp;MB+</td>
+        <td class="col-good">Scroll and search while the file is still loading</td>
+      </tr>
+      <tr>
+        <td>Filter / search</td>
+        <td class="col-bad">Scan in-memory object graph</td>
+        <td class="col-good">Selective field reads + worker-backed index</td>
+      </tr>
+      <tr>
+        <td>Memory at 1M+ rows</td>
+        <td class="col-bad">Full dataset on the heap</td>
+        <td class="col-good">Viewport pool — only visible rows decoded</td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
 <section class="landing-section" id="what-is-nyxis">
-  <h2>What is Nyxis?</h2>
+  <h2>How Nyxis solves it</h2>
   <div class="what-is">
     <p class="what-is__lead">
       <strong>Nyxis moves parsing cost from query time to compile time.</strong>
-      JSON and CSV force runtimes to materialize entire documents before a single field is useful.
-      NXS writers emit structured bytes with interned field names, sparse presence bitmasks, and a footer tail-index —
-      readers <code>mmap</code> the wire image and read by pointer.
+      Human-readable <code>.nxs</code> compiles to memory-mapped <code>.nxb</code> with a tail-index for O(1) record
+      seeks — readers use zero-copy selective access instead of materializing entire documents.
     </p>
     <ul class="what-is__points">
       <li>
-        <strong>Open core (BSL 1.1)</strong>
-        Compiler, spec, conformance vectors, browser demos, and <code>nxs-mcp</code> for AI agents.
+        <strong>Zero-copy reads</strong>
+        <code>mmap</code>-friendly wire cells; decode only the fields you touch.
       </li>
       <li>
-        <strong>MIT drivers</strong>
-        Ten language SDKs in <code>nyxis-drivers</code> — embed in services without copyleft friction.
-      </li>
-      <li>
-        <strong>Three binary layouts</strong>
-        Row for streaming logs, columnar for analytics, PAX when you need both in one artifact.
+        <strong>Selective access</strong>
+        Tail-index jumps for virtual scroll, search, and agent field extraction.
       </li>
       <li>
         <strong>Streamable v1.2</strong>
-        Emit records before the tail-index exists; seal when the segment completes, or use append-only WAL mode.
+        Emit records before the footer seals; WAL mode for append-heavy ingest.
+      </li>
+      <li>
+        <strong>Bimodal workflow</strong>
+        Git-diffable <code>.nxs</code> source; production <code>.nxb</code> for browsers and services.
       </li>
     </ul>
   </div>
@@ -114,7 +194,7 @@
     <span class="pipe" aria-hidden="true">→</span>
     <span><strong>Compiler + drivers</strong> produce <code>.nxb</code></span>
     <span class="pipe" aria-hidden="true">→</span>
-    <span><strong>BI / agents / browsers</strong> query without full decode</span>
+    <span><strong>Browser / BI / agents</strong> query without full decode</span>
   </div>
 </section>
 
@@ -122,7 +202,7 @@
   <h2>Three layouts, three workloads</h2>
   <p class="section-intro">
     Pick <code>row</code>, <code>columnar</code>, or <code>pax</code> at compile time — not one layout for every problem.
-    <a href="/use-cases/#bounds">Layout selection guide →</a>
+    <a href="/use-cases/#layout-selection">Layout selection guide →</a>
   </p>
   <div class="layout-cards">
     <article class="layout-card">
@@ -168,7 +248,7 @@
   <span class="key">score</span> <span class="sigil">~</span> 98.6
   <span class="key">active</span> <span class="sigil">?</span> true
 }</pre>
-  <p class="section-intro" style="margin-top: 16px; margin-bottom: 0;">
+  <p class="section-intro section-intro--after-code">
     Every value in <code>.nxs</code> carries a sigil that declares its binary encoding. The source file is the schema —
     no separate IDL. Compile once; warehouses and UIs read aligned cells for the lifetime of the payload.
   </p>
@@ -232,32 +312,21 @@
 
 <section class="landing-section">
   <h2>Honest benchmarks</h2>
-  <p class="section-intro" style="margin-bottom: 0;">
-    Five workloads (A–E) vs Protobuf, FlatBuffers, Cap'n Proto, and Apache Arrow — with published losses where NXS is not
-    the winner. Full methodology: <a href="../BENCHMARK.md#workload-comparison-suite">BENCHMARK.md</a>.
-    <a href="/bench/">Interactive browser charts</a>.
+  <p class="section-intro section-intro--tail">
+    Workflow metrics first — time to interactive, filter latency, browser memory — then raw throughput vs Protobuf,
+    FlatBuffers, Cap'n Proto, and Arrow. We publish losses where NXS is not the winner.
+    <a href="/bench/">Interactive charts</a> ·
+    <a href="../BENCHMARK.md#workload-comparison-suite">BENCHMARK.md</a>.
   </p>
 </section>
 
 <section class="landing-section">
-  <h2>Try it in the browser</h2>
+  <h2>More demos</h2>
   <ul class="card-list">
-    <li>
-      <a href="/demo/">
-        <div class="title">All demos</div>
-        <div class="desc">Ticker, workers, log explorer, WAL, report — NXS vs JSON side by side.</div>
-      </a>
-    </li>
     <li>
       <a href="/demo/ticker">
         <div class="title">Ticker</div>
         <div class="desc">Per-frame JSON re-parse vs in-place <code>float64</code> patch on mapped bytes.</div>
-      </a>
-    </li>
-    <li>
-      <a href="/demo/explorer">
-        <div class="title">Log explorer</div>
-        <div class="desc">Virtual scroll over millions of lines backed by <code>.nxb</code>.</div>
       </a>
     </li>
     <li>
@@ -273,9 +342,9 @@
       </a>
     </li>
     <li>
-      <a href="/bench/">
-        <div class="title">Interactive bench</div>
-        <div class="desc">Open, random access, aggregates at 1k–10M records.</div>
+      <a href="/demo/">
+        <div class="title">All demos</div>
+        <div class="desc">Full catalog with COOP/COEP for production-like worker behavior.</div>
       </a>
     </li>
   </ul>
@@ -302,7 +371,7 @@
     </li>
   </ul>
   <div class="landing-actions" style="justify-content: flex-start; margin-top: 8px;">
-    <a class="btn btn-primary" href="/use-cases/">Enterprise use cases</a>
+    <a class="btn btn-primary" href="/use-cases/">Production topologies</a>
     <a class="btn btn-secondary" href="/pricing/">Commercial pricing</a>
   </div>
   <p class="enterprise-footnote">
@@ -315,13 +384,3 @@
 
 <script setup lang="ts">
 </script>
-
-<style scoped>
-.hero-visual__body .key {
-  color: var(--accent-secondary);
-}
-.hero-visual__body .sigil {
-  color: var(--warm);
-  font-weight: 600;
-}
-</style>

@@ -2,12 +2,10 @@
 <main class="page-main">
     <header class="page-header">
       <p class="page-eyebrow">Production architectures</p>
-      <h1 class="page-title">From browser limits to production topologies</h1>
+      <h1 class="page-title">From browser pain to production topologies</h1>
       <p class="page-lead">
-        Nyxis is a wire-format and compiler stack for systems engineers — alongside Protobuf, FlatBuffers, and Cap'n
-        Proto,
-        not a ticketing or CRM product. This page follows one arc: the constraint that breaks JSON in the browser, the
-        protocol that answers it, then reference deployments run in production.
+        Start with the constraint every ops UI hits — multi-gigabyte JSON in the browser — then the protocol that fixes
+        it, then reference deployments from observability grids to WAL ingest and fleet telemetry.
       </p>
     </header>
 
@@ -26,17 +24,17 @@
       <p class="use-case-toc-act">Act III — Production topologies</p>
       <ol start="5">
         <li><a href="#catalog">How the catalog is organized</a></li>
-        <li><a href="#reporting-streaming">Live reporting &amp; streaming ingest</a></li>
+        <li><a href="#access-logs">Browser observability — gateway &amp; access logs</a></li>
+        <li><a href="#reporting">Interactive reporting &amp; export viewers</a></li>
+        <li><a href="#web-workers">Massive browser datasets — worker handoffs</a></li>
+        <li><a href="#apm-traces">APM trace &amp; span explorers</a></li>
+        <li><a href="#llm-tracing">LLM tracing &amp; AI observability</a></li>
+        <li><a href="#mcp">MCP agent tools &amp; servers</a></li>
+        <li><a href="#reporting-streaming">WAL &amp; event-streaming ingest</a></li>
+        <li><a href="#hft-wal">HFT &amp; market-data WALs</a></li>
+        <li><a href="#crash-wal">Crash-resilient append-only ledgers</a></li>
         <li><a href="#k8s-aggregators">Kubernetes stdout aggregators</a></li>
         <li><a href="#iot-edge">Edge IoT &amp; fleet telemetry</a></li>
-        <li><a href="#access-logs">NGINX &amp; API gateway log viewers</a></li>
-        <li><a href="#web-workers">Web Worker zero-copy handoffs</a></li>
-        <li><a href="#apm-traces">APM trace &amp; span explorers</a></li>
-        <li><a href="#reporting">Large report &amp; data export viewers</a></li>
-        <li><a href="#llm-tracing">LLM generation tracing &amp; observability</a></li>
-        <li><a href="#mcp">MCP agent tools &amp; servers</a></li>
-        <li><a href="#hft-wal">HFT &amp; event-streaming WALs</a></li>
-        <li><a href="#crash-wal">Crash-resilient append-only ledgers</a></li>
       </ol>
     </nav>
 
@@ -432,125 +430,35 @@
         They are ordered by data flow — ingest first, interactive surfaces second, AI and durable write paths last.
       </p>
       <ul class="catalog-pillars">
-        <li><strong>Ingest &amp; edge</strong> Fleet and cluster aggregators shrink metadata footprints before the lake.
-        </li>
-        <li><strong>Browser &amp; ops UI</strong> Gateways, workers, and trace grids read multi-GB files without
-          <code>JSON.parse()</code>.</li>
+        <li><strong>Browser &amp; ops UI</strong> Gateway logs, reports, workers, and trace grids without
+          <code>JSON.parse()</code> on multi-GB exports.</li>
         <li><strong>AI platforms</strong> Arrow bridges and MCP tools query binary blocks at agent latency.</li>
-        <li><strong>Write path &amp; storage</strong> WAL streaming, compaction, and crash-safe footers for hot paths.
-        </li>
+        <li><strong>Write path &amp; storage</strong> WAL streaming, compaction, and crash-safe footers for hot paths.</li>
+        <li><strong>Ingest &amp; edge</strong> Fleet and cluster aggregators shrink metadata footprints before the lake.</li>
       </ul>
     </section>
-
-    <p class="use-case-group">Ingest &amp; edge</p>
-
-    <article class="use-case" id="reporting-streaming">
-      <p class="use-case-tier use-case-tier--oss">Open core · streamable v1.2 · <a href="../BENCHMARK.md#workload-d">Workload D</a></p>
-      <h2>Live reporting &amp; streaming ingest</h2>
-
-      <h3>The high-scale bottleneck</h3>
-      <p>
-        Operational dashboards need the first row of a growing report while the writer is still appending — without
-        waiting for a full file seal or re-parsing JSON on every poll.
-      </p>
-
-      <h3>The Nyxis topology</h3>
-      <p>
-        Producers stream NYXO cells with <code>flush_every=100</code> (batched flush). Readers poll or use filesystem
-        notification; incremental parsers return complete records as bytes arrive. When ingest finishes, sealing writes
-        the tail-index footer so the same file supports random access.
-      </p>
-
-      <h3>The system advantage</h3>
-      <p class="use-case-roi">
-        First row in <strong>142&nbsp;µs TTFR P50</strong> (batched flush, n=1000 trials, macOS dev). Subsequent rows at
-        ~25k rec/s — a 100k-row report fully streamed in ~4&nbsp;s after the first row. After sealing, any record is
-        accessible via O(1) tail-index seek. Full TTFR percentiles and throughput tables:
-        <a href="../BENCHMARK.md#workload-d">BENCHMARK.md Workload D</a>.
-      </p>
-      <p class="use-case-cta">
-        <a class="btn btn-secondary" href="/demo/wal">WAL / streaming demo</a>
-      </p>
-    </article>
-
-    <article class="use-case" id="k8s-aggregators">
-      <p class="use-case-tier use-case-tier--oss">Open core · MIT <code>nyxis-drivers</code></p>
-      <h2>Kubernetes stdout aggregators</h2>
-
-      <h3>The high-scale bottleneck</h3>
-      <p>
-        Thousands of pods emit stdout lines wrapped in repeated JSON keys (<code>kubernetes.pod_name</code>,
-        <code>container_id</code>, <code>namespace</code>). At scale, duplicate strings dominate network transit
-        bandwidth and lake cost.
-      </p>
-
-      <h3>The Nyxis topology</h3>
-      <p>
-        Aggregators embed MIT-licensed <code>nyxis-drivers</code>. Structurally, field schema keys intern into a central
-        dictionary stored once.
-        A per-record <strong>presence bitmask</strong> encodes sparse optional fields across heterogeneous logs.
-        The proprietary <strong><code>nxs-registryd</code></strong> service and <strong><code>nxs-registry</code></strong>
-        CLI provide centralized gRPC schema contracts — validating payloads on ingress and listing or diffing schemas
-        when pod versions diverge (additive-only drift resolution in MVP; <code>proxy_rewrite</code> deferred).
-      </p>
-      <p class="use-case-footnote">
-        Key interning and presence bitmask reduce metadata overhead vs JSON. File size vs binary peers depends on field
-        population rate — see <a href="../BENCHMARK.md#workload-a">Workload A</a> in
-        <a href="../BENCHMARK.md#workload-comparison-suite">BENCHMARK.md</a>.
-      </p>
-
-      <h3>The system advantage</h3>
-      <p class="use-case-roi">
-        Encoding drops string-formatting loops per field in favor of a direct memcpy-and-bitmask operation per record.
-        Key interning compresses text infrastructure overhead cleanly, eliminating full-file text deserialization on
-        downstream filtering engines.
-      </p>
-    </article>
-
-    <article class="use-case" id="iot-edge">
-      <p class="use-case-tier use-case-tier--oss">Open core · C / Go MIT drivers</p>
-      <h2>Battery-preserving edge IoT &amp; fleet telemetry</h2>
-
-      <h3>The high-scale bottleneck</h3>
-      <p>
-        Fleets stream billions of diagnostics per second. JSON saturates bandwidth with repeated keys; traditional
-        binary
-        encoders strain resource-constrained edge CPUs with variable-length calculation overhead.
-      </p>
-
-      <h3>The Nyxis topology</h3>
-      <p>
-        Devices embed lightweight C or Go drivers from <code>nyxis-drivers</code>. The
-        <strong>presence bitmask</strong> records which of many possible fields are populated — raw aligned integers
-        follow.
-      </p>
-
-      <h3>The system advantage</h3>
-      <p class="use-case-roi">
-        Replaces string encoding with direct binary cell writes, removing the serialization footprint entirely. Provides
-        a lean transport profile for cloud ingest of pre-aligned assets without structural preprocessing.
-      </p>
-      <p class="use-case-footnote">
-        Key interning and presence bitmask reduce metadata overhead vs JSON. File size vs binary peers depends on field
-        population rate — see <a href="../BENCHMARK.md#workload-a">Workload A</a> in BENCHMARK.md.
-      </p>
-      <p class="use-case-cta">
-        <a class="btn btn-secondary" href="https://github.com/nyxis-io/nyxis-drivers" rel="noopener">MIT SDKs</a>
-      </p>
-    </article>
 
     <p class="use-case-group">Browser &amp; operations UI</p>
 
     <article class="use-case" id="access-logs">
       <p class="use-case-tier use-case-tier--oss">Open core · MIT drivers · <a href="/demo/explorer">log explorer
           demo</a></p>
-      <h2>High-volume NGINX, Envoy, &amp; API gateway access log viewers</h2>
+      <h2>Browser observability — NGINX, Envoy, &amp; API gateway access logs</h2>
 
-      <h3>The high-scale bottleneck</h3>
+      <h3>Current pain</h3>
       <p>
         Reverse proxies and API gateways emit hundreds of millions of access rows daily. Incident response means opening
         multi-gigabyte dumps in the browser — exactly where <a href="#v8-limits">Act I</a> limits bite hardest.
       </p>
+
+      <h3>Why current approaches struggle</h3>
+      <p>
+        Users wait seconds to minutes before interaction because the full JSON export must download and hydrate into a
+        giant object graph before the first row renders.
+      </p>
+
+      <pre class="arch-diagram" aria-label="Architecture">Warehouse / edge  →  <span class="hl">.nxb</span> export  →  <span class="hl">Browser log UI</span>
+                         (mmap + tail-index)</pre>
 
       <h3>The Nyxis topology</h3>
       <p>
@@ -560,27 +468,75 @@
         <code>O(1)</code> tail-index footer — bypassing string tokenization entirely.
       </p>
 
-      <h3>The system advantage</h3>
+      <h3>Why Nyxis helps</h3>
       <p class="use-case-roi">
-        Resolves any target record offset in sub‑µs (native) regardless of file size by reading only the header and
-        trailing index footer. Virtual scroll utilizes the tail-index for exact byte offsets, allowing the grid to
-        render without full-file deserialization or heap inflation.
+        Selective reads enable immediate interaction before the full dataset streams. Virtual scroll uses tail-index jumps
+        for exact byte offsets — sub‑µs record resolve on native paths regardless of file size.
       </p>
       <p class="use-case-cta">
         <a class="btn btn-secondary" href="/demo/explorer">Log explorer demo</a>
       </p>
     </article>
 
+    <article class="use-case" id="reporting">
+      <p class="use-case-tier use-case-tier--oss">Open core · row + columnar · streaming v1.2</p>
+      <h2>Interactive reporting &amp; data export viewers</h2>
+
+      <h3>Current pain</h3>
+      <p>
+        Reporting tools that return 50k–500k row datasets as a single JSON payload force users to wait for full
+        download and parse before any data appears.
+      </p>
+
+      <h3>Why current approaches struggle</h3>
+      <p>
+        A 100&nbsp;MB JSON report on a 50&nbsp;Mbps link takes 16+ seconds to download, then expands to 500&nbsp;MB+ of heap
+        objects. Search and charts run synchronously against the in-memory graph.
+      </p>
+
+      <pre class="arch-diagram" aria-label="Architecture">Report API  →  <span class="hl">streamable .nxb</span>  →  <span class="hl">Browser table + charts</span></pre>
+
+      <h3>The Nyxis topology</h3>
+      <p>The report server selects a layout based on the query type:</p>
+      <ul>
+        <li>
+          <strong>Record view requests</strong> (virtual scroll, row-level search): row layout with v1.2 streamable sealing.
+        </li>
+        <li>
+          <strong>Chart requests</strong>: columnar layout — field buffers via <code>nxs_col_buffer()</code>.
+        </li>
+        <li>
+          <strong>Mixed requests</strong>: PAX layout when scroll and charts share one dataset.
+        </li>
+      </ul>
+
+      <h3>Why Nyxis helps</h3>
+      <p class="use-case-roi">
+        First row in 142&nbsp;µs P50 (<a href="../BENCHMARK.md#workload-d">Workload D</a>); ~25k rec/s sustained streaming.
+        Columnar scan at Arrow parity on dense fields (<a href="../BENCHMARK.md#workload-c">Workload C</a>).
+      </p>
+      <p class="use-case-cta">
+        <a class="btn btn-primary" href="/demo/report">Try it on your data</a>
+        <a class="btn btn-secondary" href="/demo/explorer">Log explorer demo</a>
+      </p>
+    </article>
+
     <article class="use-case" id="web-workers">
       <p class="use-case-tier use-case-tier--oss">Open core · <a href="/demo/workers">workers demo</a></p>
-      <h2>Zero-copy Web Worker handoffs (<code>SharedArrayBuffer</code>)</h2>
+      <h2>Massive browser datasets — zero-copy Web Worker handoffs</h2>
 
-      <h3>The high-scale bottleneck</h3>
+      <h3>Current pain</h3>
       <p>
         Dashboards offload grids to Web Workers, but <code>postMessage</code> structured-clone copies entire buffers —
-        the
-        complement to heap inflation in Act I, showing up as main-thread jank during live telemetry.
+        main-thread jank during live telemetry.
       </p>
+
+      <h3>Why current approaches struggle</h3>
+      <p>
+        Each handoff duplicates the payload. There is no shared mapping across threads for a parsed JSON graph.
+      </p>
+
+      <pre class="arch-diagram" aria-label="Architecture">Main thread  ↔  <span class="hl">SharedArrayBuffer (.nxb)</span>  ↔  4× workers</pre>
 
       <h3>The Nyxis topology</h3>
       <p>
@@ -589,10 +545,10 @@
         same bytes.
       </p>
 
-      <h3>The system advantage</h3>
+      <h3>Why Nyxis helps</h3>
       <p class="use-case-roi">
-        True parallel zero-copy multithreading: cross-thread handoff transfers no data. Both processing threads read and
-        execute pointer casting concurrently inside the same shared mapping.
+        True parallel zero-copy multithreading: cross-thread handoff transfers no data. Both threads read via pointer
+        casting inside the same mapping.
       </p>
       <p class="use-case-cta">
         <a class="btn btn-secondary" href="/demo/workers">Workers demo</a>
@@ -601,78 +557,33 @@
 
     <article class="use-case" id="apm-traces">
       <p class="use-case-tier use-case-tier--oss">Open core · bimodal <code>.nxs</code> / <code>.nxb</code></p>
-      <h2>Deep Datadog-style APM trace explorers &amp; distributed span tables</h2>
+      <h2>APM trace &amp; span explorers</h2>
 
-      <h3>The high-scale bottleneck</h3>
+      <h3>Current pain</h3>
       <p>
-        APM waterfalls map deep span trees (parent links, timing deltas, resource metadata). JSON timelines materialize
-        enormous object graphs before an engineer can isolate one slow service boundary.
+        APM waterfalls map deep span trees. JSON timelines materialize enormous object graphs before an engineer can
+        isolate one slow service boundary.
       </p>
+
+      <h3>Why current approaches struggle</h3>
+      <p>
+        Expand/collapse views still sit atop a fully materialized trace document in memory.
+      </p>
+
+      <pre class="arch-diagram" aria-label="Architecture">Trace ingest  →  <span class="hl">.nxb</span>  →  <span class="hl">Browser waterfall UI</span></pre>
 
       <h3>The Nyxis topology</h3>
       <p>
-        Trace layouts are authored as human-readable <code>.nxs</code> for review and diffing, compiled to production
+        Trace layouts are authored as human-readable <code>.nxs</code> for review, compiled to production
         <code>.nxb</code> for low-overhead tracing. The explorer uses tail-index jumps to service boundaries.
       </p>
 
-      <h3>The system advantage</h3>
+      <h3>Why Nyxis helps</h3>
       <p class="use-case-roi">
-        Expand/collapse waterfall views without heavy frontend object literals — trace UIs stay fluid under developer
-        load.
+        Waterfall views without million-object literals — trace UIs stay fluid under developer load.
       </p>
       <p class="use-case-cta">
         <a class="btn btn-secondary" href="/demo/wal">WAL / spans demo</a>
-      </p>
-    </article>
-
-    <article class="use-case" id="reporting">
-      <p class="use-case-tier use-case-tier--oss">Open core · row + columnar · streaming v1.2</p>
-      <h2>Large report and data export viewers</h2>
-
-      <h3>The high-scale bottleneck</h3>
-      <p>
-        Reporting tools that return 50k–500k row datasets as a single JSON payload force users to wait for full
-        download and parse before any data appears. A 100&nbsp;MB JSON report on a 50&nbsp;Mbps connection takes 16+
-        seconds to download, then expands to 500&nbsp;MB+ of heap objects. Search and chart rendering run synchronously
-        against the in-memory object graph.
-      </p>
-
-      <h3>The Nyxis topology</h3>
-      <p>The report server selects a layout based on the query type:</p>
-      <ul>
-        <li>
-          <strong>Record view requests</strong> (virtual scroll, row-level search): row layout with v1.2 streamable sealing.
-          The server writes rows as they generate; the browser renders each record as it arrives via
-          <code>NxsStreamReader</code> before the report completes.
-        </li>
-        <li>
-          <strong>Chart and aggregation requests</strong> (sum by region, histogram of response times): columnar layout.
-          The server emits field buffers; the browser reads them directly into chart library data structures via
-          <code>nxs_col_buffer()</code> with no intermediate deserialization.
-        </li>
-        <li>
-          <strong>Mixed requests</strong> (scroll + charts on the same dataset): PAX layout when available. Pages stream
-          as they fill; each page's column buffers feed chart components while row access supports virtual scroll.
-        </li>
-      </ul>
-
-      <h3>The system advantage</h3>
-      <p class="use-case-roi">
-        Row layout: first row in 142&nbsp;µs P50 (<a href="../BENCHMARK.md#workload-d">Workload D</a>);
-        ~25k rec/s sustained — a 100k-row report fully streamed in ~4&nbsp;s. Columnar layout: dense field scan at
-        parity with Arrow IPC (107&nbsp;µs at 1M records, Apple Silicon,
-        <a href="../BENCHMARK.md#workload-c">Workload C</a>). After sealing, any record accessible via O(1) tail-index
-        seek regardless of report size.
-      </p>
-      <p class="use-case-footnote">
-        Benchmarks:
-        <a href="../BENCHMARK.md#workload-c">Workload C (columnar scan)</a>,
-        <a href="../BENCHMARK.md#workload-d">Workload D (streaming TTFR)</a>.
-      </p>
-      <p class="use-case-cta">
-        <a class="btn btn-primary" href="/demo/report">Try it on your data</a>
-        <a class="btn btn-secondary" href="/demo/explorer">Log explorer demo</a>
-        <a class="btn btn-secondary" href="/demo/wal">WAL / streaming demo</a>
       </p>
     </article>
 
@@ -739,6 +650,39 @@
     </article>
 
     <p class="use-case-group">Write path &amp; durability</p>
+
+    <article class="use-case" id="reporting-streaming">
+      <p class="use-case-tier use-case-tier--oss">Open core · streamable v1.2 · <a href="../BENCHMARK.md#workload-d">Workload D</a></p>
+      <h2>WAL &amp; event-streaming ingest</h2>
+
+      <h3>Current pain</h3>
+      <p>
+        Live dashboards need the first row while the writer is still appending — without waiting for a full seal or
+        re-parsing JSON on every poll.
+      </p>
+
+      <h3>Why current approaches struggle</h3>
+      <p>
+        Batch-only formats force a second indexing pass after ingest completes before random access is possible.
+      </p>
+
+      <pre class="arch-diagram" aria-label="Architecture">Event stream  →  <span class="hl">NXS WAL</span>  →  sealed <span class="hl">.nxb</span>  →  Browser / BI</pre>
+
+      <h3>The Nyxis topology</h3>
+      <p>
+        Producers stream NYXO cells with batched flush. Incremental parsers return complete records as bytes arrive; sealing
+        writes the tail-index footer for O(1) seek on the same file.
+      </p>
+
+      <h3>Why Nyxis helps</h3>
+      <p class="use-case-roi">
+        First row in <strong>142&nbsp;µs TTFR P50</strong> (<a href="../BENCHMARK.md#workload-d">Workload D</a>); ~25k rec/s
+        while appending. After seal, any record is accessible via tail-index — no re-indexing pass.
+      </p>
+      <p class="use-case-cta">
+        <a class="btn btn-secondary" href="/demo/wal">WAL / streaming demo</a>
+      </p>
+    </article>
 
     <article class="use-case" id="hft-wal">
       <p class="use-case-tier use-case-tier--oss">Open core writes</p>
@@ -808,6 +752,67 @@
         <a class="btn btn-secondary" href="/demo/wal">WAL demo</a>
         <a class="btn btn-secondary" href="https://github.com/nyxis-io/nyxis/blob/main/SPEC.md" rel="noopener">Spec
           v1.2</a>
+      </p>
+    </article>
+
+    <p class="use-case-group">Ingest &amp; edge</p>
+
+    <article class="use-case" id="k8s-aggregators">
+      <p class="use-case-tier use-case-tier--oss">Open core · MIT <code>nyxis-drivers</code></p>
+      <h2>Kubernetes stdout aggregators</h2>
+
+      <h3>Current pain</h3>
+      <p>
+        Thousands of pods emit stdout lines wrapped in repeated JSON keys. Duplicate strings dominate transit bandwidth
+        and lake cost.
+      </p>
+
+      <h3>Why current approaches struggle</h3>
+      <p>
+        Text serialization per field on hot paths limits aggregator throughput; downstream systems repeat full JSON parse.
+      </p>
+
+      <pre class="arch-diagram" aria-label="Architecture">K8s pods  →  <span class="hl">NXS aggregator</span>  →  lake / stream</pre>
+
+      <h3>The Nyxis topology</h3>
+      <p>
+        Aggregators embed MIT <code>nyxis-drivers</code> with interned field dictionaries and sparse presence bitmasks.
+        Optional <code>nxs-registryd</code> validates schema on ingress.
+      </p>
+
+      <h3>Why Nyxis helps</h3>
+      <p class="use-case-roi">
+        Direct binary cell writes replace string-formatting loops; downstream filters skip full-file JSON deserialization.
+      </p>
+    </article>
+
+    <article class="use-case" id="iot-edge">
+      <p class="use-case-tier use-case-tier--oss">Open core · C / Go MIT drivers</p>
+      <h2>Edge IoT &amp; fleet telemetry</h2>
+
+      <h3>Current pain</h3>
+      <p>
+        Fleets stream billions of diagnostics per second. JSON saturates bandwidth; heavy encoders strain edge CPUs.
+      </p>
+
+      <h3>Why current approaches struggle</h3>
+      <p>
+        Variable-length text encoding dominates battery and CPU on constrained devices.
+      </p>
+
+      <pre class="arch-diagram" aria-label="Architecture">Fleet devices  →  <span class="hl">NXS edge writer</span>  →  cloud ingest</pre>
+
+      <h3>The Nyxis topology</h3>
+      <p>
+        Lightweight C or Go drivers write presence bitmasks and aligned integer cells without repeated key strings.
+      </p>
+
+      <h3>Why Nyxis helps</h3>
+      <p class="use-case-roi">
+        Lean transport profile for cloud ingest of pre-aligned assets — no structural preprocessing at the warehouse boundary.
+      </p>
+      <p class="use-case-cta">
+        <a class="btn btn-secondary" href="https://github.com/nyxis-io/nyxis-drivers" rel="noopener">MIT SDKs</a>
       </p>
     </article>
 
