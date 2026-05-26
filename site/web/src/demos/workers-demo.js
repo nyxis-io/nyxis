@@ -1,10 +1,44 @@
-let demoRoot=null;
-let demoQuery=(sel)=>document.querySelector(sel);
-const $=(sel)=>demoQuery(sel);
-let teardown=null;
-export function wireWorkersPage(root){if(!root)return;if(root.dataset.demoWired==='1')return;teardown?.();root.dataset.demoWired='1';demoRoot=root;demoQuery=(sel)=>root.querySelector(sel);initDemo();teardown=()=>{delete root.dataset.demoWired;demoRoot=null;demoQuery=(sel)=>document.querySelector(sel);};}
-export function unwireWorkersPage(){teardown?.();teardown=null;}
-function initDemo(){
+let demoRoot = null;
+let demoQuery = (sel) => document.querySelector(sel);
+const $ = (sel) => demoQuery(sel);
+let teardown = null;
+
+export function wireWorkersPage(root) {
+  if (!root) return;
+  if (root.dataset.demoWired === "1") return;
+  teardown?.();
+  root.dataset.demoWired = "1";
+  demoRoot = root;
+  demoQuery = (sel) => root.querySelector(sel);
+  const stopDemo = initDemo();
+  teardown = () => {
+    stopDemo();
+    delete root.dataset.demoWired;
+    demoRoot = null;
+    demoQuery = (sel) => document.querySelector(sel);
+  };
+}
+
+export function unwireWorkersPage() {
+  teardown?.();
+  teardown = null;
+}
+
+function initDemo() {
+  /** @type {(() => void) | null} */
+  let disposeRun = null;
+
+  function domReady() {
+    return demoRoot && demoRoot.isConnected;
+  }
+
+  function setElText(el, text) {
+    if (el) el.textContent = text;
+  }
+
+  function setElHtml(el, html) {
+    if (el) el.innerHTML = html;
+  }
   function fmtMs(ms) {
     if (ms < 1) return `${(ms * 1000).toFixed(0)} µs`;
     return `${ms.toFixed(2)} ms`;
@@ -30,6 +64,7 @@ function initDemo(){
   
   (function setBanner() {
     const b = $("#iso-banner");
+    if (!b) return;
     if (hasSAB && isolated) {
       b.className = "banner ok";
       b.innerHTML = "<strong>Cross-origin isolated</strong> — <code>SharedArrayBuffer</code> is available. The NXS path uses true zero-copy sharing.";
@@ -49,6 +84,7 @@ function initDemo(){
   
   function renderWorkerRows(containerId, n, prefix) {
     const host = $(containerId);
+    if (!host) return;
     host.innerHTML = "";
     for (let i = 0; i < n; i++) {
       const row = document.createElement("div");
@@ -72,7 +108,24 @@ function initDemo(){
     });
   }
   
-  async function spawnNxsWorkers(sharedBuffer, size) {
+  function stopWorkers() {
+    for (const w of nxsWorkers) {
+      w.onmessage = null;
+      w.terminate();
+    }
+    for (const w of jsonWorkers) {
+      w.onmessage = null;
+      w.terminate();
+    }
+    nxsWorkers.length = 0;
+    jsonWorkers.length = 0;
+    stopReaderTicks();
+    stopWriter();
+    readTicks = {};
+  }
+
+  async function spawnNxsWorkers(sharedBuffer, size, runId) {
+    if (!domReady() || runId !== activeRunId) return null;
     renderWorkerRows("#nxs-workers", N_WORKERS, "nxs");
   
     // Measure postMessage cost on the sender side (same methodology as JSON clone cost).
@@ -83,16 +136,26 @@ function initDemo(){
     for (let i = 0; i < N_WORKERS; i++) {
       const w = new Worker(new URL("../workers/nxs_worker.js", import.meta.url), { type: "module" });
       nxsWorkers.push(w);
-      w.onmessage = (ev) => handleNxsMessage(i, ev.data);
+      w.onmessage = (ev) => {
+        if (runId !== activeRunId) return;
+        handleNxsMessage(i, ev.data);
+      };
       const t0 = performance.now();
       w.postMessage({ type: "init", workerId: i, buffer: sharedBuffer, size });
       const cost = performance.now() - t0; // sender-side postMessage cost (SAB pointer pass)
       senderCosts.push(cost);
       promises.push(new Promise(resolve => {
         w.addEventListener("message", function once(ev) {
+          if (runId !== activeRunId) {
+            w.removeEventListener("message", once);
+            return;
+          }
           if (ev.data && ev.data.type === "ready") {
-            $(`#nxs-workers-t-${i}`).textContent = fmtMs(cost) + " transfer";
-            $(`#nxs-workers-v-${i}`).textContent = `ready · ${ev.data.recordCount.toLocaleString()} records · ${ev.data.shared ? "SHARED" : "COPY"}`;
+            setElText($(`#nxs-workers-t-${i}`), fmtMs(cost) + " transfer");
+            setElText(
+              $(`#nxs-workers-v-${i}`),
+              `ready · ${ev.data.recordCount.toLocaleString()} records · ${ev.data.shared ? "SHARED" : "COPY"}`,
+            );
             w.removeEventListener("message", once);
             resolve(cost);
           }
@@ -100,15 +163,17 @@ function initDemo(){
       }));
     }
     await Promise.all(promises);
+    if (!domReady() || runId !== activeRunId) return null;
     // Sum (serial postMessages on main thread, like JSON path).
     const total = senderCosts.reduce((a, b) => a + b, 0);
     const avg = total / N_WORKERS;
-    $("#nxs-total").textContent = fmtMs(total);
-    $("#nxs-avg").textContent = fmtMs(avg);
+    setElText($("#nxs-total"), fmtMs(total));
+    setElText($("#nxs-avg"), fmtMs(avg));
     return { total, avg, timings: senderCosts };
   }
   
-  async function spawnJsonWorkers(parsed) {
+  async function spawnJsonWorkers(parsed, runId) {
+    if (!domReady() || runId !== activeRunId) return null;
     renderWorkerRows("#json-workers", N_WORKERS, "json");
   
     // For JSON, structured-clone runs synchronously on the sender during postMessage —
@@ -126,9 +191,13 @@ function initDemo(){
       cloneMs.push(cost);
       promises.push(new Promise(resolve => {
         w.addEventListener("message", function once(ev) {
+          if (runId !== activeRunId) {
+            w.removeEventListener("message", once);
+            return;
+          }
           if (ev.data && ev.data.type === "ready") {
-            $(`#json-workers-t-${i}`).textContent = fmtMs(cost) + " clone";
-            $(`#json-workers-v-${i}`).textContent = `ready · ${ev.data.recordCount.toLocaleString()} records`;
+            setElText($(`#json-workers-t-${i}`), fmtMs(cost) + " clone");
+            setElText($(`#json-workers-v-${i}`), `ready · ${ev.data.recordCount.toLocaleString()} records`);
             w.removeEventListener("message", once);
             resolve(cost);
           }
@@ -136,20 +205,24 @@ function initDemo(){
       }));
     }
     await Promise.all(promises);
+    if (!domReady() || runId !== activeRunId) return null;
     // Clone calls are serial on the main thread — total = sum.
     const total = cloneMs.reduce((a, b) => a + b, 0);
     const avg = total / N_WORKERS;
-    $("#json-total").textContent = fmtMs(total);
-    $("#json-avg").textContent = fmtMs(avg);
+    setElText($("#json-total"), fmtMs(total));
+    setElText($("#json-avg"), fmtMs(avg));
     return { total, avg, timings: cloneMs };
   }
   
   // ── Live readers ──────────────────────────────────────────────────────────
   
-  const readTicks = {}; // workerId → {value, ts}
+  let readTicks = {}; // workerId → {value, ts}
+  let activeRunId = 0;
   
   function renderReaderTicks() {
+    if (!domReady()) return;
     const host = $("#reader-ticks");
+    if (!host) return;
     host.innerHTML = "";
     for (let i = 1; i < N_WORKERS; i++) {
       const t = readTicks[i] || { value: "—", ts: 0 };
@@ -162,13 +235,13 @@ function initDemo(){
   }
   
   function handleNxsMessage(workerId, msg) {
-    if (!msg) return;
+    if (!msg || !domReady()) return;
     if (msg.type === "read-fast-result") {
       readTicks[workerId] = { value: msg.value, ts: Date.now() };
       renderReaderTicks();
     } else if (msg.type === "write-result") {
       if (msg.ok) {
-        $("#writer-val").textContent = `${msg.value.toFixed(3)} → record ${msg.index}.${msg.key}`;
+        setElText($("#writer-val"), `${msg.value.toFixed(3)} → record ${msg.index}.${msg.key}`);
       }
     }
   }
@@ -238,19 +311,40 @@ function initDemo(){
     return { buffer: new ArrayBuffer(size), shared: false };
   }
   
+  let startInFlight = false;
+
+  function onWriterToggle(e) {
+    if (e.target.checked) {
+      if (nxsWorkers.length < N_WORKERS) {
+        setStatus("Start the demo first.", "warn");
+        e.target.checked = false;
+        return;
+      }
+      startWriter();
+    } else {
+      stopWriter();
+      setElText($("#writer-val"), "idle");
+    }
+  }
+
   async function start() {
-    $("#start").disabled = true;
+    const startBtn = $("#start");
+    if (!startBtn || startInFlight) return;
+    startInFlight = true;
+    startBtn.disabled = true;
+    const runId = ++activeRunId;
+    disposeRun?.();
+    disposeRun = () => {
+      if (activeRunId === runId) activeRunId++;
+    };
     try {
       if (!nxbBytes) await loadData();
-  
+      if (!domReady() || runId !== activeRunId) return;
+
       // Tear down any previous run
-      for (const w of nxsWorkers) w.terminate();
-      for (const w of jsonWorkers) w.terminate();
-      nxsWorkers.length = 0;
-      jsonWorkers.length = 0;
-      stopReaderTicks();
-      stopWriter();
-      $("#writer-toggle").checked = false;
+      stopWorkers();
+      const writerToggle = $("#writer-toggle");
+      if (writerToggle) writerToggle.checked = false;
   
       // Allocate the shared buffer and copy the .nxb bytes into it ONCE.
       setStatus("Allocating shared buffer + spawning workers…", "running");
@@ -261,23 +355,24 @@ function initDemo(){
   
       // Spawn JSON workers first — the structured-clone stall is most visible
       // if it runs on a warm main thread.
-      const jsonResult = await spawnJsonWorkers(parsedJson);
-      const nxsResult = await spawnNxsWorkers(buffer, nxsSize);
-  
+      const jsonResult = await spawnJsonWorkers(parsedJson, runId);
+      const nxsResult = await spawnNxsWorkers(buffer, nxsSize, runId);
+      if (!domReady() || runId !== activeRunId || !jsonResult || !nxsResult) return;
+
       // JSON "bytes copied": roughly JSON-array size × N (structured clone makes
       // a deep copy per worker).
       const jsonBytes = JSON.stringify(parsedJson).length * N_WORKERS;
-      $("#json-bytes").textContent = `~${(jsonBytes / 1048576).toFixed(1)} MB`;
-      $("#nxs-bytes").textContent = shared ? "0 B (shared)" : `${(nxsSize * N_WORKERS / 1048576).toFixed(1)} MB (fallback)`;
-  
+      setElText($("#json-bytes"), `~${(jsonBytes / 1048576).toFixed(1)} MB`);
+      setElText($("#nxs-bytes"), shared ? "0 B (shared)" : `${(nxsSize * N_WORKERS / 1048576).toFixed(1)} MB (fallback)`);
+
       const ratio = nxsResult.total > 0 ? (jsonResult.total / nxsResult.total).toFixed(0) : "∞";
-      $("#summary").innerHTML = `
+      setElHtml($("#summary"), `
         <strong>JSON:</strong> ${(jsonBytes / 1048576).toFixed(1)} MB copied across ${N_WORKERS} workers =
         <strong>${fmtMs(jsonResult.total)}</strong> total spawn.<br>
         <strong>NXS:</strong> ${shared ? "0 bytes copied (SharedArrayBuffer)" : `${(nxsSize / 1048576).toFixed(1)} MB, copied (SAB fallback)`} =
         <strong>${fmtMs(nxsResult.total)}</strong> total spawn.<br>
         <strong>Speedup:</strong> NXS is ~<strong>${ratio}×</strong> faster to fan out to workers.
-      `;
+      `);
   
       // Start background readers
       startReaderTicks();
@@ -285,25 +380,27 @@ function initDemo(){
       setStatus("Running — reader workers polling every 100 ms.", "done");
     } catch (err) {
       console.error(err);
-      setStatus("Error: " + err.message, "error");
+      if (domReady()) setStatus("Error: " + err.message, "error");
     } finally {
-      $("#start").disabled = false;
+      startInFlight = false;
+      if (domReady()) {
+        const btn = $("#start");
+        if (btn) btn.disabled = false;
+      }
     }
   }
-  
-  $("#start").addEventListener("click", start);
-  
-  $("#writer-toggle").addEventListener("change", (e) => {
-    if (e.target.checked) {
-      if (nxsWorkers.length < N_WORKERS) {
-        setStatus("Start the demo first.", "warn");
-        e.target.checked = false;
-        return;
-      }
-      startWriter();
-    } else {
-      stopWriter();
-      $("#writer-val").textContent = "idle";
-    }
-  });
+
+  const startBtn = $("#start");
+  const writerToggle = $("#writer-toggle");
+  startBtn?.addEventListener("click", start);
+  writerToggle?.addEventListener("change", onWriterToggle);
+
+  return () => {
+    activeRunId++;
+    disposeRun = null;
+    stopWorkers();
+    startBtn?.removeEventListener("click", start);
+    writerToggle?.removeEventListener("change", onWriterToggle);
+    startInFlight = false;
+  };
 }
