@@ -1,6 +1,7 @@
 import { defineConfig, type Plugin } from "vite";
 import vue from "@vitejs/plugin-vue";
-import { readFileSync, statSync } from "node:fs";
+import { createReadStream, readFileSync, statSync } from "node:fs";
+import type { IncomingMessage, ServerResponse } from "node:http";
 import { resolve } from "node:path";
 
 const benchDir = resolve(__dirname, "../bench");
@@ -23,6 +24,72 @@ function sdkExists(): boolean {
  * Map `import … from "/sdk/…"` to nyxis-drivers/js so Vite dev does not fail import-analysis.
  * Production build keeps /sdk/* external (nginx or compose serves the same URLs).
  */
+const SDK_PREFIX = "/sdk/";
+const SDK_JS_TYPES: Record<string, string> = {
+  ".js": "application/javascript",
+  ".mjs": "application/javascript",
+  ".wasm": "application/wasm",
+  ".json": "application/json",
+};
+
+/**
+ * Serve MIT SDK files at /sdk/* in dev/preview (workers import by URL).
+ */
+function sdkStaticPlugin(): Plugin {
+  const serveSdk = (
+    req: IncomingMessage,
+    res: ServerResponse,
+    next: () => void,
+  ): void => {
+    const url = req.url?.split("?")[0] ?? "";
+    if (!url.startsWith(SDK_PREFIX)) {
+      next();
+      return;
+    }
+    const rel = decodeURIComponent(url.slice(SDK_PREFIX.length));
+    if (!rel || rel.includes("..") || rel.includes("/") || rel.includes("\\")) {
+      next();
+      return;
+    }
+    const filePath = resolve(sdkDir, rel);
+    try {
+      const st = statSync(filePath);
+      if (!st.isFile()) {
+        next();
+        return;
+      }
+    } catch {
+      next();
+      return;
+    }
+    const ext = rel.includes(".") ? rel.slice(rel.lastIndexOf(".")) : "";
+    res.statusCode = 200;
+    res.setHeader("Content-Type", SDK_JS_TYPES[ext] ?? "application/octet-stream");
+    res.setHeader("Cross-Origin-Resource-Policy", "same-origin");
+    res.setHeader("Cache-Control", "no-cache");
+    if (req.method === "HEAD") {
+      res.setHeader("Content-Length", String(statSync(filePath).size));
+      res.end();
+      return;
+    }
+    if (req.method !== "GET") {
+      res.statusCode = 405;
+      res.end();
+      return;
+    }
+    createReadStream(filePath).pipe(res);
+  };
+  return {
+    name: "sdk-static-dev",
+    configureServer(server) {
+      server.middlewares.use(serveSdk);
+    },
+    configurePreviewServer(server) {
+      server.middlewares.use(serveSdk);
+    },
+  };
+}
+
 function sdkDevResolvePlugin(): Plugin {
   return {
     name: "sdk-dev-resolve",
@@ -165,6 +232,113 @@ function agentDiscoveryPlugin(): Plugin {
  * Do not copy into dist/bench/ — that directory makes nginx serve /bench/ as a
  * folder listing (403) instead of the Vue SPA route.
  */
+const BENCH_FIXTURES_PREFIX = "/bench/fixtures/";
+
+/**
+ * Serve bench .nxb/.json fixtures from disk in dev/preview (HEAD + Range).
+ * Replaces the nginx proxy on :8000 so `npm run dev` alone works for the explorer.
+ */
+function benchFixturesPlugin(): Plugin {
+  const fixturesDir = resolve(benchDir, "fixtures");
+
+  const serveFixture = (
+    req: IncomingMessage,
+    res: ServerResponse,
+    next: () => void,
+  ): void => {
+    const url = req.url?.split("?")[0] ?? "";
+    if (!url.startsWith(BENCH_FIXTURES_PREFIX)) {
+      next();
+      return;
+    }
+    const name = decodeURIComponent(url.slice(BENCH_FIXTURES_PREFIX.length));
+    if (!name || name.includes("..") || name.includes("/") || name.includes("\\")) {
+      next();
+      return;
+    }
+    const filePath = resolve(fixturesDir, name);
+    let size: number;
+    try {
+      const st = statSync(filePath);
+      if (!st.isFile()) {
+        next();
+        return;
+      }
+      size = st.size;
+    } catch {
+      next();
+      return;
+    }
+
+    const baseHeaders: Record<string, string> = {
+      "Content-Type": "application/octet-stream",
+      "Accept-Ranges": "bytes",
+      "Cache-Control": "no-cache",
+      "Cross-Origin-Resource-Policy": "same-origin",
+    };
+
+    if (req.method === "HEAD") {
+      res.statusCode = 200;
+      for (const [k, v] of Object.entries(baseHeaders)) res.setHeader(k, v);
+      res.setHeader("Content-Length", String(size));
+      res.end();
+      return;
+    }
+    if (req.method !== "GET") {
+      res.statusCode = 405;
+      res.end();
+      return;
+    }
+
+    const range = req.headers.range;
+    if (range) {
+      const m = /^bytes=(\d*)-(\d*)/.exec(range);
+      if (!m) {
+        res.statusCode = 416;
+        res.setHeader("Content-Range", `bytes */${size}`);
+        res.end();
+        return;
+      }
+      let start = m[1] !== "" ? parseInt(m[1], 10) : 0;
+      let end = m[2] !== "" ? parseInt(m[2], 10) : size - 1;
+      if (
+        Number.isNaN(start) ||
+        Number.isNaN(end) ||
+        start > end ||
+        start >= size
+      ) {
+        res.statusCode = 416;
+        res.setHeader("Content-Range", `bytes */${size}`);
+        res.end();
+        return;
+      }
+      end = Math.min(end, size - 1);
+      const len = end - start + 1;
+      res.statusCode = 206;
+      for (const [k, v] of Object.entries(baseHeaders)) res.setHeader(k, v);
+      res.setHeader("Content-Range", `bytes ${start}-${end}/${size}`);
+      res.setHeader("Content-Length", String(len));
+      createReadStream(filePath, { start, end }).pipe(res);
+      return;
+    }
+
+    res.statusCode = 200;
+    for (const [k, v] of Object.entries(baseHeaders)) res.setHeader(k, v);
+    res.setHeader("Content-Length", String(size));
+    createReadStream(filePath).pipe(res);
+  };
+
+  return {
+    name: "bench-fixtures-dev",
+    configureServer(server) {
+      server.middlewares.use(serveFixture);
+    },
+    configurePreviewServer(server) {
+      server.middlewares.use(serveFixture);
+    },
+  };
+}
+
 function benchWorkerPlugin(): Plugin {
   const serveWorker = (
     req: { url?: string },
@@ -199,7 +373,14 @@ if (!sdkExists()) {
 }
 
 export default defineConfig({
-  plugins: [vue(), sdkDevResolvePlugin(), benchWorkerPlugin(), agentDiscoveryPlugin()],
+  plugins: [
+    vue(),
+    sdkDevResolvePlugin(),
+    sdkStaticPlugin(),
+    benchFixturesPlugin(),
+    benchWorkerPlugin(),
+    agentDiscoveryPlugin(),
+  ],
   resolve: {
     alias: {
       "@": resolve(__dirname, "src"),
@@ -214,14 +395,7 @@ export default defineConfig({
       "Cross-Origin-Embedder-Policy": "require-corp",
     },
     proxy: {
-      "/sdk": {
-        target: "http://127.0.0.1:8000",
-        changeOrigin: true,
-      },
-      "/bench/fixtures": {
-        target: "http://127.0.0.1:8000",
-        changeOrigin: true,
-      },
+      // /sdk and /bench/fixtures served by dev plugins (local files + Range)
       "/examples": {
         target: "http://127.0.0.1:8000",
         changeOrigin: true,
