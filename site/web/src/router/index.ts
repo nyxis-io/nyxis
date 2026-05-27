@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory, type RouteRecordRaw } from "vue-router";
 import { useHead } from "@unhead/vue";
 import { GA_ID, usePageSeo, type PageSeo } from "./seo";
+import { seoForPath } from "./manifest";
 
 const HomeView = () => import("@/views/HomeView.vue");
 const DocsView = () => import("@/views/DocsView.vue");
@@ -30,12 +31,7 @@ const routes: RouteRecordRaw[] = [
     meta: {
       nav: "home",
       footer: true,
-      seo: {
-        title: "Nyxis — Open massive structured datasets in the browser",
-        description:
-          "Stream, filter, and explore GB-scale structured data without JSON hydration bottlenecks. Zero-copy .nxb, browser demos, and honest benchmarks.",
-        canonical: "https://nyxis.io/",
-      },
+      seo: seoForPath("/"),
     } satisfies AppRouteMeta,
   },
   {
@@ -45,12 +41,7 @@ const routes: RouteRecordRaw[] = [
     meta: {
       nav: "docs",
       footer: true,
-      seo: {
-        title: "Documentation — Nyxis NXS quickstart",
-        description:
-          "5-minute quickstart for the MIT JavaScript reader: open .nxb, filter with cursor, render virtual scroll, and stream before seal.",
-        canonical: "https://nyxis.io/docs/",
-      },
+      seo: seoForPath("/docs/"),
     } satisfies AppRouteMeta,
   },
   {
@@ -59,12 +50,7 @@ const routes: RouteRecordRaw[] = [
     component: UseCasesView,
     meta: {
       nav: "use-cases",
-      seo: {
-        title: "Nyxis — High-Throughput System Topologies & Use Cases",
-        description:
-          "Production topologies for the Nyxis zero-copy serialization protocol: mmap .nxb ingestion, streamable v1.2 sealing, row/columnar/PAX layouts, append-only WALs, Arrow bridges, and multi-terabyte data-grid deployments.",
-        canonical: "https://nyxis.io/use-cases/",
-      },
+      seo: seoForPath("/use-cases/"),
     } satisfies AppRouteMeta,
   },
   {
@@ -73,12 +59,7 @@ const routes: RouteRecordRaw[] = [
     component: PricingView,
     meta: {
       nav: "pricing",
-      seo: {
-        title: "Nyxis — Commercial Pricing",
-        description:
-          "Transparent Nyxis open-core pricing: free BSL production tier, Startup/Growth at $3,500/year, Enterprise Core at $15,000/year, and Principal custom quotes for hyper-scale workloads.",
-        canonical: "https://nyxis.io/pricing/",
-      },
+      seo: seoForPath("/pricing/"),
     } satisfies AppRouteMeta,
   },
   {
@@ -88,12 +69,7 @@ const routes: RouteRecordRaw[] = [
     meta: {
       nav: "bench",
       footer: false,
-      seo: {
-        title: "Benchmark — Nyxis NXS",
-        description:
-          "Interactive NXS vs JSON vs CSV benchmark charts at 1k–10M records in the browser, with optional fixture upload.",
-        canonical: "https://nyxis.io/bench/",
-      },
+      seo: seoForPath("/bench/"),
     } satisfies AppRouteMeta,
   },
   {
@@ -104,12 +80,7 @@ const routes: RouteRecordRaw[] = [
       nav: "demo",
       demoSubnav: true,
       footer: false,
-      seo: {
-        title: "Demo — Nyxis NXS",
-        description:
-          "Live browser demos: NXS vs JSON and CSV benchmarks, ticker, workers, explorer, WAL, and report layout — with SharedArrayBuffer and worker handoffs.",
-        canonical: "https://nyxis.io/demo/",
-      },
+      seo: seoForPath("/demo/"),
     } satisfies AppRouteMeta,
   },
   {
@@ -120,12 +91,7 @@ const routes: RouteRecordRaw[] = [
       nav: "ticker",
       demoSubnav: true,
       footer: false,
-      seo: {
-        title: "Ticker — Nyxis NXS",
-        description:
-          "Side-by-side JSON stringify/parse vs in-place float64 patch on mapped .nxb — frame timing and drop rate under pressure.",
-        canonical: "https://nyxis.io/demo/ticker",
-      },
+      seo: seoForPath("/demo/ticker"),
     } satisfies AppRouteMeta,
   },
   {
@@ -136,12 +102,7 @@ const routes: RouteRecordRaw[] = [
       nav: "workers",
       demoSubnav: true,
       footer: false,
-      seo: {
-        title: "Workers — Nyxis NXS",
-        description:
-          "Four Web Workers: JSON structured clone vs SharedArrayBuffer handoff for the same .nxb dataset.",
-        canonical: "https://nyxis.io/demo/workers",
-      },
+      seo: seoForPath("/demo/workers"),
     } satisfies AppRouteMeta,
   },
   {
@@ -152,12 +113,7 @@ const routes: RouteRecordRaw[] = [
       nav: "explorer",
       demoSubnav: true,
       footer: false,
-      seo: {
-        title: "Log explorer — Nyxis NXS",
-        description:
-          "Virtual scroll over millions of rows in the browser. Live telemetry, JSON vs NXS comparison, zero-copy .nxb streaming.",
-        canonical: "https://nyxis.io/demo/explorer",
-      },
+      seo: seoForPath("/demo/explorer"),
     } satisfies AppRouteMeta,
   },
   {
@@ -169,11 +125,7 @@ const routes: RouteRecordRaw[] = [
       demoSubnav: true,
       footer: false,
       chartJs: true,
-      seo: {
-        title: "Report layout — Nyxis NXS",
-        description: "CSV to row and columnar .nxb in the browser; chart from col_buffer.",
-        canonical: "https://nyxis.io/demo/report",
-      },
+      seo: seoForPath("/demo/report"),
     } satisfies AppRouteMeta,
   },
   {
@@ -184,11 +136,7 @@ const routes: RouteRecordRaw[] = [
       nav: "wal",
       demoSubnav: true,
       footer: false,
-      seo: {
-        title: "WAL / spans — Nyxis NXS",
-        description: "OTel-style span ingestion — append-only WAL vs JSON payloads.",
-        canonical: "https://nyxis.io/demo/wal",
-      },
+      seo: seoForPath("/demo/wal"),
     } satisfies AppRouteMeta,
   },
   // Legacy paths without trailing slash

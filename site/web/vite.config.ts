@@ -388,6 +388,14 @@ export default defineConfig({
     },
   },
   base: "/",
+  preview: {
+    port: 4173,
+    strictPort: true,
+    headers: {
+      "Cross-Origin-Opener-Policy": "same-origin",
+      "Cross-Origin-Embedder-Policy": "require-corp",
+    },
+  },
   server: {
     port: 5173,
     headers: {

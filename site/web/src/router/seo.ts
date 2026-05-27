@@ -1,3 +1,5 @@
+import siteConfig from "../../content/site.json";
+
 export type PageSeo = {
   title: string;
   description: string;
@@ -9,9 +11,8 @@ export type PageSeo = {
 export const GA_ID = "G-9TP221ZJ9Z";
 
 /** Social preview card (NXS hero infographic). Served from /public/og-image.png */
-export const OG_IMAGE_URL = "https://nyxis.io/og-image.png";
-export const OG_IMAGE_ALT =
-  "NXS — Nexus Standard: human-readable source, compiled binary, O(log N) lookup, zero-copy access";
+export const OG_IMAGE_URL = `${siteConfig.origin}${siteConfig.ogImagePath}`;
+export const OG_IMAGE_ALT = siteConfig.ogImageAlt;
 
 export function usePageSeo(meta: PageSeo) {
   return {

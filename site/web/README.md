@@ -20,6 +20,10 @@ make site-build   # writes site/dist/
 make demo         # nginx serves site/dist + bench/fixtures + /sdk
 ```
 
+`npm run build` runs Vite, then **Playwright prerender** (`scripts/prerender-vue-html.mjs`) so each route’s `dist/*.html` contains the full rendered Vue markup for crawlers (not markdown stubs). First CI/local build may need `npx playwright install chromium`.
+
+**SEO manifest:** `content/routes.json` is the single source for titles, descriptions, canonical URLs (`https://www.nyxis.io/…`), and `sitemap.xml`. The Vue router imports the same file via `src/router/manifest.ts`.
+
 Open http://localhost:8000/
 
 ## Layout

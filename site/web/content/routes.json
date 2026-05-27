@@ -2,74 +2,96 @@
   {
     "path": "/",
     "markdown": "/index.md",
-    "title": "Nyxis — Zero-Copy Binary Serialization Protocol",
-    "description": "Nyxis (NXS): row, columnar, and PAX .nxb layouts. 7 µs streaming TTFR (EPYC 9R14), columnar scan 1.3× Arrow IPC on AVX-512, sub-µs warm access."
+    "title": "Nyxis — Open massive structured datasets in the browser",
+    "description": "Stream, filter, and explore GB-scale structured data without JSON hydration bottlenecks. Zero-copy .nxb, browser demos, and honest benchmarks.",
+    "canonical": "https://www.nyxis.io/",
+    "sitemap": { "priority": "1.0", "changefreq": "weekly" }
   },
   {
     "path": "/docs/",
     "markdown": "/docs/index.md",
     "title": "Documentation — Nyxis NXS quickstart",
-    "description": "5-minute quickstart for the MIT JavaScript reader: open .nxb, filter, render, and stream before seal."
+    "description": "5-minute quickstart for the MIT JavaScript reader: open .nxb, filter with cursor, render virtual scroll, and stream before seal.",
+    "canonical": "https://www.nyxis.io/docs/",
+    "sitemap": { "priority": "0.9", "changefreq": "monthly" }
   },
   {
     "path": "/use-cases/",
     "markdown": "/use-cases/index.md",
     "title": "Nyxis — High-Throughput System Topologies & Use Cases",
-    "description": "Production topologies for mmap .nxb ingestion, streamable v1.2 sealing, row/columnar/PAX layouts, append-only WALs, Arrow bridges, and multi-terabyte data-grid deployments."
+    "description": "Production topologies for the Nyxis zero-copy serialization protocol: mmap .nxb ingestion, streamable v1.2 sealing, row/columnar/PAX layouts, append-only WALs, Arrow bridges, and multi-terabyte data-grid deployments.",
+    "canonical": "https://www.nyxis.io/use-cases/",
+    "sitemap": { "priority": "0.9", "changefreq": "monthly" }
   },
   {
     "path": "/pricing/",
     "markdown": "/pricing/index.md",
     "title": "Nyxis — Commercial Pricing",
-    "description": "Transparent Nyxis open-core pricing: free BSL production tier, Startup/Growth at $3,500/year, Enterprise Core at $15,000/year, and Principal custom quotes."
+    "description": "Transparent Nyxis open-core pricing: free BSL production tier, Startup/Growth at $3,500/year, Enterprise Core at $15,000/year, and Principal custom quotes for hyper-scale workloads.",
+    "canonical": "https://www.nyxis.io/pricing/",
+    "sitemap": { "priority": "0.8", "changefreq": "monthly" }
   },
   {
     "path": "/bench/",
     "markdown": "/bench/index.md",
     "title": "Benchmark — Nyxis NXS",
     "description": "Interactive NXS vs JSON vs CSV benchmark charts at 1k–10M records in the browser, with optional fixture upload.",
-    "interactive": true
+    "canonical": "https://www.nyxis.io/bench/",
+    "interactive": true,
+    "sitemap": { "priority": "0.7", "changefreq": "monthly" }
   },
   {
     "path": "/demo/",
     "markdown": "/demo/index.md",
     "title": "Demo — Nyxis NXS",
-    "description": "Live browser demos: NXS vs JSON and CSV benchmarks, ticker, workers, explorer, WAL, and report layout.",
-    "interactive": true
+    "description": "Live browser demos: NXS vs JSON and CSV benchmarks, ticker, workers, explorer, WAL, and report layout — with SharedArrayBuffer and worker handoffs.",
+    "canonical": "https://www.nyxis.io/demo/",
+    "interactive": true,
+    "sitemap": { "priority": "0.8", "changefreq": "monthly" }
   },
   {
     "path": "/demo/ticker",
     "markdown": "/demo/ticker.md",
     "title": "Ticker — Nyxis NXS",
     "description": "Side-by-side JSON stringify/parse vs in-place float64 patch on mapped .nxb — frame timing and drop rate under pressure.",
-    "interactive": true
+    "canonical": "https://www.nyxis.io/demo/ticker",
+    "interactive": true,
+    "sitemap": { "priority": "0.7", "changefreq": "monthly" }
   },
   {
     "path": "/demo/workers",
     "markdown": "/demo/workers.md",
     "title": "Workers — Nyxis NXS",
     "description": "Four Web Workers: JSON structured clone vs SharedArrayBuffer handoff for the same .nxb dataset.",
-    "interactive": true
+    "canonical": "https://www.nyxis.io/demo/workers",
+    "interactive": true,
+    "sitemap": { "priority": "0.7", "changefreq": "monthly" }
   },
   {
     "path": "/demo/explorer",
     "markdown": "/demo/explorer.md",
     "title": "Log explorer — Nyxis NXS",
-    "description": "Virtual scroll over millions of lines backed by mapped .nxb.",
-    "interactive": true
+    "description": "Virtual scroll over millions of rows in the browser. Live telemetry, JSON vs NXS comparison, zero-copy .nxb streaming.",
+    "canonical": "https://www.nyxis.io/demo/explorer",
+    "interactive": true,
+    "sitemap": { "priority": "0.7", "changefreq": "monthly" }
   },
   {
     "path": "/demo/report",
     "markdown": "/demo/report.md",
     "title": "Report layout — Nyxis NXS",
     "description": "CSV to row and columnar .nxb in the browser; chart from col_buffer.",
-    "interactive": true
+    "canonical": "https://www.nyxis.io/demo/report",
+    "interactive": true,
+    "sitemap": { "priority": "0.7", "changefreq": "monthly" }
   },
   {
     "path": "/demo/wal",
     "markdown": "/demo/wal.md",
     "title": "WAL / spans — Nyxis NXS",
     "description": "OTel-style span ingestion — append-only WAL vs JSON payloads.",
-    "interactive": true
+    "canonical": "https://www.nyxis.io/demo/wal",
+    "interactive": true,
+    "sitemap": { "priority": "0.7", "changefreq": "monthly" }
   }
 ]

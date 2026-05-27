@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "node scripts/generate-agent-skills-index.mjs && node scripts/generate-page-markdown.mjs && vite build && node scripts/prerender-static-html.mjs",
+    "build": "node scripts/generate-agent-skills-index.mjs && node scripts/generate-page-markdown.mjs && vite build && node scripts/prerender-vue-html.mjs",
     "typecheck": "vue-tsc -b --noEmit",
     "preview": "vite preview"
   },

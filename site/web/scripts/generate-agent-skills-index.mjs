@@ -7,8 +7,10 @@ import { createHash } from "node:crypto";
 import { readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 
+import { loadSiteConfig } from "./lib/page-html.mjs";
+
 const webRoot = resolve(import.meta.dirname, "..");
-const siteOrigin = "https://www.nyxis.io";
+const siteOrigin = loadSiteConfig(webRoot).origin;
 const skillsDir = join(webRoot, "public/.well-known/agent-skills");
 const outPath = join(skillsDir, "index.json");
 const indexMdPath = join(webRoot, "public/index.md");
