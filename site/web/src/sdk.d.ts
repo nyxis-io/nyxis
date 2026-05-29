@@ -40,5 +40,4 @@ declare module "/sdk/wasm.js" {
 declare module "@bench/bench-run.js" {
   export function runBenchmarks(opts: Record<string, unknown>): Promise<number>;
   export function parseCsv(str: string): unknown[];
-  [key: string]: unknown;
 }

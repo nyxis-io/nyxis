@@ -798,6 +798,7 @@
     min-height: 0;
     overflow-y: auto;
     overflow-x: hidden;
+    overflow-anchor: none;
     font-family: "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
     font-size: 12px;
     line-height: var(--row-height);

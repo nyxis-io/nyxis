@@ -28,8 +28,6 @@ function initDemo(){
   const STREAM_SEAL_BYTES = 200 * 1024 * 1024;
   /** Coalesce streamed IDB chunks so search does not walk tens of thousands of tiny entries. */
   const IDB_WRITE_COALESCE_BYTES = 4 * 1024 * 1024;
-  /** If the file fits, materialize IDB → one ArrayBuffer for in-memory search (fast path). */
-  const SEARCH_MATERIALIZE_MAX_BYTES = Math.floor(1.6 * 1024 * 1024 * 1024);
   const NXS_FOOTER_MAGIC = 0x2153584E; // NXS!
   const LOCAL_CACHE_DB_PREFIX = "nyxis-explorer-nxb-";
 
@@ -138,21 +136,6 @@ function initDemo(){
       async finalize() {
         await flushCoalesce();
       },
-      async getAllSorted() {
-        await flushCoalesce();
-        const tx = db.transaction("chunks", "readonly");
-        const all = await idbRequest(tx.objectStore("chunks").getAll());
-        all.sort((a, b) => a.start - b.start);
-        return all;
-      },
-      async materialize(fileSize) {
-        const chunks = await this.getAllSorted();
-        const out = new Uint8Array(fileSize);
-        for (const chunk of chunks) {
-          out.set(chunk.data, chunk.start);
-        }
-        return out;
-      },
       async readRange(start, len) {
         return new Promise((resolve, reject) => {
           const out = new Uint8Array(len);
@@ -227,8 +210,32 @@ function initDemo(){
     }
   }
 
-  async function openCachedNxbReader(cache, fileSize) {
-    const fetchRange = (byteStart, byteLength) => cache.readRange(byteStart, byteLength);
+  function sparseReaderOpenOptions(fileSize) {
+    const fileMb = fileSize / (1024 * 1024);
+    return {
+      hint: HINT_RANDOM,
+      coalesceGapPages: fileMb > 512 ? 32 : fileMb > 128 ? 16 : 4,
+      maxPages: fileMb > 512 ? 128 : 64,
+    };
+  }
+
+  function wrapFetchRangeCache(fetchRange, maxEntries = 48) {
+    const cache = new Map();
+    return async (byteStart, byteLength) => {
+      const key = `${byteStart}:${byteLength}`;
+      const hit = cache.get(key);
+      if (hit) return hit;
+      const data = await fetchRange(byteStart, byteLength);
+      if (cache.size >= maxEntries) {
+        const oldest = cache.keys().next().value;
+        cache.delete(oldest);
+      }
+      cache.set(key, data);
+      return data;
+    };
+  }
+
+  async function buildSparseNxbReader(fetchRange, fileSize, extraOptions = {}) {
     const probeLen = Math.min(4096, fileSize);
     const probe = await fetchRange(fileSize - probeLen, probeLen);
     const probeView = new DataView(probe.buffer, probe.byteOffset, probe.byteLength);
@@ -253,7 +260,14 @@ function initDemo(){
       [{ start: 0, data: header }, { start: tailPtr, data: tail }],
       fetchRange,
     );
-    return new NxsReader(sparse, { fetchRange, hint: HINT_RANDOM });
+    return new NxsReader(sparse, { fetchRange, ...sparseReaderOpenOptions(fileSize), ...extraOptions });
+  }
+
+  async function openCachedNxbReader(cache, fileSize) {
+    const fetchRange = wrapFetchRangeCache((byteStart, byteLength) =>
+      cache.readRange(byteStart, byteLength),
+    );
+    return buildSparseNxbReader(fetchRange, fileSize);
   }
   
   // ── State ─────────────────────────────────────────────────────────────────
@@ -262,6 +276,7 @@ function initDemo(){
   /** Evicted row marker in `recordOffsets` (buffer-relative offsets otherwise). */
   const OFFSET_EVICTED = 0xffffffff;
   let recordOffsets = null;   // per-record buffer-relative NYXO offsets during streaming (Uint32Array)
+  let compactFirstLive = 0;   // watermark: all indices < this are OFFSET_EVICTED (avoids O(N) scan)
   let recordFileOffsets = null; // per-record absolute file offsets for local-cache streaming
   let streamCacheBytes = null;  // SparseBytes over IndexedDB chunks while streaming
   let streamCacheAccessor = null; // minimal reader shape for NxsObject over streamCacheBytes
@@ -384,7 +399,32 @@ function initDemo(){
     return String(v);
   }
   
+  /**
+   * True while streaming without a local cache. Large fixture streams have an
+   * IndexedDB cache, so they can keep using absolute record indexes even after
+   * the in-memory stream buffer compacts.
+   */
+  function isStreamingWindow() {
+    return streamReader != null && recordOffsets != null && streamCacheAccessor == null;
+  }
+
+  function isCachedStreaming() {
+    return streamReader != null && streamCacheAccessor != null;
+  }
+
   function updateViewportMetrics(resetScroll) {
+    if (isStreamingWindow()) {
+      // During streaming: spacer represents the resident records only.
+      // compactFirstLive..recordCount-1 are the available records.
+      const residentCount = Math.max(0, recordCount - compactFirstLive);
+      const ideal = residentCount * ROW_HEIGHT;
+      virtualHeight = Math.min(ideal, MAX_VIRTUAL_PX);
+      scrollScale = 1; // always 1 during streaming — no scale needed
+      totalRowsVirtual = residentCount;
+      spacerEl.style.height = `${virtualHeight}px`;
+      if (resetScroll) scrollEl.scrollTop = 0;
+      return;
+    }
     const ideal = recordCount * ROW_HEIGHT;
     if (ideal <= MAX_VIRTUAL_PX) {
       virtualHeight = ideal;
@@ -395,21 +435,18 @@ function initDemo(){
     }
     totalRowsVirtual = Math.floor(virtualHeight / ROW_HEIGHT);
     spacerEl.style.height = `${virtualHeight}px`;
-    if (resetScroll && !streamReader) {
+    if (resetScroll) {
       scrollEl.scrollTop = 0;
     }
   }
 
-  /** Pin scroll to the newest in-memory records after layout (avoids clientHeight=0). */
+  /** Pin scroll to the last record (large-file tail-window mode only). */
   function scrollToResidentTail() {
-    invalidateResidentBoundsCache();
     const run = () => {
       if (!streamReader || recordCount <= 0) return;
-      const { last } = residentRecordBounds();
-      scrollEl.scrollTop = recordIdxToScrollTop(last);
-      lastScrollTop = -1;
+      scrollEl.scrollTop = recordIdxToScrollTop(recordCount - 1);
+      lastFirstVr = -1;
       lastRenderCompactGen = streamReader.compactGeneration ?? -1;
-      updateStatus(scrollEl.scrollTop);
       scheduleRender();
     };
     requestAnimationFrame(() => requestAnimationFrame(run));
@@ -427,7 +464,6 @@ function initDemo(){
     updateTelemetry();
     updateViewportMetrics(false);
     lastFirstVr = -1;
-    lastScrollTop = -1;
     lastRenderCompactGen = -1;
     ensureRowPool();
     scrollToResidentTail();
@@ -439,7 +475,11 @@ function initDemo(){
     currentMatches = null;
     currentMatchIdx = -1;
     lastFirstVr = -1;
-    lastScrollTop = -1;
+    lastStreamScrollTop = -1;
+    resetCachedStreamAnchor();
+    lastRenderHadMissingRows = false;
+    lastRenderRecordCount = 0;
+    _lastPoolTarget = -1;
     searchBadge.textContent = "";
     searchBadge.className = "badge";
     updateMatchesStatus();
@@ -452,32 +492,21 @@ function initDemo(){
     overlayEl.classList.add("hide");
 
     ensureRowPool();
-    if (streamReader && recordCount > 0) {
-      scrollToResidentTail();
-    } else {
-      updateStatus(0);
-      scheduleRender();
-    }
+    updateStatus(0);
+    scheduleRender();
   }
   
   function applyStreamingProgress(name, receivedBytes, totalBytes) {
     streamExpectedBytes = totalBytes || receivedBytes;
     if (recordCount > 0) {
-      invalidateResidentBoundsCache();
       updateViewportMetrics(false);
-      const maxScroll = maxScrollTop();
-      const { last } = residentRecordBounds();
-      const nearBottom = scrollEl.scrollTop >= maxScroll - ROW_HEIGHT * 3;
-      if (!streamCacheAccessor && (nearBottom || recordCount <= Math.ceil(scrollEl.clientHeight / ROW_HEIGHT))) {
-        scrollEl.scrollTop = recordIdxToScrollTop(last);
-        lastScrollTop = -1;
-      }
       if (virtualHeight > 0) overlayEl.classList.add("hide");
       ensureRowPool();
     }
     const total = totalBytes > 0 ? ` — ${fmtBytes(receivedBytes)} / ${fmtBytes(totalBytes)}` : receivedBytes > 0 ? ` — ${fmtBytes(receivedBytes)} received` : "";
     fileInfoEl.innerHTML =
       `<strong>${escapeHtml(name)}</strong> <span style="color:var(--warn)">(streaming)</span>${total} — ${fmtInt(recordCount)} records parsed`;
+    updateTelemetry();
     scheduleRender();
   }
   
@@ -548,7 +577,7 @@ function initDemo(){
     for (const row of rowPool) row.el.remove();
     rowPool.length = 0;
     lastFirstVr = -1;
-    lastScrollTop = -1;
+    _lastPoolTarget = -1;
     ensureRowPool();
   }
   
@@ -618,14 +647,17 @@ function initDemo(){
   // before bytes arrive. When parsed rows exceed MAX_VIRTUAL_PX, scrollScale>1
   // keeps consecutive rows in the viewport. Pool rows reuse DOM nodes.
   
-  function computePoolSize() {
-    const viewportRows = Math.ceil(scrollEl.clientHeight / ROW_HEIGHT);
-    // Window = visible + buffer on each side.
-    return viewportRows + BUFFER_ROWS * 2;
-  }
-  
+  // ── Virtual scroller ─────────────────────────────────────────────────────
+  // Simple absolute-position pool. Each row sits at idx * ROW_HEIGHT.
+  // scrollScale > 1 only when 10M+ records exceed MAX_VIRTUAL_PX: one virtual
+  // pixel row represents scrollScale real records, but the mapping is always
+  // scrollTop → firstVr → record, with no "window scroll" indirection.
+
+  let _lastPoolTarget = -1;
+
   function ensureRowPool() {
-    const target = computePoolSize();
+    const viewportRows = Math.ceil(scrollEl.clientHeight / ROW_HEIGHT);
+    const target = viewportRows + BUFFER_ROWS * 2;
     const colCount = Math.max(columns.length, 1);
     while (rowPool.length < target) {
       const el = document.createElement("div");
@@ -640,38 +672,21 @@ function initDemo(){
       spacerEl.appendChild(el);
       rowPool.push({ el, cells, renderedIndex: -1 });
     }
-    // If pool is larger than needed after a resize, hide the surplus.
-    for (let i = target; i < rowPool.length; i++) {
-      rowPool[i].el.style.display = "none";
+    if (target !== _lastPoolTarget) {
+      _lastPoolTarget = target;
+      for (let i = target; i < rowPool.length; i++) rowPool[i].el.style.display = "none";
+      for (let i = 0; i < target; i++) rowPool[i].el.style.display = "";
     }
-    for (let i = 0; i < target; i++) {
-      rowPool[i].el.style.display = "";
-    }
-  }
-  
-  function maxScrollTop() {
-    return Math.max(0, virtualHeight - scrollEl.clientHeight);
-  }
-
-  function useRecordWindowScroll() {
-    return scrollScale > 1.001 || (streamReader != null && recordCount > 0 && !streamCacheAccessor);
-  }
-
-  let residentBoundsCache = null;
-
-  function invalidateResidentBoundsCache() {
-    residentBoundsCache = null;
   }
 
   function onStreamBufferCompact(cut) {
     if (!recordOffsets) return;
-    for (let i = 0; i < recordCount; i++) {
+    for (let i = compactFirstLive; i < recordCount; i++) {
       const o = recordOffsets[i];
-      if (o === OFFSET_EVICTED) continue;
-      if (o < cut) recordOffsets[i] = OFFSET_EVICTED;
+      if (o === OFFSET_EVICTED) { compactFirstLive = i + 1; continue; }
+      if (o < cut) { recordOffsets[i] = OFFSET_EVICTED; compactFirstLive = i + 1; }
       else recordOffsets[i] = o - cut;
     }
-    invalidateResidentBoundsCache();
   }
 
   function ensureStreamCacheAccessor(totalBytes) {
@@ -688,15 +703,9 @@ function initDemo(){
   }
 
   function rdU32At(bytes, off) {
-    return (
-      bytes[off] |
-      (bytes[off + 1] << 8) |
-      (bytes[off + 2] << 16) |
-      (bytes[off + 3] << 24)
-    ) >>> 0;
+    return (bytes[off] | (bytes[off+1]<<8) | (bytes[off+2]<<16) | (bytes[off+3]<<24)) >>> 0;
   }
 
-  /** Absolute file offset for record idx, or null if not yet parsed / unset. */
   function recordFileOffsetFor(idx) {
     if (!recordFileOffsets || idx < 0 || idx >= recordCount) return null;
     const off = recordFileOffsets[idx];
@@ -705,11 +714,7 @@ function initDemo(){
   }
 
   function objectMagicOk(bytes, off) {
-    try {
-      return rdU32At(bytes, off) === NYXO_MAGIC;
-    } catch {
-      return false;
-    }
+    try { return rdU32At(bytes, off) === NYXO_MAGIC; } catch { return false; }
   }
 
   function streamCacheRecordReady(idx) {
@@ -723,19 +728,31 @@ function initDemo(){
     if (!streamCacheBytes || !localNxbCache || !recordFileOffsets) return;
     const first = Math.max(0, Math.min(firstIdx, lastIdx));
     const last = Math.min(recordCount - 1, Math.max(firstIdx, lastIdx));
+    let firstMissing = -1;
+    let lastMissing = -1;
     for (let idx = first; idx <= last; idx++) {
       if (streamBufferOffset(idx) !== null) continue;
-      const off = recordFileOffsetFor(idx);
-      if (off == null) continue;
-      try {
-        const header = await localNxbCache.readRange(off, 8);
-        const len = header[4] | (header[5] << 8) | (header[6] << 16) | (header[7] << 24);
-        if (len < 8) continue;
-        streamCacheBytes.fillRange(off, await localNxbCache.readRange(off, len));
-      } catch {
-        // The row may be parsed before its chunk write transaction is visible; try again next frame.
-      }
+      if (streamCacheRecordReady(idx)) continue;
+      if (recordFileOffsetFor(idx) == null) continue;
+      if (firstMissing < 0) firstMissing = idx;
+      lastMissing = idx;
     }
+    if (firstMissing < 0) return;
+
+    const start = recordFileOffsetFor(firstMissing);
+    if (start == null) return;
+    try {
+      let end = lastMissing + 1 < recordCount ? recordFileOffsetFor(lastMissing + 1) : null;
+      if (end == null || end <= start) {
+        const lastStart = recordFileOffsetFor(lastMissing);
+        if (lastStart == null) return;
+        const header = await localNxbCache.readRange(lastStart, 8);
+        const len = header[4] | (header[5]<<8) | (header[6]<<16) | (header[7]<<24);
+        if (len < 8) return;
+        end = lastStart + len;
+      }
+      streamCacheBytes.fillRange(start, await localNxbCache.readRange(start, end - start));
+    } catch { /* retry next frame */ }
   }
 
   function streamBufferOffset(idx) {
@@ -748,111 +765,61 @@ function initDemo(){
     return o;
   }
 
-  /** First record index whose bytes are still in the stream reader window. */
-  function firstResidentRecordIndex() {
-    if (!streamReader || !recordOffsets || recordCount <= 0) return 0;
-    if (recordOffsets[0] !== OFFSET_EVICTED) return 0;
-    let lo = 0;
-    let hi = recordCount - 1;
-    while (lo < hi) {
-      const mid = (lo + hi) >> 1;
-      if (recordOffsets[mid] === OFFSET_EVICTED) lo = mid + 1;
-      else hi = mid;
-    }
-    return recordOffsets[lo] === OFFSET_EVICTED ? Math.max(0, recordCount - 1) : lo;
-  }
-
-  /** Last record index whose NYXO bytes are still in the stream window. */
-  function lastResidentRecordIndex() {
-    if (!streamReader || !recordOffsets || recordCount <= 0) return Math.max(0, recordCount - 1);
-    if (recordOffsets[recordCount - 1] !== OFFSET_EVICTED) return recordCount - 1;
-    let lo = firstResidentRecordIndex();
-    let hi = recordCount - 1;
-    while (lo < hi) {
-      const mid = (lo + hi + 1) >> 1;
-      if (recordOffsets[mid] !== OFFSET_EVICTED) lo = mid;
-      else hi = mid - 1;
-    }
-    return lo;
-  }
-
-  function residentRecordBounds() {
-    if (streamCacheAccessor && recordCount > 0) {
-      return { first: 0, last: recordCount - 1 };
-    }
-    if (!streamReader || !recordOffsets || recordCount <= 0) {
-      return { first: 0, last: Math.max(0, recordCount - 1) };
-    }
-    const gen = streamReader.compactGeneration;
-    const len = streamReader.bytes.length;
-    const base = streamReader.earliestRetainedOffset;
-    if (
-      residentBoundsCache &&
-      residentBoundsCache.gen === gen &&
-      residentBoundsCache.base === base &&
-      residentBoundsCache.len === len &&
-      residentBoundsCache.count === recordCount
-    ) {
-      return residentBoundsCache;
-    }
-    const first = firstResidentRecordIndex();
-    const last = lastResidentRecordIndex();
-    residentBoundsCache = { gen, base, len, count: recordCount, first, last };
-    return residentBoundsCache;
-  }
-
-  /** First record aligned with the top visible row when scroll height is capped (10M+). */
-  function firstRecordForScroll(scrollTop) {
-    const maxScroll = maxScrollTop();
-    const visibleRows = Math.max(1, Math.ceil(scrollEl.clientHeight / ROW_HEIGHT));
-    const { first: residentFirst, last } = residentRecordBounds();
-    const maxFirst = Math.max(residentFirst, last - visibleRows + 1);
-    if (maxScroll <= 0 || recordCount <= 0) return residentFirst;
-    if (maxFirst <= residentFirst) return residentFirst;
-    const ratio = Math.min(1, Math.max(0, scrollTop / maxScroll));
-    return Math.min(maxFirst, residentFirst + Math.floor(ratio * (maxFirst - residentFirst)));
-  }
-
-  /** Record index for pool slot i (consecutive window when scroll is compressed). */
-  function recordIndexForPoolSlot(scrollTop, poolOffset) {
-    const { first, last } = residentRecordBounds();
-    if (!useRecordWindowScroll()) {
-      const vr = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - BUFFER_ROWS) + poolOffset;
-      return Math.min(last, first + Math.floor(vr * scrollScale));
-    }
-    const rowFirst = firstRecordForScroll(scrollTop);
-    return Math.min(last, Math.max(first, rowFirst + (poolOffset - BUFFER_ROWS)));
-  }
-
-  /** Spacer Y for pool slot i — must match record mapping when scroll is compressed. */
-  function virtualTopForPoolSlot(scrollTop, poolOffset) {
-    if (!useRecordWindowScroll()) {
-      const firstVr = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - BUFFER_ROWS);
-      return (firstVr + poolOffset) * ROW_HEIGHT;
-    }
-    return scrollTop + (poolOffset - BUFFER_ROWS) * ROW_HEIGHT;
-  }
-
-  // Inverse: record index -> scroll position.
+  // record index → scroll position (used by search jump)
   function recordIdxToScrollTop(idx) {
-    const { first: residentFirst, last } = residentRecordBounds();
-    const clamped = Math.min(last, Math.max(residentFirst, idx));
-    if (!useRecordWindowScroll()) {
-      return Math.floor((clamped - residentFirst) / scrollScale) * ROW_HEIGHT;
+    const clamped = Math.max(0, Math.min(idx, recordCount - 1));
+    if (isStreamingWindow()) {
+      // Spacer represents the resident window; offset within it = idx - compactFirstLive
+      return Math.max(0, clamped - compactFirstLive) * ROW_HEIGHT;
     }
-    const maxScroll = maxScrollTop();
-    const visibleRows = Math.max(1, Math.ceil(scrollEl.clientHeight / ROW_HEIGHT));
-    const maxFirst = Math.max(residentFirst, last - visibleRows + 1);
-    if (maxScroll <= 0) return 0;
-    if (maxFirst <= residentFirst) return maxScroll;
-    return Math.floor(((clamped - residentFirst) / (maxFirst - residentFirst)) * maxScroll);
+    return Math.floor(clamped / scrollScale) * ROW_HEIGHT;
   }
-  
+
+  function firstRecordForVirtualRow(vr, rows = 1) {
+    const maxFirst = Math.max(0, recordCount - Math.max(1, rows));
+    return Math.min(maxFirst, Math.max(0, Math.floor(vr * scrollScale)));
+  }
+
+  function firstRecordForScrollTop(scrollTop, rows = 1) {
+    const maxFirst = Math.max(0, recordCount - Math.max(1, rows));
+    if (scrollScale <= 1 || maxFirst === 0) {
+      return firstRecordForVirtualRow(Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - BUFFER_ROWS), rows);
+    }
+    const maxScrollTop = Math.max(0, virtualHeight - scrollEl.clientHeight);
+    const ratio = maxScrollTop > 0 ? Math.max(0, Math.min(1, scrollTop / maxScrollTop)) : 0;
+    return Math.min(maxFirst, Math.round(ratio * maxFirst));
+  }
+
+  function resetCachedStreamAnchor() {
+    cachedStreamScrollTop = -1;
+    cachedStreamFirstRecord = -1;
+  }
+
+  function firstRecordForViewport(firstVr, rows, scrollTop) {
+    if (rows <= 0) return 0;
+    if (!isCachedStreaming()) return firstRecordForScrollTop(scrollTop, rows);
+
+    const maxFirst = Math.max(0, recordCount - Math.max(1, rows));
+    if (cachedStreamScrollTop === scrollTop && cachedStreamFirstRecord >= 0) {
+      return Math.min(maxFirst, cachedStreamFirstRecord);
+    }
+
+    const firstRecord = firstRecordForScrollTop(scrollTop, rows);
+    cachedStreamScrollTop = scrollTop;
+    cachedStreamFirstRecord = firstRecord;
+    return firstRecord;
+  }
+
   // Track the currently-rendered window (fast-path skip).
   let lastFirstVr = -1;
-  let lastScrollTop = -1;
+  let lastStreamScrollTop = -1;   // last scrollTop used in streaming-window mode
+  let cachedStreamScrollTop = -1;
+  let cachedStreamFirstRecord = -1;
   let lastWindowSize = 0;
   let lastRenderCompactGen = -1;
+  let lastRenderHadMissingRows = false;
+  let lastRenderRecordCount = 0;
+  let lastViewportPrefetch = null;
   let frameAvgMs = 0;
   let lastOpenMs = null;
   let lastFilterMs = null;
@@ -860,6 +827,7 @@ function initDemo(){
   let activeFormat = "—";
   let lastFixtureBase = null; // e.g. records_1000000 for comparison
   let streamExpectedBytes = 0; // Content-Length hint while streaming (0 = unknown)
+  let streamReceivedBytes = 0;
   const matchesSet = new Set();  // O(1) lookup of record idx -> is-a-match
 
   function heapMb() {
@@ -887,8 +855,17 @@ function initDemo(){
   
   let rafPending = false;
   let renderInFlight = false;
-  function scheduleRender() {
+  let lastStreamRenderMs = 0;
+  /** Cap render work while bytes are still streaming (IDB prefetch is deferred until done). */
+  const STREAM_RENDER_MIN_MS = 120;
+
+  function scheduleRender(force = false) {
     if (rafPending) return;
+    if (!force && streamReader && !reader) {
+      const now = performance.now();
+      if (now - lastStreamRenderMs < STREAM_RENDER_MIN_MS) return;
+      lastStreamRenderMs = now;
+    }
     rafPending = true;
     requestAnimationFrame(() => { void render(); });
   }
@@ -904,97 +881,133 @@ function initDemo(){
       ensureRowPool();
       const t0 = performance.now();
       const scrollTop = scrollEl.scrollTop;
+
+      // During streaming, keep spacer height current every frame.
+      if (isStreamingWindow() && recordCount > 0) updateViewportMetrics(false);
+
+      const poolSize = rowPool.length;
+      const compactGen = streamReader?.compactGeneration ?? 0;
+      const compactChanged = compactGen !== lastRenderCompactGen;
+      const countChanged = recordCount !== lastRenderRecordCount;
+
+      if (isStreamingWindow()) {
+        // ── Streaming window mode ──────────────────────────────────────────
+        // Spacer height = resident records only. scrollTop 0 → compactFirstLive.
+        // Row i is at scrollTop + (i - BUFFER_ROWS) * ROW_HEIGHT (sticky to viewport).
+        const residentCount = Math.max(0, recordCount - compactFirstLive);
+        const firstResidentOffset = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - BUFFER_ROWS);
+        const activeRows = Math.min(poolSize, residentCount > 0 ? residentCount : 0);
+
+        // Fast path.
+        if (!compactChanged && !countChanged && !lastRenderHadMissingRows
+            && scrollTop === lastStreamScrollTop && lastWindowSize === activeRows) {
+          return;
+        }
+        if (compactChanged) lastRenderCompactGen = compactGen;
+        lastStreamScrollTop = scrollTop;
+        lastWindowSize = activeRows;
+        lastRenderRecordCount = recordCount;
+
+        let hadMissing = false;
+        for (let i = 0; i < poolSize; i++) {
+          if (renderGen !== loadGeneration) return;
+          const row = rowPool[i];
+          if (!row?.el) continue;
+          const rowOffset = firstResidentOffset + i; // offset within resident window
+          if (rowOffset < 0 || rowOffset >= residentCount) {
+            if (row.renderedIndex !== -1) { row.el.style.display = "none"; row.renderedIndex = -1; }
+            continue;
+          }
+          const idx = compactFirstLive + rowOffset;
+          if (idx >= recordCount) {
+            if (row.renderedIndex !== -1) { row.el.style.display = "none"; row.renderedIndex = -1; }
+            continue;
+          }
+          // Position row: stick to viewport offset within the spacer.
+          const virtualTop = rowOffset * ROW_HEIGHT;
+          row.el.style.transform = `translateY(${virtualTop}px)`;
+          if (!renderRow(row, idx)) {
+            row.el.style.display = "none";
+            row.renderedIndex = -1;
+            hadMissing = true;
+          } else {
+            row.el.style.display = "";
+            row.renderedIndex = idx;
+          }
+        }
+        lastRenderHadMissingRows = hadMissing;
+        if (hadMissing) scheduleRender(true);
+
+        const elapsed = performance.now() - t0;
+        frameAvgMs = frameAvgMs * 0.8 + elapsed * 0.2;
+        updateStatus(scrollTop);
+        return;
+      }
+
+      // ── Normal (post-stream / sealed) mode ────────────────────────────────
       const firstVr = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - BUFFER_ROWS);
-      const poolSize = rowPool.length; // after ensureRowPool
       const maxVr = totalRowsVirtual - 1;
       const lastVr = Math.min(maxVr, firstVr + poolSize - 1);
       const activeRows = firstVr > maxVr ? 0 : lastVr - firstVr + 1;
-      const windowScroll = useRecordWindowScroll();
-      const compactGen = streamReader?.compactGeneration ?? 0;
-      const compactChanged = compactGen !== lastRenderCompactGen;
+      const firstRecord = activeRows > 0 ? firstRecordForViewport(firstVr, activeRows, scrollTop) : 0;
 
-      // Fast path: nothing changed.
-      if (windowScroll) {
-        if (!compactChanged && scrollTop === lastScrollTop && lastWindowSize === activeRows) {
-          return;
-        }
-        lastScrollTop = scrollTop;
-        lastRenderCompactGen = compactGen;
-      } else if (!compactChanged && firstVr === lastFirstVr && lastWindowSize === activeRows) {
+      // Fast path: skip re-render if nothing changed.
+      if (!countChanged && !lastRenderHadMissingRows && firstVr === lastFirstVr && lastWindowSize === activeRows) {
         return;
       }
-      if (compactChanged) lastRenderCompactGen = compactGen;
       lastFirstVr = firstVr;
       lastWindowSize = activeRows;
+      lastRenderRecordCount = recordCount;
 
-      if (reader?._sparse && recordCount > 0 && activeRows > 0) {
-        const firstIdx = windowScroll
-          ? recordIndexForPoolSlot(scrollTop, 0)
-          : Math.min(recordCount - 1, Math.floor(firstVr * scrollScale));
-        const lastIdx = windowScroll
-          ? recordIndexForPoolSlot(scrollTop, Math.max(0, poolSize - 1))
-          : Math.min(recordCount - 1, Math.floor((firstVr + Math.max(0, poolSize - 1)) * scrollScale));
-        await reader.prefetch_viewport(
-          Math.max(0, Math.min(firstIdx, lastIdx)),
-          Math.max(0, Math.max(firstIdx, lastIdx)),
-        );
+      // Prefetch sparse reader pages for the visible range.
+      if (reader?._sparse && !reader._prefetchFree && recordCount > 0 && activeRows > 0) {
+        const lo = firstRecord;
+        const hi = Math.min(recordCount - 1, firstRecord + activeRows - 1);
+        const prefetchKey = `${lo}:${hi}`;
+        if (lastViewportPrefetch !== prefetchKey) {
+          lastViewportPrefetch = prefetchKey;
+          await reader.prefetch_viewport(lo, hi);
+          if (renderGen !== loadGeneration || (!reader && !streamReader)) return;
+        }
       }
 
+      // IDB row hydration for large cached streams. This keeps scroll position
+      // 0 anchored to the first rows while the live stream buffer compacts.
       if (streamCacheAccessor && recordCount > 0 && activeRows > 0) {
-        const firstIdx = windowScroll
-          ? recordIndexForPoolSlot(scrollTop, 0)
-          : Math.min(recordCount - 1, Math.floor(firstVr * scrollScale));
-        const lastIdx = windowScroll
-          ? recordIndexForPoolSlot(scrollTop, Math.max(0, poolSize - 1))
-          : Math.min(recordCount - 1, Math.floor((firstVr + Math.max(0, poolSize - 1)) * scrollScale));
-        await prefetchStreamCacheRows(firstIdx, lastIdx);
+        const lo = firstRecord;
+        const hi = Math.min(recordCount - 1, firstRecord + activeRows - 1);
+        await prefetchStreamCacheRows(lo, hi);
+        if (renderGen !== loadGeneration || (!reader && !streamReader)) return;
       }
 
+      let hadMissing = false;
       for (let i = 0; i < poolSize; i++) {
-        if (renderGen !== loadGeneration) return;
+        if (renderGen !== loadGeneration || (!reader && !streamReader && jsonRecords === null)) return;
         const row = rowPool[i];
         if (!row?.el) continue;
-        const virtualTop = virtualTopForPoolSlot(scrollTop, i);
-        if (!windowScroll) {
-          const vr = firstVr + i;
-          if (vr < 0 || vr > maxVr) {
-            if (row.renderedIndex !== -1) {
-              row.el.style.display = "none";
-              row.renderedIndex = -1;
-            }
-            continue;
-          }
-        } else {
-          const viewEnd = scrollTop + scrollEl.clientHeight;
-          if (virtualTop + ROW_HEIGHT <= scrollTop || virtualTop >= viewEnd) {
-            row.el.style.display = "none";
-            row.renderedIndex = -1;
-            continue;
-          }
+        const vr = firstVr + i;
+        if (vr < 0 || vr > maxVr) {
+          if (row.renderedIndex !== -1) { row.el.style.display = "none"; row.renderedIndex = -1; }
+          continue;
         }
-        if (recordCount <= 0) {
+        const idx = firstRecord + i;
+        if (idx < 0 || idx >= recordCount) {
+          if (row.renderedIndex !== -1) { row.el.style.display = "none"; row.renderedIndex = -1; }
+          continue;
+        }
+        const virtualTop = vr * ROW_HEIGHT;
+        row.el.style.transform = `translateY(${virtualTop}px)`;
+        if (!renderRow(row, idx)) {
           row.el.style.display = "none";
           row.renderedIndex = -1;
-          continue;
-        }
-        const idx = windowScroll
-          ? recordIndexForPoolSlot(scrollTop, i)
-          : Math.min(recordCount - 1, Math.floor((firstVr + i) * scrollScale));
-        if (streamReader && idx >= recordCount) {
+          hadMissing = true;
+        } else {
           row.el.style.display = "";
-          row.renderedIndex = -1;
-          row.el.style.transform = `translateY(${virtualTop}px)`;
-          for (let c = 0; c < row.cells.length; c++) {
-            row.cells[c].textContent = "";
-            row.cells[c].className = "col-cell";
-          }
-          continue;
+          row.renderedIndex = idx;
         }
-        row.el.style.display = "";
-        row.renderedIndex = idx;
-        row.el.style.transform = `translateY(${virtualTop}px)`;
-        renderRow(row, idx);
       }
+      lastRenderHadMissingRows = hadMissing;
+      if (hadMissing) scheduleRender(true);
 
       const elapsed = performance.now() - t0;
       frameAvgMs = frameAvgMs * 0.8 + elapsed * 0.2;
@@ -1028,12 +1041,10 @@ function initDemo(){
         } else if (streamCacheRecordReady(idx)) {
           accessor = new NxsObject(streamCacheAccessor, recordFileOffsetFor(idx));
         } else {
-          for (let c = 0; c < ncols; c++) {
-            row.cells[c].textContent = "";
-            row.cells[c].className = "col-cell";
-          }
-          return;
+          return false; // record not yet resident — caller hides the row
         }
+      } else if (!cursor) {
+        return false;
       } else {
         cursor.seek(idx);
         accessor = cursor;
@@ -1053,11 +1064,7 @@ function initDemo(){
           msg.includes("ERR_BAD_MAGIC") ||
           msg.includes("ERR_INCOMPLETE")
         ) {
-          for (let c = 0; c < ncols; c++) {
-            row.cells[c].textContent = "";
-            row.cells[c].className = "col-cell";
-          }
-          return;
+          return false;
         }
         throw e;
       }
@@ -1070,23 +1077,21 @@ function initDemo(){
         ? "row current-match" : "row match";
     }
     if (row.el.className !== cls) row.el.className = cls;
+    return true;
   }
   
   function updateStatus(scrollTop) {
-    const viewportRows = Math.ceil(scrollEl.clientHeight / ROW_HEIGHT);
     let centerIdx = 0;
     if (recordCount > 0) {
-      if (useRecordWindowScroll()) {
-        const first = firstRecordForScroll(scrollTop);
-        centerIdx = Math.min(
-          recordCount - 1,
-          first + Math.floor(viewportRows / 2),
-        );
-      } else {
+      const viewportRows = Math.ceil(scrollEl.clientHeight / ROW_HEIGHT);
+      if (isStreamingWindow()) {
+        const topOffset = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT));
+        const centerOffset = topOffset + (viewportRows >> 1);
+        centerIdx = Math.min(recordCount - 1, compactFirstLive + centerOffset);
+      } else if (totalRowsVirtual > 0) {
         const topVr = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT));
-        const centerVr =
-          totalRowsVirtual <= 0 ? 0 : Math.min(totalRowsVirtual - 1, topVr + (viewportRows >> 1));
-        centerIdx = Math.min(recordCount - 1, Math.floor(centerVr * scrollScale));
+        const firstRecord = firstRecordForViewport(topVr, viewportRows, scrollTop);
+        centerIdx = Math.min(recordCount - 1, firstRecord + (viewportRows >> 1));
       }
     }
     const totalLabel = streamReader
@@ -1149,22 +1154,37 @@ function initDemo(){
     streamCacheAccessor = null;
     rawBuffer = null;
     recordCount = 0;
+    compactFirstLive = 0;
     virtualHeight = 0;
     rowsStreamedPeak = 0;
     streamExpectedBytes = sizeBytes || 0;
+    streamReceivedBytes = 0;
+    activeFormat = "NXB (streaming)";
     lastOpenMs = null;
+    lastViewportPrefetch = null;
+    lastFirstVr = -1;
+    lastStreamScrollTop = -1;
+    resetCachedStreamAnchor();
+    lastRenderRecordCount = 0;
+    lastRenderHadMissingRows = false;
+    lastRenderCompactGen = -1;
     clearColumns();
     teardownExplorerWorker();
-  
+
     overlayEl.classList.remove("hide");
     overlayEl.textContent = `Loading ${name}…`;
-  
+
     const willSealAfterDownload =
       (sizeBytes > 0 && sizeBytes <= STREAM_SEAL_BYTES) ||
       (sizeBytes === 0 && fixtureSizeHint(name, 0) > 0 && fixtureSizeHint(name, 0) <= STREAM_SEAL_BYTES);
     const shouldCacheLocally = !willSealAfterDownload;
     const writeCache = shouldCacheLocally ? await openLocalNxbCache(name) : null;
     localNxbCache = writeCache;
+
+    // Pre-allocate offset arrays using the size hint to avoid repeated doubling copies
+    // at large record counts (10M → 80MB of copies with the doubling strategy).
+    const sizeHint = fixtureSizeHint(name, sizeBytes);
+    const estimatedRecords = sizeHint > 0 ? Math.ceil(sizeHint / 130) + 1024 : 4096;
 
     let sr;
     try {
@@ -1178,29 +1198,33 @@ function initDemo(){
         },
         onRecord(obj, idx) {
           if (gen !== loadGeneration) return;
-          if (!recordOffsets) recordOffsets = new Uint32Array(4096);
+          if (!recordOffsets) recordOffsets = new Uint32Array(estimatedRecords);
           if (idx >= recordOffsets.length) {
-            const grown = new Uint32Array(recordOffsets.length * 2);
+            const grown = new Uint32Array(Math.max(recordOffsets.length * 2, idx + 1));
             grown.set(recordOffsets);
             recordOffsets = grown;
           }
-          if (shouldCacheLocally && !recordFileOffsets) recordFileOffsets = new Uint32Array(4096);
+          if (shouldCacheLocally && !recordFileOffsets) recordFileOffsets = new Uint32Array(estimatedRecords);
           if (recordFileOffsets && idx >= recordFileOffsets.length) {
-            const grown = new Uint32Array(recordFileOffsets.length * 2);
+            const grown = new Uint32Array(Math.max(recordFileOffsets.length * 2, idx + 1));
             grown.set(recordFileOffsets);
             recordFileOffsets = grown;
           }
           if (recordFileOffsets) recordFileOffsets[idx] = sr.fileOffsetOf(obj.offset);
           recordOffsets[idx] = obj.offset;
           recordCount = idx + 1;
-          invalidateResidentBoundsCache();
           rowsStreamedPeak = Math.max(rowsStreamedPeak, recordCount);
-          if (idx === 0) lastOpenMs = performance.now() - tOpen;
-          if (idx === 0 || (idx & 0xffff) === 0) {
-            applyStreamingProgress(name, 0, sizeBytes);
+          if (idx === 0) {
+            lastOpenMs = performance.now() - tOpen;
+            updateViewportMetrics(false);
+            if (virtualHeight > 0) overlayEl.classList.add("hide");
+            ensureRowPool();
+            scheduleRender(true); // force past STREAM_RENDER_MIN_MS throttle
+          }
+          const updateFreq = estimatedRecords > 5_000_000 ? 0xfffff : 0xffff;
+          if (idx === 0 || (idx & updateFreq) === 0) {
+            applyStreamingProgress(name, streamReceivedBytes, sizeBytes);
             updateTelemetry();
-          } else if ((idx & 0x3ff) === 0) {
-            scheduleRender();
           }
         },
         onError(err) {
@@ -1221,6 +1245,7 @@ function initDemo(){
         if (value && value.byteLength > 0) {
           const chunkStart = received;
           received += value.byteLength;
+          streamReceivedBytes = received;
           if (writeCache) await writeCache.write(chunkStart, value);
           if (!willSealAfterDownload && received > STREAM_SEAL_BYTES) {
             sr.compactionEnabled = true;
@@ -1228,10 +1253,10 @@ function initDemo(){
           sr.push(value);
         }
         if (done) break;
-        if ((received & 0x3fffff) < value.byteLength || recordCount === 1) {
+        if ((received & 0xfffff) < value.byteLength || recordCount === 1) {
           overlayEl.textContent =
             `Loading ${name}… ${fmtBytes(received)}${sizeBytes ? ` / ${fmtBytes(sizeBytes)}` : ""} — ${fmtInt(recordCount)} records`;
-          if (recordCount > 0 && ((recordCount & 0xffff) === 0 || recordCount === 1)) {
+          if (recordCount > 0) {
             applyStreamingProgress(name, received, sizeBytes);
           }
         }
@@ -1251,29 +1276,18 @@ function initDemo(){
         bindRawBufferFromReader();
         attachWorkerForNxb();
       } else {
-        // Large file: keep stream buffer + offset table (no HTTP range, no second fetch).
+        // Large file: keep bytes in IndexedDB and use sparse reads (no full-file RAM copy).
         if (writeCache) {
           await writeCache.finalize();
-          let materialized = false;
-          if (totalBytes > 0 && totalBytes <= SEARCH_MATERIALIZE_MAX_BYTES) {
-            try {
-              overlayEl.textContent = `Materializing ${name} for fast search…`;
-              const bytes = await writeCache.materialize(totalBytes);
-              if (gen !== loadGeneration) return;
-              reader = new NxsReader(bytes);
-              cursor = reader.cursor();
-              bindRawBufferFromReader();
-              materialized = true;
-              activeFormat = "NXB (memory)";
-            } catch (e) {
-              console.warn("Explorer: in-memory search materialize failed, using sparse cache", e);
-            }
-          }
-          if (!materialized) {
-            reader = await openCachedNxbReader(writeCache, totalBytes);
-            cursor = reader.cursor();
-            rawBuffer = null;
-          }
+          lastViewportPrefetch = null;
+          overlayEl.classList.remove("hide");
+          overlayEl.textContent = `Loading ${name} from cache…`;
+          reader = await openCachedNxbReader(writeCache, totalBytes);
+          if (gen !== loadGeneration) return;
+          activeFormat = "NXB (sparse IDB)";
+          cursor = reader.cursor();
+          rawBuffer = null;
+          // Swap off streaming state only after reader + cursor are ready (avoids render races).
           streamReader = null;
           recordOffsets = null;
           recordFileOffsets = null;
@@ -1292,11 +1306,13 @@ function initDemo(){
         activeFormat = "NXB (streamed)";
         applyViewportLayout(name, totalBytes, null);
       } else if (reader) {
-        activeFormat = "NXB (local cache)";
-        applyViewportLayout(name, totalBytes, "local cache");
+        applyViewportLayout(
+          name,
+          totalBytes,
+          "sparse IDB",
+        );
       } else {
         sr.endOfStream();
-        invalidateResidentBoundsCache();
         endLargeStreamView(name, totalBytes);
       }
     } catch (e) {
@@ -1334,6 +1350,7 @@ function initDemo(){
     const tOpen = performance.now();
     const gen = ++loadGeneration;
     await closeLocalNxbCache();
+    lastViewportPrefetch = null;
     jsonRecords = null;
     streamReader = null;
     recordOffsets = null;
@@ -1536,8 +1553,7 @@ function initDemo(){
           for (let i = 0; i < matches.length; i++) results.push(matches[i]);
         }
       } else if (streamReader && recordOffsets) {
-        const { first, last } = residentRecordBounds();
-        for (let i = first; i <= last; i++) {
+        for (let i = 0; i < recordCount; i++) {
           const rel = streamBufferOffset(i);
           if (rel === null) continue;
           let accessor;
@@ -1566,7 +1582,7 @@ function initDemo(){
       if (results.length) jumpToRecord(results[0]);
       updateMatchesStatus();
       lastFirstVr = -1;
-      lastScrollTop = -1;
+      lastFirstVr = -1;
       scheduleRender();
     });
   }
@@ -1650,7 +1666,7 @@ function initDemo(){
     jumpToRecord(currentMatches[currentMatchIdx]);
     updateMatchesStatus();
     lastFirstVr = -1;
-    lastScrollTop = -1;
+    lastFirstVr = -1;
     scheduleRender();
   }
 
@@ -1658,26 +1674,22 @@ function initDemo(){
   function jumpToRecord(idx) {
     const clamped = Math.max(0, Math.min(recordCount - 1, idx));
     const viewportRows = Math.ceil(scrollEl.clientHeight / ROW_HEIGHT);
-    if (useRecordWindowScroll()) {
-      const visibleRows = Math.max(1, viewportRows);
-      const maxFirst = Math.max(0, recordCount - visibleRows);
-      const wantFirst = Math.min(maxFirst, Math.max(0, clamped - (viewportRows >> 1)));
-      scrollEl.scrollTop = recordIdxToScrollTop(wantFirst);
-    } else {
-      const target = recordIdxToScrollTop(clamped) - (viewportRows >> 1) * ROW_HEIGHT;
-      scrollEl.scrollTop = Math.max(0, target);
-    }
-    lastScrollTop = -1;
+    const target = recordIdxToScrollTop(clamped) - (viewportRows >> 1) * ROW_HEIGHT;
+    scrollEl.scrollTop = Math.max(0, target);
     lastFirstVr = -1;
+    resetCachedStreamAnchor();
     scheduleRender();
   }
   
   // ── Event wiring ─────────────────────────────────────────────────────────
-  scrollEl.addEventListener("scroll", scheduleRender, { passive: true });
+  scrollEl.addEventListener("scroll", () => {
+    resetCachedStreamAnchor();
+    scheduleRender();
+  }, { passive: true });
   window.addEventListener("resize", () => {
     ensureRowPool();
     lastFirstVr = -1;
-    lastScrollTop = -1;
+    resetCachedStreamAnchor();
     scheduleRender();
   });
   
