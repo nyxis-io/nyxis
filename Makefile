@@ -305,6 +305,7 @@ conformance-generate:
 
 conformance-run-js:
 	node conformance/run_js.js conformance/
+	node conformance/run_js.js conformance/v13/
 
 conformance-run-py:
 	python3 conformance/run_py.py conformance/
