@@ -15,6 +15,7 @@ Nyxis (`nxs`) is a zero-copy, bi-modal serialization format: human-readable `.nx
 Ground truth:
 
 - `SPEC.md` is the wire-format contract.
+- `NXS_v1.3.md` is the compact-encoding design doc (release train, driver tiers, measured numbers).
 - `COMMERCIAL.md` defines licensing boundaries.
 - `rust/src/query.rs` contains the zero-copy Reader API used by extensions.
 - `docs/index/_root.md` is the LOI navigation index for task-oriented code lookup. Some language-driver entries are stale because those implementations now live in `../nyxis-drivers`.
