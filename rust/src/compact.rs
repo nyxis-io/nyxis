@@ -455,6 +455,7 @@ pub fn build_delta_tail_index(
         }
         deltas.push(delta as u32);
     }
+    // v1 reference compiler emits single-KeyID delta tails only; multi-key table (§12.4) is decode follow-up.
     let single_key = true;
     let header_len = 4 + 4 + 2 + 2 + 8 * anchor_count;
     let deltas_len = n * 4;
@@ -486,7 +487,8 @@ pub fn build_delta_tail_index(
 }
 
 pub fn parse_delta_tail_layout(data: &[u8], tail_ptr: usize) -> Result<DeltaTailLayout> {
-    if tail_ptr + 8 > data.len() {
+    let header_end = tail_ptr.checked_add(8).ok_or(NxsError::OutOfBounds)?;
+    if header_end > data.len() {
         return Err(NxsError::OutOfBounds);
     }
     let record_count = u32::from_le_bytes(
@@ -499,6 +501,9 @@ pub fn parse_delta_tail_layout(data: &[u8], tail_ptr: usize) -> Result<DeltaTail
             .try_into()
             .map_err(|_| NxsError::OutOfBounds)?,
     );
+    if tail_ptr + 12 > data.len() {
+        return Err(NxsError::OutOfBounds);
+    }
     let ti_flags = u16::from_le_bytes(
         data[tail_ptr + 8..tail_ptr + 10]
             .try_into()
@@ -509,13 +514,28 @@ pub fn parse_delta_tail_layout(data: &[u8], tail_ptr: usize) -> Result<DeltaTail
             .try_into()
             .map_err(|_| NxsError::OutOfBounds)?,
     ) as usize;
-    let anchors_off = tail_ptr + align_to(12, 8);
-    let mut p = anchors_off;
-    p += anchor_count * 8;
+    let anchors_off = tail_ptr
+        .checked_add(align_to(12, 8))
+        .ok_or(NxsError::OutOfBounds)?;
+    let anchor_bytes = anchor_count.checked_mul(8).ok_or(NxsError::OutOfBounds)?;
+    let mut p = anchors_off
+        .checked_add(anchor_bytes)
+        .ok_or(NxsError::OutOfBounds)?;
     let deltas_off = p;
-    p += record_count * 4;
+    let delta_bytes = record_count.checked_mul(4).ok_or(NxsError::OutOfBounds)?;
+    p = p.checked_add(delta_bytes).ok_or(NxsError::OutOfBounds)?;
     let single_key_id = ti_flags & 0x0001 != 0;
-    let key_ids_off = if single_key_id { None } else { Some(p) };
+    let key_ids_off = if single_key_id {
+        None
+    } else {
+        let key_bytes = record_count.checked_mul(2).ok_or(NxsError::OutOfBounds)?;
+        let off = p;
+        p = p.checked_add(key_bytes).ok_or(NxsError::OutOfBounds)?;
+        Some(off)
+    };
+    if p > data.len() {
+        return Err(NxsError::OutOfBounds);
+    }
     Ok(DeltaTailLayout {
         tail_ptr: tail_ptr as u64,
         record_count,
@@ -830,7 +850,7 @@ pub fn dense_wire_order(schema: &ExtendedSchema, plan: &RowCellPlan) -> Vec<usiz
         }
         fixed.push((dense_cell_align_width(fi, schema, plan), fi));
     }
-    fixed.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.1.cmp(&b.1)));
+    fixed.sort_by_key(|&(w, slot)| (std::cmp::Reverse(w), slot));
     fixed.into_iter().map(|(_, s)| s).chain(vars).collect()
 }
 
