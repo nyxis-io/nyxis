@@ -210,7 +210,7 @@ pub fn parse_extended_schema(
         p += 1;
     }
     if p % 8 != 0 {
-        p += 8 - p % 8;
+        p = p.checked_add(8 - p % 8).ok_or(NxsError::OutOfBounds)?;
     }
 
     let mut widths = vec![0u8; key_count];
@@ -257,7 +257,7 @@ pub fn parse_extended_schema(
                 p += 1;
             }
             if p % 8 != 0 {
-                p += 8 - p % 8;
+                p = p.checked_add(8 - p % 8).ok_or(NxsError::OutOfBounds)?;
             }
         }
     }
@@ -553,22 +553,18 @@ pub fn delta_record_offset(data: &[u8], layout: &DeltaTailLayout, index: usize) 
     }
     let a = layout.block_size.max(1) as usize;
     let anchor_idx = index / a;
-    let anchor_off = layout.anchors_off + anchor_idx * 8;
-    if anchor_off + 8 > data.len() {
-        return Err(NxsError::OutOfBounds);
-    }
-    let anchor = u64::from_le_bytes(
-        data[anchor_off..anchor_off + 8]
-            .try_into()
-            .map_err(|_| NxsError::OutOfBounds)?,
-    );
-    let delta_off = layout.deltas_off + index * 4;
-    let delta = u32::from_le_bytes(
-        data[delta_off..delta_off + 4]
-            .try_into()
-            .map_err(|_| NxsError::OutOfBounds)?,
-    ) as u64;
-    Ok((anchor + delta) as usize)
+    let anchor_off = layout
+        .anchors_off
+        .checked_add(anchor_idx.checked_mul(8).ok_or(NxsError::OutOfBounds)?)
+        .ok_or(NxsError::OutOfBounds)?;
+    let anchor = u64::from_le_bytes(cell_bytes::<8>(data, anchor_off)?);
+    let delta_off = layout
+        .deltas_off
+        .checked_add(index.checked_mul(4).ok_or(NxsError::OutOfBounds)?)
+        .ok_or(NxsError::OutOfBounds)?;
+    let delta = u32::from_le_bytes(cell_bytes::<4>(data, delta_off)?) as u64;
+    let abs = anchor.checked_add(delta).ok_or(NxsError::OutOfBounds)?;
+    usize::try_from(abs).map_err(|_| NxsError::OutOfBounds)
 }
 
 /// Classic v1.2 row tail-index entry offset for record `index`.
@@ -835,6 +831,7 @@ pub fn dense_wire_order(schema: &ExtendedSchema, plan: &RowCellPlan) -> Vec<usiz
         }
         fixed.push((dense_cell_align_width(fi, schema, plan), fi));
     }
+    #[allow(clippy::unnecessary_sort_by)]
     fixed.sort_unstable_by(|a, b| b.0.cmp(&a.0).then(a.1.cmp(&b.1)));
     fixed.into_iter().map(|(_, s)| s).chain(vars).collect()
 }
@@ -1028,7 +1025,8 @@ pub fn resolve_field_offset(
     dense_frames: bool,
 ) -> Option<usize> {
     if dense_frames {
-        let hdr = *data.get(obj_offset + 8)?;
+        let hdr_off = obj_offset.checked_add(8)?;
+        let hdr = *data.get(hdr_off)?;
         if hdr & RECORD_HDR_DENSE != 0 {
             return dense_field_offset(data, obj_offset, slot, schema, plan)
                 .ok()
