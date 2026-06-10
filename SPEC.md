@@ -391,6 +391,7 @@ v1.3 adds optional row-layout compact encodings controlled by preamble flags (bi
 | `FLAG_PACKED_BOOLS` | 0x0020 | Bool fields share a packed `u64` word |
 | `FLAG_NARROW_CELLS` | 0x0040 | Schema declares per-field integer/float widths |
 | `FLAG_DELTA_TAIL` | 0x0080 | Tail-index uses block-anchored deltas (§12.4) |
+| `FLAG_DENSE_WIRE_REORDER` | 0x0100 | Dense cells sorted by descending width (§12.1); when clear, schema order |
 
 `nxs compile --compact` enables all four wire flags plus auto-keyword promotion (§12.5). Individual flags remain selectable for debugging.
 

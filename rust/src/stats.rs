@@ -688,6 +688,50 @@ mod tests {
     }
 
     #[test]
+    fn stats_reads_schema_order_demo_fixture_when_present() {
+        let path = "/tmp/nxs_demo/records_1000_fixed.nxb";
+        if !std::path::Path::new(path).exists() {
+            return;
+        }
+        let data = std::fs::read(path).expect("read demo fixture");
+        analyze(&data).expect("stats on schema-order demo fixture");
+    }
+
+    #[test]
+    fn stats_schema_order_compact_without_wire_reorder_flag() {
+        use crate::compact::CompactOptions;
+
+        let keys = vec![
+            "id".into(),
+            "username".into(),
+            "email".into(),
+            "age".into(),
+            "balance".into(),
+            "active".into(),
+            "score".into(),
+            "created_at".into(),
+        ];
+        let rows: Vec<RecordRow> = (0..2)
+            .map(|i| RecordRow {
+                cells: vec![
+                    Cell::I64(i as i64),
+                    Cell::Str(format!("user_{i:07}")),
+                    Cell::Str(format!("user{i}@example.com")),
+                    Cell::I64(20 + (i % 50) as i64),
+                    Cell::F64(100.0 + i as f64 * 1.37),
+                    Cell::Bool(i % 3 != 0),
+                    Cell::F64((i as f64 % 100.0) / 10.0),
+                    Cell::Time(1_700_000_000_000_000_000 + i as i64),
+                ],
+            })
+            .collect();
+        let mut opts = CompactOptions::compact();
+        opts.dense_wire_reorder = false;
+        let data = finish_row(&keys, &rows, Some(&opts)).unwrap();
+        analyze(&data).expect("schema-order compact stats");
+    }
+
+    #[test]
     fn stats_compact_bool_field_reports_padding_not_payload() {
         use crate::compact::CompactOptions;
 

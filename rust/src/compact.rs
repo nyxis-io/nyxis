@@ -2,9 +2,9 @@
 
 use crate::consts::{
     DEFAULT_DELTA_BLOCK_SIZE, FIELD_ATTR_PROMOTED, FIELD_ATTR_U16_LEN, FLAG_DELTA_TAIL,
-    FLAG_DENSE_FRAMES, FLAG_NARROW_CELLS, FLAG_PACKED_BOOLS, FLAG_V13_COMPACT_MASK, MAGIC_FOOTER,
-    MAGIC_OBJ, RECORD_HDR_DENSE, SIGIL_BOOL, SIGIL_FLOAT, SIGIL_INT, SIGIL_KEYWORD, SIGIL_NULL,
-    SIGIL_STR, SIGIL_TIME, VERSION, VERSION_V13,
+    FLAG_DENSE_FRAMES, FLAG_DENSE_WIRE_REORDER, FLAG_NARROW_CELLS, FLAG_PACKED_BOOLS,
+    FLAG_V13_COMPACT_MASK, MAGIC_FOOTER, MAGIC_OBJ, RECORD_HDR_DENSE, SIGIL_BOOL, SIGIL_FLOAT,
+    SIGIL_INT, SIGIL_KEYWORD, SIGIL_NULL, SIGIL_STR, SIGIL_TIME, VERSION, VERSION_V13,
 };
 use crate::error::{NxsError, Result};
 
@@ -23,6 +23,8 @@ pub struct CompactOptions {
     pub delta_block_size: u32,
     /// Use `u16` length prefixes for inline strings when all values fit (§5.2).
     pub u16_string_lengths: bool,
+    /// Emit fixed-width cells in descending alignment width before strings (§4.2).
+    pub dense_wire_reorder: bool,
 }
 
 impl Default for CompactOptions {
@@ -37,6 +39,7 @@ impl Default for CompactOptions {
             keyword_min_records: 32,
             delta_block_size: DEFAULT_DELTA_BLOCK_SIZE,
             u16_string_lengths: false,
+            dense_wire_reorder: false,
         }
     }
 }
@@ -54,6 +57,7 @@ impl CompactOptions {
             keyword_min_records: 32,
             delta_block_size: 1024,
             u16_string_lengths: true,
+            dense_wire_reorder: true,
         }
     }
 
@@ -74,6 +78,9 @@ impl CompactOptions {
         }
         if self.delta_tail {
             f |= FLAG_DELTA_TAIL;
+        }
+        if self.dense_wire_reorder {
+            f |= FLAG_DENSE_WIRE_REORDER;
         }
         f
     }
@@ -719,6 +726,7 @@ pub struct RowCellPlan {
     pub packed_bools: bool,
     pub narrow: bool,
     pub dense_allowed: bool,
+    pub dense_wire_reorder: bool,
 }
 
 impl RowCellPlan {
@@ -729,6 +737,7 @@ impl RowCellPlan {
             packed_bools: flags & FLAG_PACKED_BOOLS != 0,
             narrow: flags & FLAG_NARROW_CELLS != 0,
             dense_allowed: flags & FLAG_DENSE_FRAMES != 0,
+            dense_wire_reorder: flags & FLAG_DENSE_WIRE_REORDER != 0,
         }
     }
 
@@ -741,9 +750,11 @@ impl RowCellPlan {
         }
     }
 
-    /// Dense-frame cell order: fixed-width fields by descending alignment width, then
-    /// variable-length fields in schema order (§4.2 RECOMMENDED).
+    /// Dense-frame cell order on the wire (schema order when `FLAG_DENSE_WIRE_REORDER` clear).
     pub fn dense_wire_order(&self, schema: &ExtendedSchema) -> Vec<usize> {
+        if !self.dense_wire_reorder {
+            return (0..schema.keys.len()).collect();
+        }
         dense_wire_order(schema, self)
     }
 }
@@ -1429,7 +1440,11 @@ mod tests {
         let o = CompactOptions::compact();
         assert_eq!(
             o.preamble_flags(),
-            FLAG_DENSE_FRAMES | FLAG_PACKED_BOOLS | FLAG_NARROW_CELLS | FLAG_DELTA_TAIL
+            FLAG_DENSE_FRAMES
+                | FLAG_PACKED_BOOLS
+                | FLAG_NARROW_CELLS
+                | FLAG_DELTA_TAIL
+                | FLAG_DENSE_WIRE_REORDER
         );
         assert_eq!(o.version(), VERSION_V13);
     }
@@ -1549,10 +1564,33 @@ mod tests {
         assert_eq!(read_packed_bool(&obj, 0, 3, &ext, &plan), Some(false));
         assert!((decode_f64_cell(&obj, score_off, 8).unwrap() - 3.5).abs() < 1e-9);
         let body_base = 9usize;
+        // With FLAG_DENSE_WIRE_REORDER (default compact()): score first, then narrow fields.
         assert_eq!(score_off, body_base);
         assert_eq!(id_off, body_base + 8);
         assert_eq!(age_off, body_base + 9);
         assert_eq!(active_off, body_base + 10);
+    }
+
+    #[test]
+    fn dense_wire_order_without_reorder_flag_uses_schema_order() {
+        let mut ext = ExtendedSchema::from_basic(
+            vec!["id".into(), "score".into()],
+            vec![SIGIL_INT, SIGIL_FLOAT],
+        );
+        ext.widths = vec![1, 8];
+        let mut opts = CompactOptions::compact();
+        opts.dense_wire_reorder = false;
+        use crate::consts::FLAG_SCHEMA_EMBEDDED;
+        let flags = opts.preamble_flags() | FLAG_SCHEMA_EMBEDDED;
+        let plan = RowCellPlan::new(&ext, flags);
+        assert_eq!(plan.dense_wire_order(&ext), vec![0, 1]);
+        let obj = encode_compact_record(
+            &[(0, CompactCell::I64(42)), (1, CompactCell::F64(3.5))],
+            &ext,
+            &opts,
+        )
+        .unwrap();
+        assert_eq!(obj.len(), 25);
     }
 
     #[test]

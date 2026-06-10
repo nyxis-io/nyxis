@@ -79,7 +79,10 @@ pub const FLAG_NARROW_CELLS: u16 = 0x0040;
 /// Bit 7: tail-index uses block-anchored deltas (§6).
 pub const FLAG_DELTA_TAIL: u16 = 0x0080;
 
-/// Mask of all v1.3 compact preamble bits.
+/// Bit 8: dense frames use descending-width wire order (§4.2); when clear, schema order.
+pub const FLAG_DENSE_WIRE_REORDER: u16 = 0x0100;
+
+/// Mask of all v1.3 compact preamble bits (REQUIRED-class for v1.2 readers).
 pub const FLAG_V13_COMPACT_MASK: u16 =
     FLAG_DENSE_FRAMES | FLAG_PACKED_BOOLS | FLAG_NARROW_CELLS | FLAG_DELTA_TAIL;
 
