@@ -665,27 +665,20 @@ pub fn encode_int_cell(v: i64, width: u8) -> Result<Vec<u8>> {
 }
 
 /// Decode fixed-width integer cell at offset.
+fn cell_bytes<const N: usize>(data: &[u8], offset: usize) -> Result<[u8; N]> {
+    let end = offset.checked_add(N).ok_or(NxsError::OutOfBounds)?;
+    data.get(offset..end)
+        .ok_or(NxsError::OutOfBounds)?
+        .try_into()
+        .map_err(|_| NxsError::OutOfBounds)
+}
+
 pub fn decode_int_cell(data: &[u8], offset: usize, width: u8) -> Result<i64> {
     match width {
-        1 => Ok(data.get(offset).copied().unwrap_or(0) as i64),
-        2 => {
-            let b: [u8; 2] = data[offset..offset + 2]
-                .try_into()
-                .map_err(|_| NxsError::OutOfBounds)?;
-            Ok(i16::from_le_bytes(b) as i64)
-        }
-        4 => {
-            let b: [u8; 4] = data[offset..offset + 4]
-                .try_into()
-                .map_err(|_| NxsError::OutOfBounds)?;
-            Ok(i32::from_le_bytes(b) as i64)
-        }
-        8 => {
-            let b: [u8; 8] = data[offset..offset + 8]
-                .try_into()
-                .map_err(|_| NxsError::OutOfBounds)?;
-            Ok(i64::from_le_bytes(b))
-        }
+        1 => Ok(data.get(offset).copied().ok_or(NxsError::OutOfBounds)? as i64),
+        2 => Ok(i16::from_le_bytes(cell_bytes::<2>(data, offset)?) as i64),
+        4 => Ok(i32::from_le_bytes(cell_bytes::<4>(data, offset)?) as i64),
+        8 => Ok(i64::from_le_bytes(cell_bytes::<8>(data, offset)?)),
         _ => Err(NxsError::OutOfBounds),
     }
 }
@@ -702,18 +695,10 @@ pub fn encode_f64_cell(v: f64, width: u8) -> Result<Vec<u8>> {
 
 pub fn decode_f64_cell(data: &[u8], offset: usize, width: u8) -> Result<f64> {
     match width {
-        4 => {
-            let b: [u8; 4] = data[offset..offset + 4]
-                .try_into()
-                .map_err(|_| NxsError::OutOfBounds)?;
-            Ok(f64::from(f32::from_le_bytes(b)))
-        }
-        8 => {
-            let b: [u8; 8] = data[offset..offset + 8]
-                .try_into()
-                .map_err(|_| NxsError::OutOfBounds)?;
-            Ok(f64::from_le_bytes(b))
-        }
+        4 => Ok(f64::from(f32::from_le_bytes(cell_bytes::<4>(
+            data, offset,
+        )?))),
+        8 => Ok(f64::from_le_bytes(cell_bytes::<8>(data, offset)?)),
         _ => Err(NxsError::OutOfBounds),
     }
 }
@@ -850,7 +835,7 @@ pub fn dense_wire_order(schema: &ExtendedSchema, plan: &RowCellPlan) -> Vec<usiz
         }
         fixed.push((dense_cell_align_width(fi, schema, plan), fi));
     }
-    fixed.sort_by_key(|&(w, slot)| (std::cmp::Reverse(w), slot));
+    fixed.sort_unstable_by(|a, b| b.0.cmp(&a.0).then(a.1.cmp(&b.1)));
     fixed.into_iter().map(|(_, s)| s).chain(vars).collect()
 }
 
