@@ -309,6 +309,7 @@ conformance-run-js:
 
 conformance-run-py:
 	python3 conformance/run_py.py conformance/
+	cd $(DRV)/py && bash build_ext.sh
 	python3 conformance/run_py.py conformance/v13/
 
 conformance-run-go:
