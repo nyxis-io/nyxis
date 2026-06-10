@@ -21,7 +21,7 @@ function initDemo(){
   const MAX_VIRTUAL_PX = 16_000_000;
   const NXS_MAGIC = 0x4E595842;
   const NYXO_MAGIC = 0x4E59584F; // NYXO object header
-  // Default to the 1M fixture (~137 MB) — safe for all browsers / memory sizes.
+  // Default to the 1M fixture (~83 MB) — safe for all browsers / memory sizes.
   // Users can pick 10M explicitly from the toolbar if they have the RAM.
   const DEFAULT_FIXTURE = "/bench/fixtures/records_1000000.nxb";
   /** Below this size, seal stream to NxsReader after download (worker search). Larger stays on stream view. */
@@ -36,11 +36,11 @@ function initDemo(){
     const m = (path || "").match(/records_(\d+)\.nxb$/i);
     if (!m) return 0;
     const n = parseInt(m[1], 10);
-    if (n >= 10_000_000) return 1_400_000_000;
-    if (n >= 1_000_000) return 140_000_000;
-    if (n >= 100_000) return 13_000_000;
-    if (n >= 10_000) return 1_200_000;
-    if (n >= 1_000) return 127_000;
+    if (n >= 10_000_000) return 830_000_000;
+    if (n >= 1_000_000) return 83_000_000;
+    if (n >= 100_000) return 8_300_000;
+    if (n >= 10_000) return 830_000;
+    if (n >= 1_000) return 81_000;
     return 0;
   }
 
@@ -1850,11 +1850,11 @@ function initDemo(){
   ensureRowPool();
   
   const QUICK_SIZES = [
-    { label: "1,000 records (~127 KB)",    path: "/bench/fixtures/records_1000.nxb" },
-    { label: "10,000 records (~1.2 MB)",   path: "/bench/fixtures/records_10000.nxb" },
-    { label: "100,000 records (~13 MB)",   path: "/bench/fixtures/records_100000.nxb" },
-    { label: "1,000,000 records (~132 MB)", path: "/bench/fixtures/records_1000000.nxb" },
-    { label: "10,000,000 records (~1.3 GB)", path: "/bench/fixtures/records_10000000.nxb" },
+    { label: "1,000 records (~81 KB)",    path: "/bench/fixtures/records_1000.nxb" },
+    { label: "10,000 records (~830 KB)",   path: "/bench/fixtures/records_10000.nxb" },
+    { label: "100,000 records (~8.3 MB)",   path: "/bench/fixtures/records_100000.nxb" },
+    { label: "1,000,000 records (~83 MB)", path: "/bench/fixtures/records_1000000.nxb" },
+    { label: "10,000,000 records (~830 MB)", path: "/bench/fixtures/records_10000000.nxb" },
   ];
   
   const QUICK_NXS = [

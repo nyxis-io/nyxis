@@ -393,7 +393,7 @@ v1.3 adds optional row-layout compact encodings controlled by preamble flags (bi
 | `FLAG_DELTA_TAIL` | 0x0080 | Tail-index uses block-anchored deltas (§12.4) |
 | `FLAG_DENSE_WIRE_REORDER` | 0x0100 | Dense cells sorted by descending width (§12.1); when clear, schema order |
 
-Batch `nxs compile` emits v1.3 compact (all §12 wire flags plus auto-keyword promotion) **by default at launch**; `--legacy-v12` opts out to v1.2 row layout for one release cycle. Until the launch flip, compact is opt-in via a hidden `--compact` flag (`COMPILE_DEFAULT_COMPACT` in `layout.rs`). Streaming/WAL writers use compact framing but 8-byte cells unless widths are pragma-declared. Individual flags remain selectable for debugging.
+Batch `nxs compile` emits v1.3 compact (all §12 wire flags plus auto-keyword promotion) **by default** (`COMPILE_DEFAULT_COMPACT` in `layout.rs`); `--legacy-v12` opts out to v1.2 row layout for one release cycle. Streaming/WAL writers use compact framing but 8-byte cells unless widths are pragma-declared. Individual flags remain selectable for debugging.
 
 ### 12.1 Dense-record framing
 
@@ -442,7 +442,7 @@ After the v1.2 TypeManifest + padded StringPool:
 
 - Dense-record framing, packed bools, narrow cells, and block-anchored delta tail-index (§12).
 - Extended schema header: WidthManifest, FieldAttrs, ValuePool.
-- `nxs compile --compact`; `Reader::get_keyword` for promoted/native keyword fields.
+- `nxs compile` (default compact); `Reader::get_keyword` for promoted/native keyword fields.
 - New error codes: `ERR_UNSUPPORTED_FLAGS`, `ERR_VALUE_OUT_OF_RANGE`.
 
 ### v1.0.0 — 2026-04-30 (First Stable Release)

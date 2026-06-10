@@ -104,6 +104,13 @@ fn to_rows(records: &[Rec]) -> (Vec<String>, Vec<RecordRow>) {
 }
 
 fn write_nxb(records: &[Rec], path: &Path) {
+    let (keys, rows) = to_rows(records);
+    let bytes = finish_row(&keys, &rows, Some(&CompactOptions::compact())).expect("compact row");
+    write_file(path, &bytes, "nxb");
+    println!("  {} → {} bytes", path.display(), bytes.len());
+}
+
+fn write_nxb_legacy_v12(records: &[Rec], path: &Path) {
     let schema = Schema::new(SLOTS);
     let mut w = NxsWriter::with_capacity(&schema, records.len() * 128 + 1024);
     for r in records {
@@ -119,7 +126,7 @@ fn write_nxb(records: &[Rec], path: &Path) {
         w.end_object();
     }
     let bytes = w.finish();
-    write_file(path, &bytes, "nxb");
+    write_file(path, &bytes, "legacy v1.2 nxb");
     println!("  {} → {} bytes", path.display(), bytes.len());
 }
 
@@ -167,13 +174,6 @@ fn write_sparse_compact_100(out_dir: &Path) {
     let bytes = finish_row(&keys, &rows, Some(&CompactOptions::compact())).expect("sparse compact");
     let path = out_dir.join("sparse_100_compact.nxb");
     write_file(&path, &bytes, "sparse compact nxb");
-}
-
-fn write_nxb_compact(records: &[Rec], path: &Path) {
-    let (keys, rows) = to_rows(records);
-    let bytes = finish_row(&keys, &rows, Some(&CompactOptions::compact())).expect("compact row");
-    write_file(path, &bytes, "compact nxb");
-    println!("  {} → {} bytes", path.display(), bytes.len());
 }
 
 fn write_nxb_columnar(records: &[Rec], path: &Path) {
@@ -237,7 +237,10 @@ fn main() {
         println!("Generating n={n}...");
         let records = build(n);
         write_nxb(&records, &out_dir.join(format!("records_{n}.nxb")));
-        write_nxb_compact(&records, &out_dir.join(format!("records_{n}_compact.nxb")));
+        write_nxb_legacy_v12(
+            &records,
+            &out_dir.join(format!("records_{n}_legacy_v12.nxb")),
+        );
         write_nxb_columnar(&records, &out_dir.join(format!("records_{n}_columnar.nxb")));
         write_json(&records, &out_dir.join(format!("records_{n}.json")));
         write_csv(&records, &out_dir.join(format!("records_{n}.csv")));

@@ -17,7 +17,7 @@ All benchmarks use a synthetic 8-field record schema:
 
 | Format              | Size      | vs JSON |
 | ------------------- | --------- | ------- |
-| NXS binary (`.nxb`) | 131.53 MB | 89%     |
+| NXS binary (`.nxb`) | 79.16 MB | 53.8%    |
 | JSON (`.json`)      | 147.15 MB | 100%    |
 | CSV (`.csv`)        | 72.77 MB  | 49%     |
 | XML (`.xml`)        | ~202 MB   | 137%    |
@@ -34,7 +34,7 @@ Time to make the file queryable — i.e. the work that must complete before `rec
 
 For **JSON/XML/CSV** this means parsing every byte of the file, building an in-memory object graph or struct slice, and allocating one heap object per record. For a 1M-record file that is hundreds of milliseconds of CPU time regardless of how many records you actually need.
 
-For **NXS** this means reading 32 bytes of preamble, the schema header (one null-terminated key name per field, typically < 200 bytes), and the tail-index header (4 bytes). The data sector is never touched. Opening a 130 MB file takes under 1 µs because no data bytes are decoded.
+For **NXS** this means reading 32 bytes of preamble, the schema header (one null-terminated key name per field, typically < 200 bytes), and the tail-index header (4 bytes). The data sector is never touched. Opening an 80 MB file takes under 1 µs because no data bytes are decoded.
 
 ### Warm random
 
@@ -441,7 +441,7 @@ NXS is not a drop-in replacement for JSON everywhere. It is the right choice whe
 
 > **Read this first:** The native harness uses an **in-memory backing store**. Lazy mode shows **0 prefetch-engine fetches** and wins on wall time (F2: 88 ms vs 352 ms). That is expected — it does **not** mean prefetch is slower in production. **The production win is on remote clients (browser JS)** where each uncached page pays network RTT (20–200 ms on a CDN). Prefetch + coalescing is what makes virtual scroll over HTTP viable. See the **Projected browser** column and browser bench charts §2–3.
 
-**Fixture:** **132 MB** row `.nxb` (1M records, flat-8 schema). Adaptive prefetch spec §12 cites 100 MB / 500 MB targets; **results scale linearly with record count** — no rerun required to extrapolate. Simulated **100 µs** per prefetch-engine `fetchRange` call (conservative vs browser RTT); field decode uses the in-process backing store (see methodology).
+**Fixture:** **79 MB** row `.nxb` (1M records, flat-8 schema, v1.3 compact default). Adaptive prefetch spec §12 cites 100 MB / 500 MB targets; **results scale linearly with record count** — no rerun required to extrapolate. Simulated **100 µs** per prefetch-engine `fetchRange` call (conservative vs browser RTT); field decode uses the in-process backing store (see methodology).
 
 | Scenario | Mode | Result | Prefetch fetches † | Projected browser (20 ms RTT) |
 | --- | --- | ---: | ---: | --- |
@@ -463,7 +463,7 @@ NXS is not a drop-in replacement for JSON everywhere. It is the right choice whe
 
 **F2 — browser projection (why in-process wall time misleads):** At **20 ms RTT** per fetch (typical CDN), lazy scroll without coalescing would require on-demand fetches at nearly every viewport step — **20,000 steps × ~2 pages ≈ tens of seconds to minutes** of serial network latency if pages are not pipelined. Prefetch with coalescing issues **1952** fetches total; with sequential pattern detection most complete **before** the viewport needs them, so effective latency approaches one fetch per new page group rather than one RTT per record access. In-process simulation cannot capture pipelining benefit; see browser bench §2–3 for JS driver results.
 
-**F4 — MemStats.Sys:** **~306 MB** includes Go runtime overhead plus the full **132 MB fixture** loaded as the harness backing store — not NXS client memory in production. A browser client with **`max_pages=64`** (4 MB page cache) holds ~**4 MB** steady-state regardless of file size; cite `cache_stats().pages_max` for cache-bound behavior.
+**F4 — MemStats.Sys:** **~306 MB** includes Go runtime overhead plus the full **79 MB fixture** loaded as the harness backing store — not NXS client memory in production. A browser client with **`max_pages=64`** (4 MB page cache) holds ~**4 MB** steady-state regardless of file size; cite `cache_stats().pages_max` for cache-bound behavior.
 
 Re-run: `make -C bench results-f RESULT_TAG_F=$(date +%Y-%m-%d)_$(hostname -s)` or full matrix `make -C bench results-1m`.
 

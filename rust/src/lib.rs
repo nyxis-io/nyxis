@@ -132,9 +132,7 @@ mod layout_tests {
             r0 { id: =0 username: "alice" age: =20 active: ?true score: ~0.5 }
             r1 { id: =1 username: "bob" age: =21 active: ?false score: ~1.0 }
         "#;
-        let mut opts = layout::CompileOptions::default();
-        opts.compact = Some(crate::compact::CompactOptions::compact());
-        let bytes = compile_source_with_opts(src, &opts).expect("compact compile");
+        let bytes = compile_source(src).expect("compact compile");
         let flags = u16::from_le_bytes(bytes[6..8].try_into().unwrap());
         assert!(flags & crate::consts::FLAG_DENSE_FRAMES != 0);
         assert_eq!(
@@ -148,7 +146,11 @@ mod layout_tests {
 
     #[test]
     fn row_compile_uses_resolved_macro_sigils() {
-        let bytes = compile_source("id: =7 alias: @id name: !\"bob\"\n").unwrap();
+        let opts = layout::CompileOptions {
+            legacy_v12: true,
+            ..Default::default()
+        };
+        let bytes = compile_source_with_opts("id: =7 alias: @id name: !\"bob\"\n", &opts).unwrap();
         let reader = crate::query::Reader::new(&bytes).unwrap();
         assert_eq!(reader.key_sigils(), b"==\"");
         let rec = reader.record(0).unwrap();

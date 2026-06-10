@@ -1,4 +1,4 @@
-//! Row-layout read benchmark: open, sum(score), random access (v1.2 vs `--compact`).
+//! Row-layout read benchmark: open, sum(score), random access (default compact vs `--legacy-v12`).
 //!
 //! Usage: bench_read_row <v12.nxb> <compact.nxb>
 
