@@ -262,6 +262,10 @@ pub fn parse_extended_schema(
         }
     }
 
+    if p > data.len() {
+        return Err(NxsError::OutOfBounds);
+    }
+
     Ok((
         ExtendedSchema {
             keys,
@@ -831,7 +835,7 @@ pub fn dense_wire_order(schema: &ExtendedSchema, plan: &RowCellPlan) -> Vec<usiz
         }
         fixed.push((dense_cell_align_width(fi, schema, plan), fi));
     }
-    #[allow(clippy::unnecessary_sort_by)]
+    #[allow(unknown_lints, clippy::unnecessary_sort_by, clippy::sort_by_key)]
     fixed.sort_unstable_by(|a, b| b.0.cmp(&a.0).then(a.1.cmp(&b.1)));
     fixed.into_iter().map(|(_, s)| s).chain(vars).collect()
 }

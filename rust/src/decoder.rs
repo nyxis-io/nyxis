@@ -171,7 +171,7 @@ pub fn decode(data: &[u8]) -> Result<DecodedFile> {
                 return Err(NxsError::OutOfBounds);
             }
             while pos % 8 != 0 {
-                pos += 1;
+                pos = pos.checked_add(1).ok_or(NxsError::OutOfBounds)?;
             }
             if pos > data.len() {
                 return Err(NxsError::OutOfBounds);
@@ -179,6 +179,9 @@ pub fn decode(data: &[u8]) -> Result<DecodedFile> {
             pos
         };
 
+        if schema_end > data.len() || schema_start > schema_end {
+            return Err(NxsError::OutOfBounds);
+        }
         let computed = murmur3_64(&data[schema_start..schema_end]);
         if computed != dict_hash {
             return Err(NxsError::DictMismatch);
