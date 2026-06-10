@@ -105,7 +105,7 @@ pub fn analyze_with_path(data: &[u8], path: Option<&str>) -> Result<FileStats> {
         Layout::Columnar => analyze_columnar_fields(&reader)?,
         Layout::Pax => analyze_pax_fields(data, &decoded)?,
     };
-    fields.sort_by(|a, b| b.total.cmp(&a.total));
+    fields.sort_by_key(|f| std::cmp::Reverse(f.total));
 
     let field_bytes: u64 = fields.iter().map(|f| f.total).sum();
     let framing = data_sector.saturating_sub(field_bytes);
