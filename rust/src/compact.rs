@@ -3,8 +3,8 @@
 use crate::consts::{
     DEFAULT_DELTA_BLOCK_SIZE, FIELD_ATTR_PROMOTED, FIELD_ATTR_U16_LEN, FLAG_DELTA_TAIL,
     FLAG_DENSE_FRAMES, FLAG_NARROW_CELLS, FLAG_PACKED_BOOLS, FLAG_V13_COMPACT_MASK, MAGIC_FOOTER,
-    MAGIC_OBJ, RECORD_HDR_DENSE, SIGIL_BOOL, SIGIL_FLOAT, SIGIL_INT, SIGIL_KEYWORD, SIGIL_STR,
-    VERSION, VERSION_V13,
+    MAGIC_OBJ, RECORD_HDR_DENSE, SIGIL_BOOL, SIGIL_FLOAT, SIGIL_INT, SIGIL_KEYWORD, SIGIL_NULL,
+    SIGIL_STR, SIGIL_TIME, VERSION, VERSION_V13,
 };
 use crate::error::{NxsError, Result};
 
@@ -740,6 +740,103 @@ impl RowCellPlan {
             ((self.bool_slots.len() + 7) / 8).max(1)
         }
     }
+
+    /// Dense-frame cell order: fixed-width fields by descending alignment width, then
+    /// variable-length fields in schema order (§4.2 RECOMMENDED).
+    pub fn dense_wire_order(&self, schema: &ExtendedSchema) -> Vec<usize> {
+        dense_wire_order(schema, self)
+    }
+}
+
+fn is_var_sigil(sig: u8) -> bool {
+    sig == SIGIL_STR || sig == b'<'
+}
+
+fn dense_cell_align_width(fi: usize, schema: &ExtendedSchema, plan: &RowCellPlan) -> usize {
+    if plan.packed_bools && plan.bool_slots.contains(&fi) {
+        return plan.bool_word_bytes();
+    }
+    let sig = schema.sigils[fi];
+    if is_var_sigil(sig) {
+        return 0;
+    }
+    if schema.is_promoted(fi) || sig == SIGIL_KEYWORD {
+        return 2;
+    }
+    match sig {
+        SIGIL_INT | SIGIL_FLOAT => {
+            if plan.narrow {
+                schema.cell_width(fi) as usize
+            } else {
+                8
+            }
+        }
+        SIGIL_TIME => 8,
+        SIGIL_BOOL if !plan.packed_bools => 8,
+        SIGIL_NULL => 1,
+        _ => 8,
+    }
+}
+
+pub fn dense_wire_order(schema: &ExtendedSchema, plan: &RowCellPlan) -> Vec<usize> {
+    let n = schema.keys.len();
+    let mut fixed: Vec<(usize, usize)> = Vec::new();
+    let mut vars: Vec<usize> = Vec::new();
+    for fi in 0..n {
+        let sig = schema.sigils[fi];
+        if is_var_sigil(sig) {
+            vars.push(fi);
+            continue;
+        }
+        if plan.packed_bools && plan.bool_slots.contains(&fi) {
+            if plan.first_bool == Some(fi) {
+                fixed.push((plan.bool_word_bytes(), fi));
+            }
+            continue;
+        }
+        fixed.push((dense_cell_align_width(fi, schema, plan), fi));
+    }
+    fixed.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.1.cmp(&b.1)));
+    fixed.into_iter().map(|(_, s)| s).chain(vars).collect()
+}
+
+fn advance_dense_past_cell(
+    data: &[u8],
+    body_base: usize,
+    pos: usize,
+    fi: usize,
+    schema: &ExtendedSchema,
+    plan: &RowCellPlan,
+) -> Result<usize> {
+    let sig = schema.sigils[fi];
+    let w = if plan.narrow {
+        schema.cell_width(fi)
+    } else {
+        8
+    };
+    if plan.packed_bools && plan.bool_slots.contains(&fi) {
+        return Ok(advance_past_bool_word(pos, plan));
+    }
+    match sig {
+        SIGIL_INT | SIGIL_FLOAT | SIGIL_BOOL if !plan.packed_bools || sig != SIGIL_BOOL => {
+            Ok(align_to(pos, w as usize) + w as usize)
+        }
+        SIGIL_STR | b'<' => {
+            if schema.is_promoted(fi) {
+                Ok(align_to(pos, 2) + 2)
+            } else {
+                let prefix = schema.str_len_prefix(fi);
+                let abs = body_base + pos;
+                if abs + prefix > data.len() {
+                    return Err(NxsError::OutOfBounds);
+                }
+                let len = read_str_cell_len(data, abs, prefix)?;
+                Ok(advance_past_str_cell(pos, len, prefix))
+            }
+        }
+        SIGIL_KEYWORD => Ok(align_to(pos, 2) + 2),
+        _ => Ok(align_to(pos, 8) + 8),
+    }
 }
 
 fn emit_bool_word(body: &mut Vec<u8>, word: u64, plan: &RowCellPlan) {
@@ -766,22 +863,18 @@ pub fn dense_field_offset(
 ) -> Result<Option<usize>> {
     let body_base = obj_offset + 9; // magic + len + hdr
     let mut pos = 0usize; // body-relative
-    let n = schema.keys.len();
-    let mut bool_word_emitted = false;
-    for fi in 0..n {
+    for &fi in &plan.dense_wire_order(schema) {
         if plan.packed_bools && plan.bool_slots.contains(&fi) {
-            if Some(fi) == plan.first_bool && !bool_word_emitted {
-                let bw = plan.bool_word_bytes();
-                if plan.bool_slots.contains(&slot) {
-                    let byte = plan.bool_slots.iter().position(|&s| s == slot).unwrap() / 8;
-                    return Ok(Some(body_base + align_to(pos, bw) + byte));
-                }
+            if plan.bool_slots.contains(&slot) && Some(fi) == plan.first_bool {
+                let byte = plan.bool_slots.iter().position(|&s| s == slot).unwrap() / 8;
+                return Ok(Some(
+                    body_base + align_to(pos, plan.bool_word_bytes()) + byte,
+                ));
+            }
+            if Some(fi) == plan.first_bool {
                 pos = advance_past_bool_word(pos, plan);
-                bool_word_emitted = true;
             }
-            if plan.bool_slots.contains(&fi) {
-                continue;
-            }
+            continue;
         }
         let sig = schema.sigils[fi];
         let w = if plan.narrow {
@@ -792,37 +885,14 @@ pub fn dense_field_offset(
         if fi == slot {
             let off = if schema.is_promoted(fi) || sig == SIGIL_KEYWORD {
                 align_to(pos, 2)
-            } else if sig == SIGIL_STR || sig == b'<' {
+            } else if is_var_sigil(sig) {
                 pos
             } else {
                 align_to(pos, w as usize)
             };
             return Ok(Some(body_base + off));
         }
-        match sig {
-            SIGIL_INT | SIGIL_FLOAT | SIGIL_BOOL if !plan.packed_bools || sig != SIGIL_BOOL => {
-                pos = align_to(pos, w as usize) + w as usize;
-            }
-            SIGIL_STR | b'<' => {
-                if schema.is_promoted(fi) {
-                    pos = align_to(pos, 2) + 2;
-                } else {
-                    let prefix = schema.str_len_prefix(fi);
-                    let abs = body_base + pos;
-                    if abs + prefix > data.len() {
-                        return Err(NxsError::OutOfBounds);
-                    }
-                    let len = read_str_cell_len(data, abs, prefix)?;
-                    pos = advance_past_str_cell(pos, len, prefix);
-                }
-            }
-            SIGIL_KEYWORD => {
-                pos = align_to(pos, 2) + 2;
-            }
-            _ => {
-                pos = align_to(pos, 8) + 8;
-            }
-        }
+        pos = advance_dense_past_cell(data, body_base, pos, fi, schema, plan)?;
     }
     Ok(None)
 }
@@ -1172,11 +1242,10 @@ fn encode_dense_body(
         map.insert(*s, c);
     }
     let mut body = Vec::new();
-    let mut bool_word: u64 = 0;
-    let mut bool_word_emitted = false;
-    for fi in 0..schema.keys.len() {
+    for &fi in &plan.dense_wire_order(schema) {
         if plan.packed_bools && plan.bool_slots.contains(&fi) {
-            if Some(fi) == plan.first_bool && !bool_word_emitted {
+            if Some(fi) == plan.first_bool {
+                let mut bool_word: u64 = 0;
                 for (bi, &bs) in plan.bool_slots.iter().enumerate() {
                     if let Some(CompactCell::Bool(v)) = map.get(&(bs as u16)) {
                         if *v {
@@ -1185,7 +1254,6 @@ fn encode_dense_body(
                     }
                 }
                 emit_bool_word(&mut body, bool_word, plan);
-                bool_word_emitted = true;
             }
             continue;
         }
@@ -1417,9 +1485,18 @@ mod tests {
         );
         ext.widths = vec![1, 8];
         let cells = vec![(0u16, CompactCell::I64(42)), (1u16, CompactCell::F64(3.5))];
-        let obj = encode_compact_record(&cells, &ext, &CompactOptions::compact()).unwrap();
-        assert_eq!(obj.len(), 25);
-        assert_eq!(obj[obj.len() - 1], 0x40);
+        let opts = CompactOptions::compact();
+        let plan = RowCellPlan::new(&ext, opts.preamble_flags());
+        let obj = encode_compact_record(&cells, &ext, &opts).unwrap();
+        assert_eq!(obj.len(), 18);
+        let id_off = dense_field_offset(&obj, 0, 0, &ext, &plan)
+            .unwrap()
+            .unwrap();
+        let score_off = dense_field_offset(&obj, 0, 1, &ext, &plan)
+            .unwrap()
+            .unwrap();
+        assert_eq!(obj[id_off], 42);
+        assert_eq!(obj[score_off + 7], 0x40);
     }
 
     #[test]
@@ -1472,10 +1549,10 @@ mod tests {
         assert_eq!(read_packed_bool(&obj, 0, 3, &ext, &plan), Some(false));
         assert!((decode_f64_cell(&obj, score_off, 8).unwrap() - 3.5).abs() < 1e-9);
         let body_base = 9usize;
-        assert_eq!(
-            active_off,
-            body_base + align_to(age_off - body_base + 1, plan.bool_word_bytes())
-        );
+        assert_eq!(score_off, body_base);
+        assert_eq!(id_off, body_base + 8);
+        assert_eq!(age_off, body_base + 9);
+        assert_eq!(active_off, body_base + 10);
     }
 
     #[test]

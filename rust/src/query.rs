@@ -1904,12 +1904,13 @@ mod tests {
             compact.len(),
             v12.len()
         );
-        // u16 length prefixes only shrink cells when padding boundary shifts; this
-        // fixture's 12/17-char strings stay on the same 8-byte pad grid.
+        // §4.2 descending-width reordering recovers intra-record alignment waste (~80 KB).
+        const EXPECTED: usize = 81_150;
         assert!(
-            (86_000..=94_000).contains(&compact.len()),
-            "compact size: {} bytes (v12 {})",
+            compact.len() == EXPECTED,
+            "compact size: {} bytes (expected {}, v12 {})",
             compact.len(),
+            EXPECTED,
             v12.len()
         );
     }

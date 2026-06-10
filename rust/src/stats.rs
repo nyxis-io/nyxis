@@ -352,10 +352,11 @@ fn accumulate_dense_row_record(
     acc: &mut [FieldAccum],
 ) -> Result<()> {
     let body_base = obj_off + 9;
-    let n = ext.keys.len();
+    let wire = plan.dense_wire_order(ext);
+    let mut prev_slot: Option<usize> = None;
     let mut prev_end = 0usize;
 
-    for slot in 0..n {
+    for &slot in &wire {
         if plan.packed_bools && plan.bool_slots.contains(&slot) && plan.first_bool != Some(slot) {
             continue;
         }
@@ -364,13 +365,16 @@ fn accumulate_dense_row_record(
         };
         let rel_start = start - body_base;
         if rel_start > prev_end {
-            acc[slot].padding += (rel_start - prev_end) as u64;
+            if let Some(cause) = prev_slot {
+                acc[cause].padding += (rel_start - prev_end) as u64;
+            }
         }
         let sigil = ext.sigils[slot];
         let (payload, padding) = row_cell_wire_parts(data, start, slot, sigil, ext, plan)?;
         acc[slot].payload += payload;
         acc[slot].padding += padding;
         prev_end = rel_start + (payload + padding) as usize;
+        prev_slot = Some(slot);
     }
     Ok(())
 }
@@ -713,13 +717,13 @@ mod tests {
             .collect();
         let data = finish_row(&keys, &rows, Some(&CompactOptions::compact())).unwrap();
         let stats = analyze(&data).unwrap();
-        let active = stats.fields.iter().find(|f| f.name == "active").unwrap();
+        let balance = stats.fields.iter().find(|f| f.name == "balance").unwrap();
         let score = stats.fields.iter().find(|f| f.name == "score").unwrap();
+        let active = stats.fields.iter().find(|f| f.name == "active").unwrap();
         assert_eq!(active.payload, 1000);
-        assert_eq!(active.padding, 0);
-        assert_eq!(active.total, 1000);
-        // 1-byte bool word leaves 7 B/rec alignment before the next f64; attribute to score.
-        assert_eq!(score.padding, 7000);
+        // Descending-width wire order: 8-byte floats pack flush; no blame on score/balance.
+        assert_eq!(score.padding, 0, "score padding={}", score.padding);
+        assert_eq!(balance.padding, 0, "balance padding={}", balance.padding);
     }
 
     fn compact_fixture_rows(with_strings: bool) -> (Vec<String>, Vec<RecordRow>) {

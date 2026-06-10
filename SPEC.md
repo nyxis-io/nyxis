@@ -398,7 +398,7 @@ v1.3 adds optional row-layout compact encodings controlled by preamble flags (bi
 
 When `FLAG_DENSE_FRAMES` is set, fully-populated records **MAY** omit the LEB128 presence bitmask and per-field offset table. The byte immediately after the NYXO length field (offset +8) carries `RECORD_HDR_DENSE` (0x01) in bit 0; sparse records set bit 0 to 0 and retain v1.2 framing with an extra header byte before the bitmask.
 
-Dense cell order matches schema field order. Fixed-width cells are width-aligned within the record body; length-prefixed string/binary cells pad the `(u32 len + payload)` region to an 8-byte boundary **relative to the cell start** (not absolute file alignment).
+Dense cell order on the wire **MAY** differ from schema declaration order: the reference compiler sorts fixed-width cells by descending alignment width, then emits variable-length string/binary cells in schema order (§4.2). Logical field indices in the schema header are unchanged. Fixed-width cells are width-aligned within the record body; length-prefixed string/binary cells pad the `(len + payload)` region to an 8-byte boundary **relative to the cell start** (not absolute file alignment).
 
 ### 12.2 Packed bools
 
