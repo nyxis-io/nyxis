@@ -618,11 +618,6 @@ fn advance_past_str_cell(pos: usize, payload_len: usize, prefix_len: usize) -> u
     pos + cell_bytes + pad
 }
 
-fn str_cell_encoded_len(payload_len: usize, prefix_len: usize) -> usize {
-    let cell_bytes = prefix_len + payload_len;
-    cell_bytes + (8 - cell_bytes % 8) % 8
-}
-
 /// Encode a fixed-width integer cell.
 pub fn encode_int_cell(v: i64, width: u8) -> Result<Vec<u8>> {
     match width {
@@ -727,17 +722,45 @@ pub struct RowCellPlan {
     pub narrow: bool,
     pub dense_allowed: bool,
     pub dense_wire_reorder: bool,
+    /// Body-relative offsets for fixed-width slots when wire-reordered (O(1) resolve).
+    pub dense_fixed_body_offsets: Option<Vec<Option<usize>>>,
+    /// Body-relative start of the variable-length tail (strings after fixed cells).
+    pub dense_var_body_start: Option<usize>,
 }
 
 impl RowCellPlan {
     pub fn new(schema: &ExtendedSchema, flags: u16) -> Self {
+        let packed_bools = flags & FLAG_PACKED_BOOLS != 0;
+        let narrow = flags & FLAG_NARROW_CELLS != 0;
+        let dense_allowed = flags & FLAG_DENSE_FRAMES != 0;
+        let dense_wire_reorder = flags & FLAG_DENSE_WIRE_REORDER != 0;
+        let (dense_fixed_body_offsets, dense_var_body_start) =
+            if dense_wire_reorder && dense_allowed {
+                precompute_dense_fixed_offsets(
+                    schema,
+                    &Self {
+                        bool_slots: schema.bool_slots(),
+                        first_bool: schema.bool_slots().first().copied(),
+                        packed_bools,
+                        narrow,
+                        dense_allowed,
+                        dense_wire_reorder,
+                        dense_fixed_body_offsets: None,
+                        dense_var_body_start: None,
+                    },
+                )
+            } else {
+                (None, None)
+            };
         Self {
             bool_slots: schema.bool_slots(),
             first_bool: schema.bool_slots().first().copied(),
-            packed_bools: flags & FLAG_PACKED_BOOLS != 0,
-            narrow: flags & FLAG_NARROW_CELLS != 0,
-            dense_allowed: flags & FLAG_DENSE_FRAMES != 0,
-            dense_wire_reorder: flags & FLAG_DENSE_WIRE_REORDER != 0,
+            packed_bools,
+            narrow,
+            dense_allowed,
+            dense_wire_reorder,
+            dense_fixed_body_offsets,
+            dense_var_body_start,
         }
     }
 
@@ -811,6 +834,71 @@ pub fn dense_wire_order(schema: &ExtendedSchema, plan: &RowCellPlan) -> Vec<usiz
     fixed.into_iter().map(|(_, s)| s).chain(vars).collect()
 }
 
+fn advance_dense_past_cell_fixed(
+    pos: usize,
+    fi: usize,
+    schema: &ExtendedSchema,
+    plan: &RowCellPlan,
+) -> usize {
+    let sig = schema.sigils[fi];
+    let w = if plan.narrow {
+        schema.cell_width(fi)
+    } else {
+        8
+    };
+    if plan.packed_bools && plan.bool_slots.contains(&fi) {
+        return advance_past_bool_word(pos, plan);
+    }
+    match sig {
+        SIGIL_INT | SIGIL_FLOAT | SIGIL_BOOL if !plan.packed_bools || sig != SIGIL_BOOL => {
+            align_to(pos, w as usize) + w as usize
+        }
+        SIGIL_KEYWORD => align_to(pos, 2) + 2,
+        _ => align_to(pos, 8) + 8,
+    }
+}
+
+fn precompute_dense_fixed_offsets(
+    schema: &ExtendedSchema,
+    plan: &RowCellPlan,
+) -> (Option<Vec<Option<usize>>>, Option<usize>) {
+    let n = schema.keys.len();
+    let mut out = vec![None; n];
+    let mut pos = 0usize;
+    let mut var_start = None;
+    for &fi in &plan.dense_wire_order(schema) {
+        if plan.packed_bools && plan.bool_slots.contains(&fi) {
+            if Some(fi) == plan.first_bool {
+                let bw = plan.bool_word_bytes();
+                let base = align_to(pos, bw);
+                for (idx, &bs) in plan.bool_slots.iter().enumerate() {
+                    out[bs] = Some(base + idx / 8);
+                }
+                pos = base + bw;
+            }
+            continue;
+        }
+        let sig = schema.sigils[fi];
+        if is_var_sigil(sig) {
+            var_start = Some(pos);
+            break;
+        }
+        let w = if plan.narrow {
+            schema.cell_width(fi)
+        } else {
+            8
+        };
+        let off = if schema.is_promoted(fi) || sig == SIGIL_KEYWORD {
+            align_to(pos, 2)
+        } else {
+            align_to(pos, w as usize)
+        };
+        out[fi] = Some(off);
+        pos = advance_dense_past_cell_fixed(pos, fi, schema, plan);
+    }
+    (Some(out), var_start)
+}
+
 fn advance_dense_past_cell(
     data: &[u8],
     body_base: usize,
@@ -873,6 +961,23 @@ pub fn dense_field_offset(
     plan: &RowCellPlan,
 ) -> Result<Option<usize>> {
     let body_base = obj_offset + 9; // magic + len + hdr
+    if let Some(ref fixed) = plan.dense_fixed_body_offsets {
+        if let Some(body_rel) = fixed.get(slot).and_then(|o| *o) {
+            return Ok(Some(body_base + body_rel));
+        }
+        if let Some(mut pos) = plan.dense_var_body_start {
+            for fi in plan.dense_wire_order(schema) {
+                if !is_var_sigil(schema.sigils[fi]) {
+                    continue;
+                }
+                if fi == slot {
+                    return Ok(Some(body_base + pos));
+                }
+                pos = advance_dense_past_cell(data, body_base, pos, fi, schema, plan)?;
+            }
+            return Ok(None);
+        }
+    }
     let mut pos = 0usize; // body-relative
     for &fi in &plan.dense_wire_order(schema) {
         if plan.packed_bools && plan.bool_slots.contains(&fi) {
@@ -971,6 +1076,35 @@ fn resolve_slot_v12(data: &[u8], obj_offset: usize, slot: usize) -> Option<usize
     obj_offset.checked_add(rel)
 }
 
+fn sparse_bitmask_end(data: &[u8], obj_offset: usize, field_count: usize) -> Option<usize> {
+    let mut p = obj_offset + 9;
+    let mut cur = 0usize;
+    loop {
+        let b = *data.get(p)?;
+        p += 1;
+        for _ in 0..7 {
+            cur += 1;
+            if cur >= field_count {
+                return Some(p);
+            }
+        }
+        if b & 0x80 == 0 {
+            break;
+        }
+    }
+    Some(p)
+}
+
+fn sparse_present_slots(data: &[u8], obj_offset: usize, field_count: usize) -> Option<Vec<usize>> {
+    let mut out = Vec::new();
+    for fi in 0..field_count {
+        if is_bit_set_sparse(data, obj_offset, fi) {
+            out.push(fi);
+        }
+    }
+    Some(out)
+}
+
 fn resolve_slot_v13_sparse(
     data: &[u8],
     obj_offset: usize,
@@ -978,61 +1112,30 @@ fn resolve_slot_v13_sparse(
     schema: &ExtendedSchema,
     plan: &RowCellPlan,
 ) -> Option<usize> {
-    let mut p = obj_offset.checked_add(9)?;
-    let mut cur = 0usize;
-    let mut table_idx = 0usize;
-    let mut found = false;
-    let mut b: u8;
-    loop {
-        b = *data.get(p)?;
-        p += 1;
-        let bits = b & 0x7F;
-        for bit in 0..7usize {
-            if cur == slot {
-                if (bits >> bit) & 1 == 0 {
-                    return None;
-                }
-                found = true;
-            } else if cur < slot && (bits >> bit) & 1 == 1 {
-                if !(plan.packed_bools && plan.bool_slots.contains(&cur)) {
-                    table_idx += 1;
-                }
-            }
-            cur += 1;
-        }
-        if found && b & 0x80 == 0 {
-            break;
-        }
-        if cur > slot && found {
-            break;
-        }
-        if b & 0x80 == 0 {
-            return None;
-        }
+    if !is_bit_set_sparse(data, obj_offset, slot) {
+        return None;
     }
-    while b & 0x80 != 0 {
-        b = *data.get(p)?;
-        p += 1;
-    }
+    let present_slots = sparse_present_slots(data, obj_offset, schema.keys.len())?;
+    let ot_slots = sparse_offset_table_slots(&present_slots, plan);
+    let table_base = sparse_bitmask_end(data, obj_offset, schema.keys.len())?;
     if plan.packed_bools && plan.bool_slots.contains(&slot) {
-        if let Some(fb) = plan.first_bool {
-            let mut present_any_bool = false;
-            for &bs in &plan.bool_slots {
-                if is_bit_set_sparse(data, obj_offset, bs) {
-                    present_any_bool = true;
-                    break;
-                }
-            }
-            if !present_any_bool {
-                return None;
-            }
-            let base = sparse_bool_word_offset(data, obj_offset, fb, schema, plan)?;
-            let bit_in_word = plan.bool_slots.iter().position(|&s| s == slot)?;
-            return Some(base + bit_in_word / 8);
-        }
+        let bool_table_fi = ot_slots.iter().find(|&&fi| plan.bool_slots.contains(&fi))?;
+        let table_idx = ot_slots.iter().position(|&fi| fi == *bool_table_fi)?;
+        let rel = u16::from_le_bytes(
+            data.get(table_base + table_idx * 2..table_base + table_idx * 2 + 2)?
+                .try_into()
+                .ok()?,
+        ) as usize;
+        let base = obj_offset + rel;
+        let bit_in_word = plan.bool_slots.iter().position(|&s| s == slot)?;
+        return Some(base + bit_in_word / 8);
     }
-    let table_start = p + table_idx * 2;
-    let rel = u16::from_le_bytes(data.get(table_start..table_start + 2)?.try_into().ok()?) as usize;
+    let table_idx = ot_slots.iter().position(|&fi| fi == slot)?;
+    let rel = u16::from_le_bytes(
+        data.get(table_base + table_idx * 2..table_base + table_idx * 2 + 2)?
+            .try_into()
+            .ok()?,
+    ) as usize;
     Some(obj_offset + rel)
 }
 
@@ -1059,57 +1162,6 @@ fn resolve_slot_v13_sparse_header_only(
         }
         if b & 0x80 == 0 {
             break;
-        }
-    }
-    None
-}
-
-fn sparse_bool_word_offset(
-    data: &[u8],
-    obj_offset: usize,
-    first_bool: usize,
-    schema: &ExtendedSchema,
-    plan: &RowCellPlan,
-) -> Option<usize> {
-    let mut p = obj_offset + 9;
-    let n = schema.keys.len();
-    for fi in 0..n {
-        if fi == first_bool {
-            return Some(align_to(p, plan.bool_word_bytes()));
-        }
-        if plan.packed_bools && plan.bool_slots.contains(&fi) {
-            continue;
-        }
-        if !is_bit_set_sparse(data, obj_offset, fi) {
-            continue;
-        }
-        let sig = schema.sigils[fi];
-        let w = if plan.narrow {
-            schema.cell_width(fi)
-        } else {
-            8
-        };
-        match sig {
-            SIGIL_INT | SIGIL_FLOAT => {
-                p = align_to(p, w as usize);
-                p += w as usize;
-            }
-            SIGIL_STR | b'<' => {
-                if schema.is_promoted(fi) {
-                    p = align_to(p, 2) + 2;
-                } else {
-                    let prefix = schema.str_len_prefix(fi);
-                    let len = read_str_cell_len(data, p, prefix).ok()?;
-                    p = advance_past_str_cell(p, len, prefix);
-                }
-            }
-            SIGIL_KEYWORD => {
-                p = align_to(p, 2) + 2;
-            }
-            _ => {
-                p = align_to(p, 8);
-                p += 8;
-            }
         }
     }
     None
@@ -1145,8 +1197,11 @@ pub fn encode_compact_record(
     let all_present = present.iter().all(|&p| p);
     let dense = opts.dense_frames && all_present;
 
-    let body = if dense {
-        encode_dense_body(cells, schema, &plan)?
+    let (body, sparse_body_starts) = if dense {
+        (
+            encode_dense_body(cells, schema, &plan)?,
+            std::collections::HashMap::new(),
+        )
     } else {
         encode_sparse_body(cells, schema, &present, &plan)?
     };
@@ -1168,12 +1223,15 @@ pub fn encode_compact_record(
         let header_len = obj.len();
         let ot_slots = sparse_offset_table_slots(&present_slots, &plan);
         let data_start = align_to(header_len + ot_slots.len() * 2, 8);
-        let mut rel_offs = Vec::new();
-        let mut pos = data_start;
-        for &fi in &ot_slots {
-            rel_offs.push(pos as u16);
-            pos += cell_encoded_len(fi, cells, schema, &plan)?;
-        }
+        let rel_offs: Vec<u16> = ot_slots
+            .iter()
+            .map(|&fi| {
+                let body_rel = sparse_body_starts.get(&fi).copied().ok_or_else(|| {
+                    NxsError::ParseError(format!("missing sparse body offset for field {fi}"))
+                })?;
+                Ok((data_start + body_rel) as u16)
+            })
+            .collect::<Result<_>>()?;
         for off in &rel_offs {
             obj.extend_from_slice(&off.to_le_bytes());
         }
@@ -1197,12 +1255,8 @@ fn sparse_offset_table_slots(present_slots: &[usize], plan: &RowCellPlan) -> Vec
     for &fi in present_slots {
         if plan.bool_slots.contains(&fi) {
             if !bool_word_added {
-                if let Some(fb) = plan.first_bool {
-                    if present_slots.contains(&fb) {
-                        out.push(fb);
-                        bool_word_added = true;
-                    }
-                }
+                out.push(fi);
+                bool_word_added = true;
             }
         } else {
             out.push(fi);
@@ -1211,35 +1265,26 @@ fn sparse_offset_table_slots(present_slots: &[usize], plan: &RowCellPlan) -> Vec
     out
 }
 
-fn cell_encoded_len(
+fn sparse_cell_body_start(
+    body_len: usize,
     fi: usize,
-    cells: &[(u16, CompactCell)],
     schema: &ExtendedSchema,
     plan: &RowCellPlan,
-) -> Result<usize> {
-    if plan.packed_bools && plan.bool_slots.contains(&fi) {
-        return Ok(plan.bool_word_bytes());
-    }
+) -> usize {
     let w = if plan.narrow {
         schema.cell_width(fi)
     } else {
         8
     };
     let sig = schema.sigils[fi];
-    let cell = cells
-        .iter()
-        .find(|(s, _)| *s as usize == fi)
-        .map(|(_, c)| c);
-    match cell {
-        Some(CompactCell::Str(s)) if schema.is_promoted(fi) => Ok(2),
-        Some(CompactCell::Str(s)) => Ok(str_cell_encoded_len(s.len(), schema.str_len_prefix(fi))),
-        Some(CompactCell::I64(_)) if sig == SIGIL_INT => Ok(w as usize),
-        Some(CompactCell::F64(_)) if sig == SIGIL_FLOAT => Ok(w as usize),
-        Some(CompactCell::Bool(_)) => Ok(8),
-        Some(CompactCell::Time(_)) => Ok(8),
-        Some(CompactCell::Keyword(_)) => Ok(2),
-        Some(CompactCell::Null) => Ok(0),
-        _ => Ok(8),
+    match sig {
+        SIGIL_INT | SIGIL_FLOAT | SIGIL_BOOL if !plan.packed_bools || sig != SIGIL_BOOL => {
+            align_to(body_len, w as usize)
+        }
+        SIGIL_TIME => align_to(body_len, 8),
+        SIGIL_KEYWORD | SIGIL_STR | b'<' if schema.is_promoted(fi) => align_to(body_len, 2),
+        SIGIL_STR | b'<' => body_len,
+        _ => align_to(body_len, 8),
     }
 }
 
@@ -1279,8 +1324,9 @@ fn encode_sparse_body(
     schema: &ExtendedSchema,
     present: &[bool],
     plan: &RowCellPlan,
-) -> Result<Vec<u8>> {
+) -> Result<(Vec<u8>, std::collections::HashMap<usize, usize>)> {
     let mut body = Vec::new();
+    let mut starts = std::collections::HashMap::new();
     let mut map: std::collections::HashMap<u16, &CompactCell> = std::collections::HashMap::new();
     for (s, c) in cells {
         map.insert(*s, c);
@@ -1291,7 +1337,14 @@ fn encode_sparse_body(
             continue;
         }
         if plan.packed_bools && plan.bool_slots.contains(&fi) {
-            if !bool_word_emitted && Some(fi) == plan.first_bool {
+            if !bool_word_emitted {
+                let base = body.len();
+                starts.insert(fi, base);
+                for (bi, &bs) in plan.bool_slots.iter().enumerate() {
+                    if present[bs] {
+                        starts.insert(bs, base + bi / 8);
+                    }
+                }
                 let mut bool_word: u64 = 0;
                 for (bi, &bs) in plan.bool_slots.iter().enumerate() {
                     if !present[bs] {
@@ -1309,9 +1362,14 @@ fn encode_sparse_body(
             continue;
         }
         let cell = map.get(&(fi as u16)).expect("present cell");
+        let start = sparse_cell_body_start(body.len(), fi, schema, plan);
+        while body.len() < start {
+            body.push(0);
+        }
+        starts.insert(fi, start);
         append_cell(&mut body, fi, cell, schema, plan)?;
     }
-    Ok(body)
+    Ok((body, starts))
 }
 
 fn append_cell(
@@ -1713,6 +1771,143 @@ mod tests {
     #[test]
     fn reject_v13_flags_on_v12_reader() {
         assert!(validate_reader_flags(FLAG_DENSE_FRAMES, false).is_err());
+        assert!(validate_reader_flags(FLAG_DENSE_WIRE_REORDER, false).is_err());
         assert!(validate_reader_flags(0, false).is_ok());
+    }
+
+    #[test]
+    fn sparse_body_includes_f64_after_packed_bools_and_string() {
+        let ext = ExtendedSchema::from_basic(
+            vec![
+                "a".into(),
+                "b".into(),
+                "c".into(),
+                "d".into(),
+                "e".into(),
+                "f".into(),
+                "g".into(),
+                "h".into(),
+            ],
+            vec![
+                SIGIL_INT,
+                SIGIL_FLOAT,
+                SIGIL_BOOL,
+                SIGIL_STR,
+                SIGIL_INT,
+                SIGIL_FLOAT,
+                SIGIL_BOOL,
+                SIGIL_INT,
+            ],
+        );
+        let plan = RowCellPlan::new(&ext, CompactOptions::compact().preamble_flags());
+        let mut present = vec![false; 8];
+        for i in [2usize, 3, 5, 6] {
+            present[i] = true;
+        }
+        let cells = [
+            (2u16, CompactCell::Bool(false)),
+            (3, CompactCell::Str("s1".into())),
+            (5, CompactCell::F64(1.25)),
+            (6, CompactCell::Bool(false)),
+        ];
+        let (body, starts) = encode_sparse_body(&cells, &ext, &present, &plan).unwrap();
+        let f_off = starts[&5];
+        let got = f64::from_le_bytes(body[f_off..f_off + 8].try_into().unwrap());
+        assert!((got - 1.25).abs() < 1e-9, "f64 at {f_off}: {got}");
+    }
+
+    /// Conformance `sparse` pattern: sparse frames only on this mask; decode matches v1.2.
+    #[test]
+    fn compact_sparse_matches_v12_decode() {
+        use crate::layout::{finish_row, Cell, RecordRow};
+        use crate::query::Reader;
+
+        let keys: Vec<String> = ["a", "b", "c", "d", "e", "f", "g", "h"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        let mut rows = Vec::new();
+        for i in 0..100u64 {
+            let mask = i.wrapping_mul(0xB7_E1_51_62_8A_ED_2A6B_u64.wrapping_add(i)) & 0xFF;
+            let mask = if mask == 0 { 1 } else { mask };
+            let mut cells = vec![Cell::Absent; 8];
+            if mask & 1 != 0 {
+                cells[0] = Cell::I64(i as i64);
+            }
+            if mask & 2 != 0 {
+                cells[1] = Cell::F64(i as f64 * 0.5);
+            }
+            if mask & 4 != 0 {
+                cells[2] = Cell::Bool(i % 2 == 0);
+            }
+            if mask & 8 != 0 {
+                cells[3] = Cell::Str(format!("s{i}"));
+            }
+            if mask & 16 != 0 {
+                cells[4] = Cell::I64(-(i as i64));
+            }
+            if mask & 32 != 0 {
+                cells[5] = Cell::F64(i as f64 * 1.25);
+            }
+            if mask & 64 != 0 {
+                cells[6] = Cell::Bool(i % 3 == 0);
+            }
+            if mask & 128 != 0 {
+                cells[7] = Cell::I64(i as i64 * 100);
+            }
+            rows.push(RecordRow { cells });
+        }
+        let v12 = finish_row(&keys, &rows, None).unwrap();
+        let compact = finish_row(&keys, &rows, Some(&CompactOptions::compact())).unwrap();
+        let r12 = Reader::new(&v12).unwrap();
+        let r13 = Reader::new(&compact).unwrap();
+        let mut sparse = 0usize;
+        for i in 0..100 {
+            let off = r13.record(i).unwrap().object_offset().unwrap();
+            if !is_dense_record(&compact, off).unwrap() {
+                sparse += 1;
+            }
+            let a = r12.record(i).unwrap();
+            let b = r13.record(i).unwrap();
+            for (fi, key) in keys.iter().enumerate() {
+                match fi {
+                    0 | 4 | 7 => assert_eq!(a.get_i64(key), b.get_i64(key), "{key} @ {i}"),
+                    1 | 5 => assert_eq!(a.get_f64(key), b.get_f64(key), "{key} @ {i}"),
+                    2 | 6 => assert_eq!(a.get_bool(key), b.get_bool(key), "{key} @ {i}"),
+                    3 => assert_eq!(a.get_str(key), b.get_str(key), "{key} @ {i}"),
+                    _ => {}
+                }
+            }
+        }
+        assert_eq!(sparse, 100);
+        assert!(compact.len() < v12.len());
+    }
+
+    /// Single-bool dense schema: packed bool word is 1 B (same width as one bool); without packing, bool is 8 B.
+    #[test]
+    fn single_bool_packed_word_is_one_byte_unpacked_is_eight() {
+        use crate::layout::{finish_row, Cell, RecordRow};
+        let keys = vec!["id".into(), "active".into(), "name".into()];
+        let rows: Vec<RecordRow> = (0..100)
+            .map(|i| RecordRow {
+                cells: vec![
+                    Cell::I64(i),
+                    Cell::Bool(i % 2 == 0),
+                    Cell::Str(format!("u{i}")),
+                ],
+            })
+            .collect();
+        let packed = finish_row(&keys, &rows, Some(&CompactOptions::compact())).unwrap();
+        let mut no_pack = CompactOptions::compact();
+        no_pack.packed_bools = false;
+        let unpacked = finish_row(&keys, &rows, Some(&no_pack)).unwrap();
+        assert!(
+            unpacked.len() > packed.len(),
+            "unpacked bool cells should be larger than 1-byte bool word"
+        );
+        let flags = u16::from_le_bytes(packed[6..8].try_into().unwrap());
+        let (ext, _) = parse_extended_schema(&packed, 32, flags).unwrap();
+        assert_eq!(ext.widths.get(1).copied().unwrap_or(0), 0);
+        assert_eq!(RowCellPlan::new(&ext, flags).bool_word_bytes(), 1);
     }
 }

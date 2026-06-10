@@ -83,8 +83,11 @@ pub const FLAG_DELTA_TAIL: u16 = 0x0080;
 pub const FLAG_DENSE_WIRE_REORDER: u16 = 0x0100;
 
 /// Mask of all v1.3 compact preamble bits (REQUIRED-class for v1.2 readers).
-pub const FLAG_V13_COMPACT_MASK: u16 =
-    FLAG_DENSE_FRAMES | FLAG_PACKED_BOOLS | FLAG_NARROW_CELLS | FLAG_DELTA_TAIL;
+pub const FLAG_V13_COMPACT_MASK: u16 = FLAG_DENSE_FRAMES
+    | FLAG_PACKED_BOOLS
+    | FLAG_NARROW_CELLS
+    | FLAG_DELTA_TAIL
+    | FLAG_DENSE_WIRE_REORDER;
 
 /// Dense-record header bit (byte after NYXO length field).
 pub const RECORD_HDR_DENSE: u8 = 0x01;

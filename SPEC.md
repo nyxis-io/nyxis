@@ -126,7 +126,7 @@ A `.nxb` file consists of four segments in order:
 > | 0 | 0 | Ordinary row layout, no embedded schema (external schema required). |
 >
 > A reader MUST NOT interpret bit 0 as Jumbo Offsets when bit 1 is also set. Conversely, a reader MUST NOT interpret bit 0 as `FLAG_COLUMNAR` when bit 1 is clear. Writers that set `FLAG_COLUMNAR` MUST also set bit 1 (`FLAG_SCHEMA_EMBEDDED`); the combination is validated by `ERR_INCOMPATIBLE_FLAGS` when `FLAG_COLUMNAR` appears without `FLAG_SCHEMA_EMBEDDED`.
-| 8 | 8 | `DictHash` | 64-bit MurmurHash3 of the Schema Header bytes |
+| 8 | 8 | `DictHash` | 64-bit MurmurHash3 of the Schema Header bytes (logical keys + sigils + v1.3 width/attr manifests when present; **not** a value-pool fingerprint). Cross-version identity of row data is a decode-equality concern, not hash equality. |
 | 16 | 8 | `TailPtr` | Absolute byte offset to the Tail-Index; `0` means streamable v1.1 and the final footer carries the Tail-Index offset |
 | 24 | 8 | `Reserved` | MUST be `0x00` |
 
@@ -383,7 +383,7 @@ user {
 
 **Status:** Draft (reference implementation in Rust `nxs` crate).
 
-v1.3 adds optional row-layout compact encodings controlled by preamble flags (bits 4–7). Files with any of these flags set **MUST** write spec version `0x0003` in the preamble. v1.2 readers **MUST** reject unknown REQUIRED-class flags with `ERR_UNSUPPORTED_FLAGS`.
+v1.3 adds optional row-layout compact encodings controlled by preamble flags (bits 4–8). Files with any of these flags set **MUST** write spec version `0x0003` in the preamble. v1.2 readers **MUST** reject unknown REQUIRED-class flags (`FLAG_V13_COMPACT_MASK` = `0x01F0`) with `ERR_UNSUPPORTED_FLAGS`.
 
 | Flag | Bit | Meaning |
 | :--- | :--- | :--- |

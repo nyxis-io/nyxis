@@ -1017,6 +1017,70 @@ fn make_compact_logs_dense_20() -> Vector {
     }
 }
 
+fn make_compact_sparse_100() -> Vector {
+    let keys: Vec<String> = ["a", "b", "c", "d", "e", "f", "g", "h"]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+    let mut rows = Vec::new();
+    let mut records_json: Vec<String> = Vec::new();
+    for i in 0..100u64 {
+        let mask = i.wrapping_mul(0xB7_E1_51_62_8A_ED_2A6B_u64.wrapping_add(i)) & 0xFF;
+        let mask = if mask == 0 { 1 } else { mask };
+        let mut cells = vec![Cell::Absent; 8];
+        let mut fields_json: Vec<String> = Vec::new();
+        if mask & 1 != 0 {
+            cells[0] = Cell::I64(i as i64);
+            fields_json.push(format!("\"a\":{}", i));
+        }
+        if mask & 2 != 0 {
+            let v = i as f64 * 0.5;
+            cells[1] = Cell::F64(v);
+            fields_json.push(format!("\"b\":{}", JV::Float(v).to_json()));
+        }
+        if mask & 4 != 0 {
+            let b = i % 2 == 0;
+            cells[2] = Cell::Bool(b);
+            fields_json.push(format!("\"c\":{}", if b { "true" } else { "false" }));
+        }
+        if mask & 8 != 0 {
+            let s = format!("s{i}");
+            cells[3] = Cell::Str(s.clone());
+            fields_json.push(format!("\"d\":{}", JV::Str(s).to_json()));
+        }
+        if mask & 16 != 0 {
+            cells[4] = Cell::I64(-(i as i64));
+            fields_json.push(format!("\"e\":{}", -(i as i64)));
+        }
+        if mask & 32 != 0 {
+            let v = i as f64 * 1.25;
+            cells[5] = Cell::F64(v);
+            fields_json.push(format!("\"f\":{}", JV::Float(v).to_json()));
+        }
+        if mask & 64 != 0 {
+            let b = i % 3 == 0;
+            cells[6] = Cell::Bool(b);
+            fields_json.push(format!("\"g\":{}", if b { "true" } else { "false" }));
+        }
+        if mask & 128 != 0 {
+            cells[7] = Cell::I64(i as i64 * 100);
+            fields_json.push(format!("\"h\":{}", i as i64 * 100));
+        }
+        rows.push(RecordRow { cells });
+        records_json.push(format!("{{{}}}", fields_json.join(",")));
+    }
+    let nxb = finish_row(&keys, &rows, Some(&CompactOptions::compact())).expect("compact sparse");
+    let expected = format!(
+        "{{\"record_count\":100,\"keys\":[\"a\",\"b\",\"c\",\"d\",\"e\",\"f\",\"g\",\"h\"],\"records\":[{}]}}",
+        records_json.join(",")
+    );
+    Vector {
+        name: "compact_sparse_100",
+        nxb,
+        expected,
+    }
+}
+
 fn make_compact_dense_multi_10() -> Vector {
     let keys = vec!["id".into(), "score".into()];
     let rows: Vec<RecordRow> = (0..10)
@@ -1152,7 +1216,11 @@ fn main() {
 
     let v13_dir = out_path.join("v13");
     fs::create_dir_all(&v13_dir).expect("create v13 directory");
-    for v in [make_compact_logs_dense_20(), make_compact_dense_multi_10()] {
+    for v in [
+        make_compact_logs_dense_20(),
+        make_compact_dense_multi_10(),
+        make_compact_sparse_100(),
+    ] {
         let nxb_path = v13_dir.join(format!("{}.nxb", v.name));
         let json_path = v13_dir.join(format!("{}.expected.json", v.name));
         fs::write(&nxb_path, &v.nxb).unwrap();

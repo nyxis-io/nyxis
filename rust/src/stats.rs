@@ -3,7 +3,8 @@
 //! Used by `nxs stats` to surface where file size goes before tuning encodings.
 
 use crate::compact::{
-    dense_field_offset, parse_extended_schema, resolve_field_offset, ExtendedSchema, RowCellPlan,
+    dense_field_offset, is_dense_record, parse_extended_schema, resolve_field_offset,
+    ExtendedSchema, RowCellPlan,
 };
 use crate::consts::{
     FLAG_COLUMNAR, FLAG_DENSE_FRAMES, FLAG_PAX, FLAG_V13_COMPACT_MASK, MAGIC_OBJ, SIGIL_BINARY,
@@ -28,7 +29,9 @@ pub struct FileStats {
     pub file_size: u64,
     pub layout: String,
     pub record_count: u64,
-    pub dict_hash: String,
+    /// Preamble DictHash (Murmur3-64 of embedded schema header bytes).
+    #[serde(alias = "dict_hash")]
+    pub schema_hash: String,
     pub segments: SegmentStats,
     pub fields: Vec<FieldStats>,
 }
@@ -112,7 +115,7 @@ pub fn analyze_with_path(data: &[u8], path: Option<&str>) -> Result<FileStats> {
         file_size,
         layout: layout_name(layout).to_string(),
         record_count: decoded.record_count as u64,
-        dict_hash: format!("0x{:016x}", decoded.dict_hash),
+        schema_hash: format!("0x{:016x}", decoded.dict_hash),
         segments: SegmentStats {
             preamble: PREAMBLE_BYTES,
             schema,
@@ -185,8 +188,10 @@ fn analyze_row_fields(
         let obj_off = rec.object_offset().ok_or(NxsError::OutOfBounds)?;
 
         if let (true, Some((ext, plan))) = (dense, ext_plan.as_ref()) {
-            accumulate_dense_row_record(data, obj_off, ext, plan, &mut acc)?;
-            continue;
+            if is_dense_record(data, obj_off)? {
+                accumulate_dense_row_record(data, obj_off, ext, plan, &mut acc)?;
+                continue;
+            }
         }
 
         for slot in 0..nkeys {
@@ -485,8 +490,13 @@ pub fn render_text<W: Write>(writer: &mut W, stats: &FileStats) -> Result<()> {
         .map_err(|e| NxsError::IoError(e.to_string()))?;
     writeln!(writer, "  records:     {}", stats.record_count)
         .map_err(|e| NxsError::IoError(e.to_string()))?;
-    writeln!(writer, "  dict_hash:   {}", stats.dict_hash)
+    writeln!(writer, "  schema_hash: {}", stats.schema_hash)
         .map_err(|e| NxsError::IoError(e.to_string()))?;
+    writeln!(
+        writer,
+        "               (preamble DictHash; Murmur3-64 of schema header — not a value-pool fingerprint)"
+    )
+    .map_err(|e| NxsError::IoError(e.to_string()))?;
 
     writeln!(writer).map_err(|e| NxsError::IoError(e.to_string()))?;
     writeln!(writer, "Segments:").map_err(|e| NxsError::IoError(e.to_string()))?;

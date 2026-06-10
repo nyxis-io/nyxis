@@ -104,9 +104,14 @@ cargo run --release --bin gen_conformance -- ../conformance
 v1.3 row-layout compact encodings live under `conformance/v13/`. The Rust reference
 reader (`conformance/run_rust.rs`) validates these vectors. Language drivers that
 do not yet implement v1.3 decode **MUST** reject files carrying preamble bits
-`0x0010`–`0x0080` with `ERR_UNSUPPORTED_FLAGS` at open time.
+`0x0010`–`0x0100` (`FLAG_V13_COMPACT_MASK` = `0x01F0`) with `ERR_UNSUPPORTED_FLAGS` at open time.
+
+Cross-version logical equivalence (v1.2 row vs v1.3 `--compact` on the same data) is validated by
+field-by-field decode tests in the Rust reference reader, **not** by matching preamble `DictHash`
+(extended schema headers differ).
 
 | Vector | Type | What it tests |
 |--------|------|---------------|
 | `compact_dense_multi_10` | positive | 10 dense records, narrow ints + f64, delta tail-index |
 | `compact_logs_dense_20` | positive | 20 log-shaped records; low-cardinality `level` promoted to value pool |
+| `compact_sparse_100` | positive | 100 sparse-framed records (conformance `sparse` mask); dense/sparse coexistence in one file |

@@ -1,21 +1,11 @@
-#![allow(dead_code, unused_imports, unused_variables)]
-mod compact;
-mod compiler;
-mod consts;
-mod decoder;
 /// Generates matching .nxb and .json fixtures for the JS benchmark.
 /// Usage: cargo run --release --bin gen_fixtures -- <out_dir> [sizes...]
-mod error;
-mod layout;
-mod lexer;
-mod parser;
-mod writer;
-
-use layout::{finish_columnar, Cell, RecordRow};
+use nxs::compact::CompactOptions;
+use nxs::layout::{finish_columnar, finish_row, Cell, RecordRow};
+use nxs::writer::{NxsWriter, Schema, Slot};
 
 use std::fs;
 use std::path::{Path, PathBuf};
-use writer::{NxsWriter, Schema, Slot};
 
 const SLOTS: &[&str] = &[
     "id",
@@ -93,6 +83,26 @@ fn build(n: usize) -> Vec<Rec> {
         .collect()
 }
 
+fn to_rows(records: &[Rec]) -> (Vec<String>, Vec<RecordRow>) {
+    let keys: Vec<String> = SLOTS.iter().map(|s| (*s).to_string()).collect();
+    let rows: Vec<RecordRow> = records
+        .iter()
+        .map(|r| RecordRow {
+            cells: vec![
+                Cell::I64(r.id),
+                Cell::Str(r.username.clone()),
+                Cell::Str(r.email.clone()),
+                Cell::I64(r.age),
+                Cell::F64(r.balance),
+                Cell::Bool(r.active),
+                Cell::F64(r.score),
+                Cell::Time(1_777_593_600_000_000_000),
+            ],
+        })
+        .collect();
+    (keys, rows)
+}
+
 fn write_nxb(records: &[Rec], path: &Path) {
     let schema = Schema::new(SLOTS);
     let mut w = NxsWriter::with_capacity(&schema, records.len() * 128 + 1024);
@@ -113,23 +123,61 @@ fn write_nxb(records: &[Rec], path: &Path) {
     println!("  {} → {} bytes", path.display(), bytes.len());
 }
 
-fn write_nxb_columnar(records: &[Rec], path: &Path) {
-    let keys: Vec<String> = SLOTS.iter().map(|s| (*s).to_string()).collect();
-    let rows: Vec<RecordRow> = records
+fn sparse_conformance_rows(n: usize) -> (Vec<String>, Vec<RecordRow>) {
+    let keys: Vec<String> = ["a", "b", "c", "d", "e", "f", "g", "h"]
         .iter()
-        .map(|r| RecordRow {
-            cells: vec![
-                Cell::I64(r.id),
-                Cell::Str(r.username.clone()),
-                Cell::Str(r.email.clone()),
-                Cell::I64(r.age),
-                Cell::F64(r.balance),
-                Cell::Bool(r.active),
-                Cell::F64(r.score),
-                Cell::Time(1_777_593_600_000_000_000),
-            ],
-        })
+        .map(|s| s.to_string())
         .collect();
+    let mut rows = Vec::with_capacity(n);
+    for i in 0..n as u64 {
+        let mask = i.wrapping_mul(0xB7E1_5162_8AED_2A6B_u64.wrapping_add(i)) & 0xFF;
+        let mask = if mask == 0 { 1 } else { mask };
+        let mut cells = vec![Cell::Absent; 8];
+        if mask & 1 != 0 {
+            cells[0] = Cell::I64(i as i64);
+        }
+        if mask & 2 != 0 {
+            cells[1] = Cell::F64(i as f64 * 0.5);
+        }
+        if mask & 4 != 0 {
+            cells[2] = Cell::Bool(i % 2 == 0);
+        }
+        if mask & 8 != 0 {
+            cells[3] = Cell::Str(format!("s{i}"));
+        }
+        if mask & 16 != 0 {
+            cells[4] = Cell::I64(-(i as i64));
+        }
+        if mask & 32 != 0 {
+            cells[5] = Cell::F64(i as f64 * 1.25);
+        }
+        if mask & 64 != 0 {
+            cells[6] = Cell::Bool(i % 3 == 0);
+        }
+        if mask & 128 != 0 {
+            cells[7] = Cell::I64(i as i64 * 100);
+        }
+        rows.push(RecordRow { cells });
+    }
+    (keys, rows)
+}
+
+fn write_sparse_compact_100(out_dir: &Path) {
+    let (keys, rows) = sparse_conformance_rows(100);
+    let bytes = finish_row(&keys, &rows, Some(&CompactOptions::compact())).expect("sparse compact");
+    let path = out_dir.join("sparse_100_compact.nxb");
+    write_file(&path, &bytes, "sparse compact nxb");
+}
+
+fn write_nxb_compact(records: &[Rec], path: &Path) {
+    let (keys, rows) = to_rows(records);
+    let bytes = finish_row(&keys, &rows, Some(&CompactOptions::compact())).expect("compact row");
+    write_file(path, &bytes, "compact nxb");
+    println!("  {} → {} bytes", path.display(), bytes.len());
+}
+
+fn write_nxb_columnar(records: &[Rec], path: &Path) {
+    let (keys, rows) = to_rows(records);
     let bytes = finish_columnar(&keys, &rows).expect("columnar encode");
     write_file(path, &bytes, "columnar nxb");
     println!("  {} → {} bytes", path.display(), bytes.len());
@@ -189,9 +237,13 @@ fn main() {
         println!("Generating n={n}...");
         let records = build(n);
         write_nxb(&records, &out_dir.join(format!("records_{n}.nxb")));
+        write_nxb_compact(&records, &out_dir.join(format!("records_{n}_compact.nxb")));
         write_nxb_columnar(&records, &out_dir.join(format!("records_{n}_columnar.nxb")));
         write_json(&records, &out_dir.join(format!("records_{n}.json")));
         write_csv(&records, &out_dir.join(format!("records_{n}.csv")));
     }
+    println!("Generating sparse_100_compact (conformance mask)...");
+    write_sparse_compact_100(&out_dir);
+
     println!("Done. Fixtures in {}", out_dir.display());
 }
