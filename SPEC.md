@@ -381,7 +381,7 @@ user {
 
 ## 12. Compact encoding extensions (v1.3)
 
-**Status:** Draft (reference implementation in Rust `nxs` crate).
+**Status:** Draft (reference implementation in Rust `nxs` crate). Design rationale, release train, and driver tiers: `NXS_v1.3.md`.
 
 v1.3 adds optional row-layout compact encodings controlled by preamble flags (bits 4–8). Files with any of these flags set **MUST** write spec version `0x0003` in the preamble. v1.2 readers **MUST** reject unknown REQUIRED-class flags (`FLAG_V13_COMPACT_MASK` = `0x01F0`) with `ERR_UNSUPPORTED_FLAGS`.
 
