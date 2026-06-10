@@ -126,7 +126,7 @@ A `.nxb` file consists of four segments in order:
 > | 0 | 0 | Ordinary row layout, no embedded schema (external schema required). |
 >
 > A reader MUST NOT interpret bit 0 as Jumbo Offsets when bit 1 is also set. Conversely, a reader MUST NOT interpret bit 0 as `FLAG_COLUMNAR` when bit 1 is clear. Writers that set `FLAG_COLUMNAR` MUST also set bit 1 (`FLAG_SCHEMA_EMBEDDED`); the combination is validated by `ERR_INCOMPATIBLE_FLAGS` when `FLAG_COLUMNAR` appears without `FLAG_SCHEMA_EMBEDDED`.
-| 8 | 8 | `DictHash` | 64-bit MurmurHash3 of the Schema Header bytes |
+| 8 | 8 | `DictHash` | 64-bit MurmurHash3 of the Schema Header bytes (logical keys + sigils + v1.3 width/attr manifests when present; **not** a value-pool fingerprint). Cross-version identity of row data is a decode-equality concern, not hash equality. |
 | 16 | 8 | `TailPtr` | Absolute byte offset to the Tail-Index; `0` means streamable v1.1 and the final footer carries the Tail-Index offset |
 | 24 | 8 | `Reserved` | MUST be `0x00` |
 
@@ -343,6 +343,8 @@ Online repack or compaction of a sealed `.nxb` file (rewriting the data sector w
 | `ERR_LIST_TYPE_MISMATCH` | List contains elements of mixed sigil types |
 | `ERR_OVERFLOW` | Arithmetic overflow in Macro expression |
 | `ERR_INVALID_FLAGS` | Both `FLAG_COLUMNAR` and `FLAG_PAX` set |
+| `ERR_UNSUPPORTED_FLAGS` | v1.3 compact preamble bits set on a reader that does not implement v1.3 |
+| `ERR_VALUE_OUT_OF_RANGE` | Integer cell value exceeds declared narrow width (v1.3) |
 | `ERR_INCOMPATIBLE_FLAGS` | Invalid flag combination (e.g. `FLAG_COLUMNAR` with Preamble `TailPtr == 0`) |
 | `ERR_UNSUPPORTED_LAYOUT` | Reader does not implement the requested layout |
 | `ERR_UNSUPPORTED_FIELD_TYPE` | Field type not supported in columnar/PAX initial release (see Normative Annex A §Q3 / OLAP.md §Q3) |
@@ -377,7 +379,71 @@ user {
 
 ---
 
+## 12. Compact encoding extensions (v1.3)
+
+**Status:** Draft (reference implementation in Rust `nxs` crate). Design rationale, release train, and driver tiers: `NXS_v1.3.md`.
+
+v1.3 adds optional row-layout compact encodings controlled by preamble flags (bits 4–8). Files with any of these flags set **MUST** write spec version `0x0003` in the preamble. v1.2 readers **MUST** reject unknown REQUIRED-class flags (`FLAG_V13_COMPACT_MASK` = `0x01F0`) with `ERR_UNSUPPORTED_FLAGS`.
+
+| Flag | Bit | Meaning |
+| :--- | :--- | :--- |
+| `FLAG_DENSE_FRAMES` | 0x0010 | Records may use dense framing (§12.1) |
+| `FLAG_PACKED_BOOLS` | 0x0020 | Bool fields share a packed `u64` word |
+| `FLAG_NARROW_CELLS` | 0x0040 | Schema declares per-field integer/float widths |
+| `FLAG_DELTA_TAIL` | 0x0080 | Tail-index uses block-anchored deltas (§12.4) |
+| `FLAG_DENSE_WIRE_REORDER` | 0x0100 | Dense cells sorted by descending width (§12.1); when clear, schema order |
+
+Batch `nxs compile` emits v1.3 compact (all §12 wire flags plus auto-keyword promotion) **by default at launch**; `--legacy-v12` opts out to v1.2 row layout for one release cycle. Until the launch flip, compact is opt-in via a hidden `--compact` flag (`COMPILE_DEFAULT_COMPACT` in `layout.rs`). Streaming/WAL writers use compact framing but 8-byte cells unless widths are pragma-declared. Individual flags remain selectable for debugging.
+
+### 12.1 Dense-record framing
+
+When `FLAG_DENSE_FRAMES` is set, fully-populated records **MAY** omit the LEB128 presence bitmask and per-field offset table. The byte immediately after the NYXO length field (offset +8) carries `RECORD_HDR_DENSE` (0x01) in bit 0; sparse records set bit 0 to 0 and retain v1.2 framing with an extra header byte before the bitmask.
+
+Dense cell order on the wire **MAY** differ from schema declaration order: the reference compiler sorts fixed-width cells by descending alignment width, then emits variable-length string/binary cells in schema order (§4.2). Logical field indices in the schema header are unchanged. Fixed-width cells are width-aligned within the record body; length-prefixed string/binary cells pad the `(len + payload)` region to an 8-byte boundary **relative to the cell start** (not absolute file alignment).
+
+### 12.2 Packed bools
+
+When `FLAG_PACKED_BOOLS` is set, all bool-typed schema slots are encoded as a single little-endian `u64` bitmask at the position of the first bool field in schema order. Individual bool slots do not occupy separate cells in dense frames.
+
+### 12.3 Narrow cells
+
+When `FLAG_NARROW_CELLS` is set, the schema header appends a **WidthManifest**: one byte per field giving integer width (`1`, `2`, `4`, or `8`) or float width (`4` or `8`). Width `0` means default width 8. Writers **MUST** reject values outside the declared width.
+
+### 12.4 Block-anchored delta tail-index
+
+When `FLAG_DELTA_TAIL` is set, the row tail-index replaces the v1.2 `(KeyID, AbsOffset)` table with:
+
+1. `RecordCount u32`, `BlockSize u32`, `Flags u16`, `AnchorCount u16`
+2. Header padded to 8 bytes from the tail-index start
+3. `AnchorCount` × `u64` anchor offsets (first record of each block)
+4. `RecordCount` × `u32` deltas relative to the block anchor
+5. Optional `RecordCount` × `u16` KeyID table (omitted when all records share one KeyID; flag bit 0x0001)
+6. `FooterTailPtr u64` + `MagicFooter u32`
+
+Seek: `offset = anchors[k / A] + deltas[k]` where `A` is `BlockSize` (default 1024).
+
+### 12.5 Auto-keyword promotion
+
+At compile time, String (`"`) fields whose distinct value count is ≤ `--keyword-threshold` (default 4096) **MAY** be promoted: values are interned into the schema **ValuePool** and cells encode as `u16` indices. The schema **FieldAttrs** byte per field marks promotion (`FIELD_ATTR_PROMOTED`). Decompilers **MUST** emit `"` syntax (not `$`) for promoted fields. `Reader::get_keyword` materialises promoted or native `$` fields.
+
+### 12.6 Extended schema layout
+
+After the v1.2 TypeManifest + padded StringPool:
+
+1. WidthManifest (`KeyCount` bytes) if `FLAG_NARROW_CELLS`
+2. FieldAttrs (`KeyCount` bytes) if any v1.3 flag is set — bit `0x01` promoted string; bit `0x02` `u16` length prefix for inline strings
+3. `ValueCount u16` + null-terminated ValuePool strings (8-byte padded) when non-empty
+
+---
+
 ## Changelog
+
+### v1.3.0 — 2026-06-09 (Compact encoding)
+
+- Dense-record framing, packed bools, narrow cells, and block-anchored delta tail-index (§12).
+- Extended schema header: WidthManifest, FieldAttrs, ValuePool.
+- `nxs compile --compact`; `Reader::get_keyword` for promoted/native keyword fields.
+- New error codes: `ERR_UNSUPPORTED_FLAGS`, `ERR_VALUE_OUT_OF_RANGE`.
 
 ### v1.0.0 — 2026-04-30 (First Stable Release)
 

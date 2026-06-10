@@ -22,8 +22,19 @@ struct Cli {
 enum Commands {
     /// Compile `.nxs` source to `.nxb` binary
     Compile(CompileArgs),
+    /// Byte breakdown by segment and field (payload vs padding)
+    Stats(StatsArgs),
     /// Schema registry (gRPC `nyxis.registry.v1` — requires `nxs-registryd`)
     Registry(RegistryArgs),
+}
+
+#[derive(Parser)]
+struct StatsArgs {
+    /// Emit structured JSON instead of the default text table
+    #[arg(long)]
+    json: bool,
+    /// Input `.nxb` file (`-` for stdin)
+    input: PathBuf,
 }
 
 #[derive(Parser)]
@@ -32,6 +43,12 @@ struct CompileArgs {
     layout: String,
     #[arg(long, value_name = "N")]
     page_size: Option<u32>,
+    /// Emit v1.2 row layout (8-byte cells, sparse framing). Default encoding becomes compact at launch.
+    #[arg(long)]
+    legacy_v12: bool,
+    /// Force v1.3 compact encoding (temporary; default flips when `COMPILE_DEFAULT_COMPACT` is enabled).
+    #[arg(long, hide = true, conflicts_with = "legacy_v12")]
+    compact: bool,
     /// Input `.nxs` file
     input: PathBuf,
     /// Output `.nxb` file (default: same basename with `.nxb`)
@@ -94,7 +111,41 @@ fn main() {
     let cli = Cli::parse();
     match cli.command {
         Commands::Compile(args) => run_compile(args),
+        Commands::Stats(args) => run_stats(args),
         Commands::Registry(args) => run_registry(args),
+    }
+}
+
+fn run_stats(args: StatsArgs) {
+    let (data, path_label) = if args.input.as_os_str() == "-" {
+        let mut buf = Vec::new();
+        if let Err(e) = std::io::Read::read_to_end(&mut std::io::stdin(), &mut buf) {
+            eprintln!("error: read stdin: {e}");
+            std::process::exit(1);
+        }
+        (buf, None)
+    } else {
+        let path = &args.input;
+        let data = std::fs::read(path).unwrap_or_else(|e| {
+            eprintln!("error: read {}: {e}", path.display());
+            std::process::exit(1);
+        });
+        (data, Some(path.display().to_string()))
+    };
+
+    let stats = nxs::stats::analyze_with_path(&data, path_label.as_deref()).unwrap_or_else(|e| {
+        eprintln!("error: {e}");
+        std::process::exit(1);
+    });
+
+    let result = if args.json {
+        nxs::stats::render_json(&mut std::io::stdout(), &stats)
+    } else {
+        nxs::stats::render_text(&mut std::io::stdout(), &stats)
+    };
+    if let Err(e) = result {
+        eprintln!("error: {e}");
+        std::process::exit(1);
     }
 }
 
@@ -103,9 +154,14 @@ fn run_compile(args: CompileArgs) {
         eprintln!("error: unknown layout (row|columnar|pax)");
         std::process::exit(1);
     });
+    if args.compact && args.legacy_v12 {
+        eprintln!("error: --compact and --legacy-v12 are mutually exclusive");
+        std::process::exit(1);
+    }
     let opts = CompileOptions {
         layout,
         page_size: args.page_size.unwrap_or(0),
+        compact: nxs::layout::resolve_compact_encoding(args.legacy_v12, args.compact),
     };
 
     let output_path = args

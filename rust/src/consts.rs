@@ -44,8 +44,11 @@ pub const SIGIL_NULL: u8 = b'^';
 
 // ── Version ───────────────────────────────────────────────────────────────────
 
-/// Preamble version field: major=1, minor=1
+/// Preamble version field: major=1, minor=1 (v1.2 row baseline).
 pub const VERSION: u16 = 0x0101;
+
+/// Preamble version when any v1.3 compact flag is set.
+pub const VERSION_V13: u16 = 0x0103;
 
 // ── Preamble flag bits ────────────────────────────────────────────────────────
 
@@ -61,3 +64,39 @@ pub const FLAG_PAX: u16 = 0x0004;
 
 /// Bit 3: per-PAX-page CRC32 enabled.
 pub const FLAG_PAGE_CRC: u16 = 0x0008;
+
+// ── v1.3 compact encoding flags (REQUIRED class) ─────────────────────────────
+
+/// Bit 4: records may use dense framing (§4).
+pub const FLAG_DENSE_FRAMES: u16 = 0x0010;
+
+/// Bit 5: bool fields packed into shared u64 words (§5.1).
+pub const FLAG_PACKED_BOOLS: u16 = 0x0020;
+
+/// Bit 6: schema carries per-field width bytes (§5.2).
+pub const FLAG_NARROW_CELLS: u16 = 0x0040;
+
+/// Bit 7: tail-index uses block-anchored deltas (§6).
+pub const FLAG_DELTA_TAIL: u16 = 0x0080;
+
+/// Bit 8: dense frames use descending-width wire order (§4.2); when clear, schema order.
+pub const FLAG_DENSE_WIRE_REORDER: u16 = 0x0100;
+
+/// Mask of all v1.3 compact preamble bits (REQUIRED-class for v1.2 readers).
+pub const FLAG_V13_COMPACT_MASK: u16 = FLAG_DENSE_FRAMES
+    | FLAG_PACKED_BOOLS
+    | FLAG_NARROW_CELLS
+    | FLAG_DELTA_TAIL
+    | FLAG_DENSE_WIRE_REORDER;
+
+/// Dense-record header bit (byte after NYXO length field).
+pub const RECORD_HDR_DENSE: u8 = 0x01;
+
+/// Default tail-index anchor block size (§6).
+pub const DEFAULT_DELTA_BLOCK_SIZE: u32 = 1024;
+
+/// FieldAttrs bit: string field promoted to value-pool index (§7).
+pub const FIELD_ATTR_PROMOTED: u8 = 0x01;
+
+/// FieldAttrs bit: inline string/binary uses `u16` length prefix (default `u32`).
+pub const FIELD_ATTR_U16_LEN: u8 = 0x02;

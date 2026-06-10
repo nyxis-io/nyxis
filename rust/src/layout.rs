@@ -5,17 +5,41 @@
 //! Phase 3: variable-length string/binary columns (u32 offsets + values tail).
 
 // Re-export shared constants so callers that `use crate::layout::…` still compile.
+pub use crate::compact::CompactOptions;
 pub use crate::consts::{
-    FLAG_COLUMNAR, FLAG_PAX, FLAG_SCHEMA_EMBEDDED, MAGIC_FILE, MAGIC_FOOTER, MAGIC_PAGE, VERSION,
+    FLAG_COLUMNAR, FLAG_DELTA_TAIL, FLAG_DENSE_FRAMES, FLAG_NARROW_CELLS, FLAG_PACKED_BOOLS,
+    FLAG_PAX, FLAG_SCHEMA_EMBEDDED, FLAG_V13_COMPACT_MASK, MAGIC_FILE, MAGIC_FOOTER, MAGIC_PAGE,
+    VERSION, VERSION_V13,
 };
 use crate::error::{NxsError, Result};
 use crate::parser::{Field, Value};
-use crate::writer::{build_schema, murmur3_64, NxsWriter};
+use crate::writer::{build_schema, murmur3_64, NxsWriter, Schema, Slot};
 use std::collections::HashMap;
 
 const FOOTER_ROW: usize = 12;
 const FOOTER_COLUMNAR: usize = 20;
 const FOOTER_PAX: usize = 28;
+
+/// Minimum driver release that decodes v1.3 compact files (rejection messages cite this).
+pub const DECODER_MIN_VERSION_V13: &str = "1.3.0";
+
+/// Batch `nxs compile` default: emit v1.3 compact when `true`.
+///
+/// Flip in a one-line launch commit after tier-0 drivers decode v1.3. Until then,
+/// compact is opt-in via `--compact` (hidden); `--legacy-v12` forces v1.2 row layout.
+pub const COMPILE_DEFAULT_COMPACT: bool = false;
+
+/// Resolve whether batch compile emits v1.3 compact row encoding.
+pub fn resolve_compact_encoding(legacy_v12: bool, force_compact: bool) -> Option<CompactOptions> {
+    if legacy_v12 {
+        return None;
+    }
+    if force_compact || COMPILE_DEFAULT_COMPACT {
+        Some(CompactOptions::compact())
+    } else {
+        None
+    }
+}
 
 /// Layout selection for compile / writer finish.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -50,6 +74,7 @@ impl Layout {
 pub struct CompileOptions {
     pub layout: Layout,
     pub page_size: u32,
+    pub compact: Option<CompactOptions>,
 }
 
 impl CompileOptions {
@@ -95,6 +120,10 @@ pub fn validate_preamble_flags(flags: u16) -> Result<()> {
             "columnar/PAX requires FLAG_SCHEMA_EMBEDDED".into(),
         ));
     }
+    if flags & FLAG_V13_COMPACT_MASK != 0 && (col || pax) {
+        return Err(NxsError::IncompatibleFlags);
+    }
+    crate::compact::validate_reader_flags(flags, true)?;
     Ok(())
 }
 
@@ -563,12 +592,48 @@ pub(crate) fn encode_page(
     Ok(page)
 }
 
+/// Emit a row-layout `.nxb` via [`NxsWriter`] with optional v1.3 compact encoding.
+pub fn finish_row(
+    keys: &[String],
+    rows: &[RecordRow],
+    compact: Option<&CompactOptions>,
+) -> Result<Vec<u8>> {
+    let key_refs: Vec<&str> = keys.iter().map(String::as_str).collect();
+    let schema = Schema::new(&key_refs);
+    let mut w = NxsWriter::with_compact(&schema, compact.cloned());
+    for row in rows {
+        w.begin_object();
+        for (fi, cell) in row.cells.iter().enumerate() {
+            let slot = Slot(fi as u16);
+            match cell {
+                Cell::Absent => {}
+                Cell::Null => w.write_null(slot),
+                Cell::I64(v) => w.write_i64(slot, *v),
+                Cell::F64(v) => w.write_f64(slot, *v),
+                Cell::Bool(v) => w.write_bool(slot, *v),
+                Cell::Time(v) => w.write_time(slot, *v),
+                Cell::Str(v) => w.write_str(slot, v),
+                Cell::Binary(_) => {
+                    return Err(NxsError::UnsupportedFieldType);
+                }
+            }
+        }
+        w.end_object();
+    }
+    Ok(w.finish())
+}
+
 /// Compile parsed fields with the selected layout.
 pub fn compile_fields(fields: &[Field], opts: &CompileOptions) -> Result<Vec<u8>> {
     match opts.layout {
         Layout::Row => {
-            let mut compiler = crate::compiler::Compiler::new();
-            compiler.compile(fields)
+            if opts.compact.is_some() {
+                let (keys, rows) = records_from_fields(fields)?;
+                finish_row(&keys, &rows, opts.compact.as_ref())
+            } else {
+                let mut compiler = crate::compiler::Compiler::new();
+                compiler.compile(fields)
+            }
         }
         Layout::Columnar | Layout::Pax => {
             let (keys, rows) = records_from_fields(fields)?;
@@ -768,5 +833,15 @@ mod tests {
     #[test]
     fn invalid_flags_rejected() {
         assert!(validate_preamble_flags(FLAG_COLUMNAR | FLAG_PAX).is_err());
+    }
+
+    #[test]
+    fn resolve_compact_encoding_legacy_wins() {
+        assert!(resolve_compact_encoding(true, false).is_none());
+        assert!(resolve_compact_encoding(true, true).is_none());
+        assert!(resolve_compact_encoding(false, true).is_some());
+        if !COMPILE_DEFAULT_COMPACT {
+            assert!(resolve_compact_encoding(false, false).is_none());
+        }
     }
 }

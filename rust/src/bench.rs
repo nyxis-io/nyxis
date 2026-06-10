@@ -1,4 +1,5 @@
 #![allow(dead_code, unused_imports, unused_variables)]
+mod compact;
 mod compiler;
 mod consts;
 mod decoder;

@@ -35,6 +35,10 @@ name = "gen_fixtures"
 path = "src/gen_fixtures.rs"
 
 [[bin]]
+name = "bench_read_row"
+path = "src/bin/bench_read_row.rs"
+
+[[bin]]
 name = "gen_conformance"
 path = "../conformance/generate.rs"
 

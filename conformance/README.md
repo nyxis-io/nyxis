@@ -42,7 +42,7 @@ Each test vector consists of two files:
 { "error": "ERR_BAD_MAGIC" }
 ```
 
-Supported error codes: `ERR_BAD_MAGIC`, `ERR_DICT_MISMATCH`, `ERR_OUT_OF_BOUNDS`, `ERR_INVALID_FLAGS`, `ERR_INCOMPATIBLE_FLAGS`, `ERR_INVALID_PAGE_MAGIC`
+Supported error codes: `ERR_BAD_MAGIC`, `ERR_DICT_MISMATCH`, `ERR_OUT_OF_BOUNDS`, `ERR_INVALID_FLAGS`, `ERR_INCOMPATIBLE_FLAGS`, `ERR_INVALID_PAGE_MAGIC`, `ERR_UNSUPPORTED_FLAGS`
 
 ## Conformance Runner Contract
 
@@ -98,3 +98,27 @@ cargo run --release --bin gen_conformance -- ../conformance
 | `pax_flat8_strings_p128_300` | positive | 300 records, page size 128, id/name/score, string `name` = `user_{i}`, PAX |
 | `pax_streaming_unsealed` | negative | Unsealed PAX (3 pages, no footer) — batch open → ERR_BAD_MAGIC |
 | `pax_invalid_page_magic` | negative | Corrupt NXSP at first page → ERR_INVALID_PAGE_MAGIC |
+
+### v1.3 compact vectors (`v13/`)
+
+v1.3 row-layout compact encodings live under `conformance/v13/`. The Rust reference
+reader (`conformance/run_rust.rs`) validates these vectors. **Vectors are frozen
+at merge of the encoder PR** — all driver decode work proceeds against this target.
+
+Language drivers that do not yet implement v1.3 decode **MUST** reject files
+carrying preamble bits `0x0010`–`0x0100` (`FLAG_V13_COMPACT_MASK` = `0x01F0`)
+with `ERR_UNSUPPORTED_FLAGS` at open time. The message MUST include compact flag
+bits and `upgrade your nyxis driver to >= 1.3.0`.
+
+**Driver decode triage (launch):** tier-0 JavaScript (browser demos); tier-1 Go,
+Python, C; tier-2 Ruby, PHP, C#; tier-3 Kotlin, Swift (may trail with README note).
+
+Cross-version logical equivalence (v1.2 row vs v1.3 `--compact` on the same data) is validated by
+field-by-field decode tests in the Rust reference reader, **not** by matching preamble `DictHash`
+(extended schema headers differ).
+
+| Vector | Type | What it tests |
+|--------|------|---------------|
+| `compact_dense_multi_10` | positive | 10 dense records, narrow ints + f64, delta tail-index |
+| `compact_logs_dense_20` | positive | 20 log-shaped records; low-cardinality `level` promoted to value pool |
+| `compact_sparse_100` | positive | 100 sparse-framed records (conformance `sparse` mask); dense/sparse coexistence in one file |

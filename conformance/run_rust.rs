@@ -13,6 +13,7 @@ use std::path::Path;
 
 use nxs::decoder::{decode, DecodedValue};
 use nxs::error::NxsError;
+use nxs::query::Reader;
 
 // ── Minimal JSON parser for expected.json ─────────────────────────────────────
 
@@ -222,11 +223,115 @@ fn decoded_matches(decoded: &DecodedValue, expected: &Jv) -> bool {
     }
 }
 
+fn parse_expected_positive(expected_json: &Jv) -> Result<(usize, Vec<String>, Vec<&Jv>), String> {
+    match expected_json {
+        Jv::Object(fields) => {
+            let map: HashMap<&str, &Jv> = fields.iter().map(|(k, v)| (k.as_str(), v)).collect();
+            let count = match map.get("record_count") {
+                Some(Jv::Int(n)) => *n as usize,
+                _ => return Err("missing record_count".into()),
+            };
+            let keys = match map.get("keys") {
+                Some(Jv::Array(ks)) => ks
+                    .iter()
+                    .filter_map(|k| {
+                        if let Jv::Str(s) = k {
+                            Some(s.clone())
+                        } else {
+                            None
+                        }
+                    })
+                    .collect::<Vec<_>>(),
+                _ => return Err("missing keys".into()),
+            };
+            let records = match map.get("records") {
+                Some(Jv::Array(rs)) => rs.iter().collect::<Vec<_>>(),
+                _ => return Err("missing records".into()),
+            };
+            Ok((count, keys, records))
+        }
+        _ => Err("expected JSON object".into()),
+    }
+}
+
+fn reader_value_matches(
+    rec: &nxs::query::Record<'_, '_>,
+    key: &str,
+    expected: &Jv,
+) -> Result<(), String> {
+    match expected {
+        Jv::Null => Ok(()),
+        Jv::Bool(e) => match rec.get_bool(key) {
+            Some(v) if v == *e => Ok(()),
+            Some(v) => Err(format!("field {key:?}: expected bool {e}, got {v}")),
+            None => Err(format!("field {key:?}: absent")),
+        },
+        Jv::Int(e) => match rec.get_i64(key) {
+            Some(v) if v == *e => Ok(()),
+            Some(v) => Err(format!("field {key:?}: expected int {e}, got {v}")),
+            None => Err(format!("field {key:?}: absent")),
+        },
+        Jv::Float(e) => match rec.get_f64(key) {
+            Some(v) if approx_eq(v, *e) => Ok(()),
+            Some(v) => Err(format!("field {key:?}: expected float {e}, got {v}")),
+            None => Err(format!("field {key:?}: absent")),
+        },
+        Jv::Str(e) => match rec.get_str(key) {
+            Some(v) if v == e => Ok(()),
+            Some(v) => Err(format!("field {key:?}: expected str {e:?}, got {v:?}")),
+            None => Err(format!("field {key:?}: absent")),
+        },
+        _ => Err(format!("field {key:?}: unsupported expected type")),
+    }
+}
+
+fn uses_decoder_path(name: &str) -> bool {
+    name == "nested" || name.starts_with("list_")
+}
+
+fn run_positive_reader(dir: &Path, name: &str, expected_json: &Jv) -> Result<(), String> {
+    let nxb_path = dir.join(format!("{}.nxb", name));
+    let data = fs::read(&nxb_path).map_err(|e| format!("read {}: {}", nxb_path.display(), e))?;
+    let (exp_count, exp_keys, exp_records) =
+        parse_expected_positive(expected_json).map_err(|e| format!("{name}: {e}"))?;
+    let reader = Reader::new(&data).map_err(|e| format!("{name}: open failed: {e}"))?;
+    if reader.record_count() != exp_count {
+        return Err(format!(
+            "{name}: record_count expected {exp_count}, got {}",
+            reader.record_count()
+        ));
+    }
+    for (i, key) in exp_keys.iter().enumerate() {
+        if reader.keys().get(i).map(String::as_str) != Some(key.as_str()) {
+            return Err(format!(
+                "{name}: key[{i}] expected {key:?}, got {:?}",
+                reader.keys().get(i)
+            ));
+        }
+    }
+    for (ri, exp_rec) in exp_records.iter().enumerate() {
+        let rec = reader
+            .record(ri)
+            .ok_or_else(|| format!("{name}: record {ri} missing"))?;
+        let Jv::Object(fields) = *exp_rec else {
+            return Err(format!("{name}: record {ri} not an object"));
+        };
+        for (key, val) in fields {
+            reader_value_matches(&rec, key, val)?;
+        }
+    }
+    Ok(())
+}
+
 // ── Runner ────────────────────────────────────────────────────────────────────
 
 fn run_positive(dir: &Path, name: &str, expected_json: &Jv) -> Result<(), String> {
     let nxb_path = dir.join(format!("{}.nxb", name));
     let data = fs::read(&nxb_path).map_err(|e| format!("read {}: {}", nxb_path.display(), e))?;
+
+    if !uses_decoder_path(name) {
+        return run_positive_reader(dir, name, expected_json);
+    }
 
     let file = decode(&data).map_err(|e| format!("{}: decode failed: {}", name, e))?;
 
@@ -318,6 +423,7 @@ fn run_negative(dir: &Path, name: &str, expected_code: &str) -> Result<(), Strin
                 NxsError::UnsupportedLayout => "ERR_UNSUPPORTED_LAYOUT",
                 NxsError::UnsupportedFieldType => "ERR_UNSUPPORTED_FIELD_TYPE",
                 NxsError::InvalidPageMagic => "ERR_INVALID_PAGE_MAGIC",
+                NxsError::UnsupportedFlags(_) => "ERR_UNSUPPORTED_FLAGS",
                 _ => "ERR_UNKNOWN",
             };
             if code != expected_code {
@@ -336,6 +442,67 @@ fn run_negative(dir: &Path, name: &str, expected_code: &str) -> Result<(), Strin
     }
 }
 
+fn discover_vectors(dir: &Path) -> Vec<(String, std::path::PathBuf, String)> {
+    let mut out = Vec::new();
+    let mut scan = |subdir: &str| {
+        let d = if subdir.is_empty() {
+            dir.to_path_buf()
+        } else {
+            dir.join(subdir)
+        };
+        if !d.is_dir() {
+            return;
+        }
+        if let Ok(read) = fs::read_dir(&d) {
+            for e in read.filter_map(|e| e.ok()) {
+                let n = e.file_name().to_string_lossy().to_string();
+                if n.ends_with(".expected.json") {
+                    let base = n.trim_end_matches(".expected.json").to_string();
+                    let label = if subdir.is_empty() {
+                        base.clone()
+                    } else {
+                        format!("{subdir}/{base}")
+                    };
+                    out.push((label, d.clone(), base));
+                }
+            }
+        }
+    };
+    scan("");
+    scan("v13");
+    out.sort_by(|a, b| a.0.cmp(&b.0));
+    out
+}
+
+fn run_vector(vector_dir: &Path, base: &str) -> Result<(), String> {
+    let json_path = vector_dir.join(format!("{base}.expected.json"));
+    let json_str =
+        fs::read_to_string(&json_path).map_err(|e| format!("read {}: {e}", json_path.display()))?;
+    let expected = parse_json(&json_str);
+    let is_negative = matches!(&expected, Jv::Object(fields) if
+        fields.iter().any(|(k,_)| k == "error")
+    );
+    if is_negative {
+        let code = match &expected {
+            Jv::Object(fields) => fields
+                .iter()
+                .find(|(k, _)| k == "error")
+                .and_then(|(_, v)| {
+                    if let Jv::Str(s) = v {
+                        Some(s.clone())
+                    } else {
+                        None
+                    }
+                })
+                .unwrap_or_default(),
+            _ => String::new(),
+        };
+        run_negative(vector_dir, base, &code)
+    } else {
+        run_positive(vector_dir, base, &expected)
+    }
+}
+
 fn main() {
     let args: Vec<String> = env::args().collect();
     let dir_str = if args.len() > 1 {
@@ -348,65 +515,20 @@ fn main() {
     let mut pass = 0usize;
     let mut fail = 0usize;
 
-    // Discover all expected.json files
-    let mut entries: Vec<String> = fs::read_dir(dir)
-        .expect("read conformance dir")
-        .filter_map(|e| e.ok())
-        .filter_map(|e| {
-            let n = e.file_name().to_string_lossy().to_string();
-            if n.ends_with(".expected.json") {
-                Some(n.trim_end_matches(".expected.json").to_string())
-            } else {
-                None
-            }
-        })
-        .collect();
-    entries.sort();
-
-    for name in &entries {
-        let json_path = dir.join(format!("{}.expected.json", name));
-        let json_str =
-            fs::read_to_string(&json_path).expect(&format!("read {}", json_path.display()));
-        let expected = parse_json(&json_str);
-
-        // Determine if positive or negative
-        let is_negative = matches!(&expected, Jv::Object(fields) if
-            fields.iter().any(|(k,_)| k == "error")
-        );
-
-        let result = if is_negative {
-            let code = match &expected {
-                Jv::Object(fields) => fields
-                    .iter()
-                    .find(|(k, _)| k == "error")
-                    .and_then(|(_, v)| {
-                        if let Jv::Str(s) = v {
-                            Some(s.clone())
-                        } else {
-                            None
-                        }
-                    })
-                    .unwrap_or_default(),
-                _ => String::new(),
-            };
-            run_negative(dir, name, &code)
-        } else {
-            run_positive(dir, name, &expected)
-        };
-
-        match result {
+    for (name, vector_dir, base) in discover_vectors(dir) {
+        match run_vector(&vector_dir, &base) {
             Ok(()) => {
-                println!("  PASS  {}", name);
+                println!("  PASS  {name}");
                 pass += 1;
             }
             Err(msg) => {
-                eprintln!("  FAIL  {} — {}", name, msg);
+                eprintln!("  FAIL  {name} — {msg}");
                 fail += 1;
             }
         }
     }
 
-    println!("\n{} passed, {} failed", pass, fail);
+    println!("\n{pass} passed, {fail} failed");
     if fail > 0 {
         std::process::exit(1);
     }
