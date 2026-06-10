@@ -22,6 +22,8 @@ All benchmarks use a synthetic 8-field record schema:
 | CSV (`.csv`)        | 72.77 MB  | 49%     |
 | XML (`.xml`)        | ~202 MB   | 137%    |
 
+All sizes in this table are **mebibytes** (MiB, 2^20 bytes). The 1M-record `.nxb` fixture is 83,007,958 bytes (~79.16 MiB / ~83.0 MB decimal).
+
 NXS is smaller than JSON because field names are interned (stored once in the schema header, referenced as 2-byte indices per record) and numeric values are fixed-width binary rather than decimal strings.
 
 ---
