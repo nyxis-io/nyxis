@@ -309,9 +309,12 @@ conformance-run-js:
 
 conformance-run-py:
 	python3 conformance/run_py.py conformance/
+	cd $(DRV)/py && bash build_ext.sh
+	python3 conformance/run_py.py conformance/v13/
 
 conformance-run-go:
 	cd $(DRV)/go && go run $(CONF)/run_go.go $(CONF)/
+	cd $(DRV)/go && go run $(CONF)/run_go.go $(CONF)/v13/
 
 # Go writer produces minimal.nxb-compatible bytes; Rust test reads via NXS_GO_PRODUCER_OUT.
 conformance-go-producer:
@@ -325,7 +328,9 @@ conformance-run-php:
 	php conformance/run_php.php conformance/
 
 conformance-run-c:
-	cc -std=c99 -O2 -I$(DRV)/c $(DRV)/c/nxs.c $(wildcard $(DRV)/c/nxs_prefetch.c) conformance/run_c.c -o /tmp/run_c_conf -lm -Wno-format-truncation -Wno-unused-result && /tmp/run_c_conf conformance/
+	cc -std=c99 -O2 -I$(DRV)/c $(DRV)/c/nxs.c $(DRV)/c/compact.c $(wildcard $(DRV)/c/nxs_prefetch.c) conformance/run_c.c -o /tmp/run_c_conf -lm -Wno-format-truncation -Wno-unused-result
+	/tmp/run_c_conf conformance/
+	/tmp/run_c_conf conformance/v13/
 
 conformance-run-swift:
 	cd $(DRV)/swift && swift run nxs-conformance $(CONF)/
