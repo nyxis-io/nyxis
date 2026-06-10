@@ -393,7 +393,7 @@ v1.3 adds optional row-layout compact encodings controlled by preamble flags (bi
 | `FLAG_DELTA_TAIL` | 0x0080 | Tail-index uses block-anchored deltas (§12.4) |
 | `FLAG_DENSE_WIRE_REORDER` | 0x0100 | Dense cells sorted by descending width (§12.1); when clear, schema order |
 
-`nxs compile --compact` enables all four wire flags plus auto-keyword promotion (§12.5). Individual flags remain selectable for debugging.
+Batch `nxs compile` emits v1.3 compact (all §12 wire flags plus auto-keyword promotion) **by default at launch**; `--legacy-v12` opts out to v1.2 row layout for one release cycle. Until the launch flip, compact is opt-in via a hidden `--compact` flag (`COMPILE_DEFAULT_COMPACT` in `layout.rs`). Streaming/WAL writers use compact framing but 8-byte cells unless widths are pragma-declared. Individual flags remain selectable for debugging.
 
 ### 12.1 Dense-record framing
 

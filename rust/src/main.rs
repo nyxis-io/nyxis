@@ -43,8 +43,11 @@ struct CompileArgs {
     layout: String,
     #[arg(long, value_name = "N")]
     page_size: Option<u32>,
-    /// Enable v1.3 compact encoding (dense frames, packed bools, narrow cells, delta tail-index).
+    /// Emit v1.2 row layout (8-byte cells, sparse framing). Default encoding becomes compact at launch.
     #[arg(long)]
+    legacy_v12: bool,
+    /// Force v1.3 compact encoding (temporary; default flips when `COMPILE_DEFAULT_COMPACT` is enabled).
+    #[arg(long, hide = true, conflicts_with = "legacy_v12")]
     compact: bool,
     /// Input `.nxs` file
     input: PathBuf,
@@ -151,14 +154,14 @@ fn run_compile(args: CompileArgs) {
         eprintln!("error: unknown layout (row|columnar|pax)");
         std::process::exit(1);
     });
+    if args.compact && args.legacy_v12 {
+        eprintln!("error: --compact and --legacy-v12 are mutually exclusive");
+        std::process::exit(1);
+    }
     let opts = CompileOptions {
         layout,
         page_size: args.page_size.unwrap_or(0),
-        compact: if args.compact {
-            Some(nxs::compact::CompactOptions::compact())
-        } else {
-            None
-        },
+        compact: nxs::layout::resolve_compact_encoding(args.legacy_v12, args.compact),
     };
 
     let output_path = args

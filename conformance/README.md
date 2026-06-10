@@ -102,9 +102,16 @@ cargo run --release --bin gen_conformance -- ../conformance
 ### v1.3 compact vectors (`v13/`)
 
 v1.3 row-layout compact encodings live under `conformance/v13/`. The Rust reference
-reader (`conformance/run_rust.rs`) validates these vectors. Language drivers that
-do not yet implement v1.3 decode **MUST** reject files carrying preamble bits
-`0x0010`–`0x0100` (`FLAG_V13_COMPACT_MASK` = `0x01F0`) with `ERR_UNSUPPORTED_FLAGS` at open time.
+reader (`conformance/run_rust.rs`) validates these vectors. **Vectors are frozen
+at merge of the encoder PR** — all driver decode work proceeds against this target.
+
+Language drivers that do not yet implement v1.3 decode **MUST** reject files
+carrying preamble bits `0x0010`–`0x0100` (`FLAG_V13_COMPACT_MASK` = `0x01F0`)
+with `ERR_UNSUPPORTED_FLAGS` at open time. The message MUST include compact flag
+bits and `upgrade your nyxis driver to >= 1.3.0`.
+
+**Driver decode triage (launch):** tier-0 JavaScript (browser demos); tier-1 Go,
+Python, C; tier-2 Ruby, PHP, C#; tier-3 Kotlin, Swift (may trail with README note).
 
 Cross-version logical equivalence (v1.2 row vs v1.3 `--compact` on the same data) is validated by
 field-by-field decode tests in the Rust reference reader, **not** by matching preamble `DictHash`

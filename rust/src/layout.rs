@@ -20,6 +20,27 @@ const FOOTER_ROW: usize = 12;
 const FOOTER_COLUMNAR: usize = 20;
 const FOOTER_PAX: usize = 28;
 
+/// Minimum driver release that decodes v1.3 compact files (rejection messages cite this).
+pub const DECODER_MIN_VERSION_V13: &str = "1.3.0";
+
+/// Batch `nxs compile` default: emit v1.3 compact when `true`.
+///
+/// Flip in a one-line launch commit after tier-0 drivers decode v1.3. Until then,
+/// compact is opt-in via `--compact` (hidden); `--legacy-v12` forces v1.2 row layout.
+pub const COMPILE_DEFAULT_COMPACT: bool = false;
+
+/// Resolve whether batch compile emits v1.3 compact row encoding.
+pub fn resolve_compact_encoding(legacy_v12: bool, force_compact: bool) -> Option<CompactOptions> {
+    if legacy_v12 {
+        return None;
+    }
+    if force_compact || COMPILE_DEFAULT_COMPACT {
+        Some(CompactOptions::compact())
+    } else {
+        None
+    }
+}
+
 /// Layout selection for compile / writer finish.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Layout {
@@ -812,5 +833,15 @@ mod tests {
     #[test]
     fn invalid_flags_rejected() {
         assert!(validate_preamble_flags(FLAG_COLUMNAR | FLAG_PAX).is_err());
+    }
+
+    #[test]
+    fn resolve_compact_encoding_legacy_wins() {
+        assert!(resolve_compact_encoding(true, false).is_none());
+        assert!(resolve_compact_encoding(true, true).is_none());
+        assert!(resolve_compact_encoding(false, true).is_some());
+        if !COMPILE_DEFAULT_COMPACT {
+            assert!(resolve_compact_encoding(false, false).is_none());
+        }
     }
 }
