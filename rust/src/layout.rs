@@ -635,8 +635,15 @@ pub fn compile_fields(fields: &[Field], opts: &CompileOptions) -> Result<Vec<u8>
     match opts.layout {
         Layout::Row => {
             if let Some(ref compact) = row_compact_opts(opts) {
-                let (keys, rows) = records_from_fields(fields)?;
-                finish_row(&keys, &rows, Some(compact))
+                match records_from_fields(fields) {
+                    Ok((keys, rows)) => finish_row(&keys, &rows, Some(compact)),
+                    // Nested NYXO/NYXL values still use the v1.2 row compiler until a compact nested path exists.
+                    Err(NxsError::ParseError(_)) | Err(NxsError::UnsupportedFieldType) => {
+                        let mut compiler = crate::compiler::Compiler::new();
+                        compiler.compile(fields)
+                    }
+                    Err(e) => Err(e),
+                }
             } else {
                 let mut compiler = crate::compiler::Compiler::new();
                 compiler.compile(fields)
