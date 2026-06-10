@@ -13,7 +13,8 @@ use std::io::Write as IoWrite;
 use std::path::Path;
 
 // Bring in the library types
-use nxs::layout;
+use nxs::compact::CompactOptions;
+use nxs::layout::{self, finish_row, Cell, RecordRow};
 use nxs::writer::{NxsWriter, Schema, Slot};
 
 const FLAG_COLUMNAR: u16 = 0x0001;
@@ -986,6 +987,60 @@ fn make_pax_sparse_1000() -> Vector {
     }
 }
 
+fn make_compact_logs_dense_20() -> Vector {
+    let keys = vec!["id".into(), "level".into(), "msg".into()];
+    const LEVELS: [&str; 4] = ["INFO", "WARN", "ERROR", "DEBUG"];
+    let rows: Vec<RecordRow> = (0..20)
+        .map(|i| RecordRow {
+            cells: vec![
+                Cell::I64(i as i64),
+                Cell::Str(LEVELS[i % 4].to_string()),
+                Cell::Str(format!("event {i}")),
+            ],
+        })
+        .collect();
+    let nxb = finish_row(&keys, &rows, Some(&CompactOptions::compact())).expect("compact row");
+    let records: Vec<Vec<Option<(&str, JV)>>> = (0..20)
+        .map(|i| {
+            vec![
+                Some(("id", JV::Int(i as i64))),
+                Some(("level", JV::Str(LEVELS[i % 4].into()))),
+                Some(("msg", JV::Str(format!("event {i}")))),
+            ]
+        })
+        .collect();
+    let expected = expected_json(&["id", "level", "msg"], &records);
+    Vector {
+        name: "compact_logs_dense_20",
+        nxb,
+        expected,
+    }
+}
+
+fn make_compact_dense_multi_10() -> Vector {
+    let keys = vec!["id".into(), "score".into()];
+    let rows: Vec<RecordRow> = (0..10)
+        .map(|i| RecordRow {
+            cells: vec![Cell::I64(i as i64), Cell::F64(i as f64 * 0.25)],
+        })
+        .collect();
+    let nxb = finish_row(&keys, &rows, Some(&CompactOptions::compact())).expect("compact row");
+    let records: Vec<Vec<Option<(&str, JV)>>> = (0..10)
+        .map(|i| {
+            vec![
+                Some(("id", JV::Int(i as i64))),
+                Some(("score", JV::Float(i as f64 * 0.25))),
+            ]
+        })
+        .collect();
+    let expected = expected_json(&["id", "score"], &records);
+    Vector {
+        name: "compact_dense_multi_10",
+        nxb,
+        expected,
+    }
+}
+
 // ── Main ──────────────────────────────────────────────────────────────────────
 
 fn main() {
@@ -1094,6 +1149,20 @@ fn main() {
     )
     .unwrap();
     println!("  wrote pax_streaming_unsealed + pax_invalid_page_magic (PAX streaming)");
+
+    let v13_dir = out_path.join("v13");
+    fs::create_dir_all(&v13_dir).expect("create v13 directory");
+    for v in [make_compact_logs_dense_20(), make_compact_dense_multi_10()] {
+        let nxb_path = v13_dir.join(format!("{}.nxb", v.name));
+        let json_path = v13_dir.join(format!("{}.expected.json", v.name));
+        fs::write(&nxb_path, &v.nxb).unwrap();
+        fs::write(&json_path, &v.expected).unwrap();
+        println!(
+            "  wrote v13/{}.nxb ({} bytes) + .expected.json",
+            v.name,
+            v.nxb.len()
+        );
+    }
 
     let prefetch_dir = out_path.join("prefetch");
     fs::create_dir_all(&prefetch_dir).expect("create prefetch directory");

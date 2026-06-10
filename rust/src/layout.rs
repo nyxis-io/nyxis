@@ -5,12 +5,15 @@
 //! Phase 3: variable-length string/binary columns (u32 offsets + values tail).
 
 // Re-export shared constants so callers that `use crate::layout::…` still compile.
+pub use crate::compact::CompactOptions;
 pub use crate::consts::{
-    FLAG_COLUMNAR, FLAG_PAX, FLAG_SCHEMA_EMBEDDED, MAGIC_FILE, MAGIC_FOOTER, MAGIC_PAGE, VERSION,
+    FLAG_COLUMNAR, FLAG_DELTA_TAIL, FLAG_DENSE_FRAMES, FLAG_NARROW_CELLS, FLAG_PACKED_BOOLS,
+    FLAG_PAX, FLAG_SCHEMA_EMBEDDED, FLAG_V13_COMPACT_MASK, MAGIC_FILE, MAGIC_FOOTER, MAGIC_PAGE,
+    VERSION, VERSION_V13,
 };
 use crate::error::{NxsError, Result};
 use crate::parser::{Field, Value};
-use crate::writer::{build_schema, murmur3_64, NxsWriter};
+use crate::writer::{build_schema, murmur3_64, NxsWriter, Schema, Slot};
 use std::collections::HashMap;
 
 const FOOTER_ROW: usize = 12;
@@ -50,6 +53,7 @@ impl Layout {
 pub struct CompileOptions {
     pub layout: Layout,
     pub page_size: u32,
+    pub compact: Option<CompactOptions>,
 }
 
 impl CompileOptions {
@@ -95,6 +99,10 @@ pub fn validate_preamble_flags(flags: u16) -> Result<()> {
             "columnar/PAX requires FLAG_SCHEMA_EMBEDDED".into(),
         ));
     }
+    if flags & FLAG_V13_COMPACT_MASK != 0 && (col || pax) {
+        return Err(NxsError::IncompatibleFlags);
+    }
+    crate::compact::validate_reader_flags(flags, true)?;
     Ok(())
 }
 
@@ -563,12 +571,48 @@ pub(crate) fn encode_page(
     Ok(page)
 }
 
+/// Emit a row-layout `.nxb` via [`NxsWriter`] with optional v1.3 compact encoding.
+pub fn finish_row(
+    keys: &[String],
+    rows: &[RecordRow],
+    compact: Option<&CompactOptions>,
+) -> Result<Vec<u8>> {
+    let key_refs: Vec<&str> = keys.iter().map(String::as_str).collect();
+    let schema = Schema::new(&key_refs);
+    let mut w = NxsWriter::with_compact(&schema, compact.cloned());
+    for row in rows {
+        w.begin_object();
+        for (fi, cell) in row.cells.iter().enumerate() {
+            let slot = Slot(fi as u16);
+            match cell {
+                Cell::Absent => {}
+                Cell::Null => w.write_null(slot),
+                Cell::I64(v) => w.write_i64(slot, *v),
+                Cell::F64(v) => w.write_f64(slot, *v),
+                Cell::Bool(v) => w.write_bool(slot, *v),
+                Cell::Time(v) => w.write_time(slot, *v),
+                Cell::Str(v) => w.write_str(slot, v),
+                Cell::Binary(_) => {
+                    return Err(NxsError::UnsupportedFieldType);
+                }
+            }
+        }
+        w.end_object();
+    }
+    Ok(w.finish())
+}
+
 /// Compile parsed fields with the selected layout.
 pub fn compile_fields(fields: &[Field], opts: &CompileOptions) -> Result<Vec<u8>> {
     match opts.layout {
         Layout::Row => {
-            let mut compiler = crate::compiler::Compiler::new();
-            compiler.compile(fields)
+            if opts.compact.is_some() {
+                let (keys, rows) = records_from_fields(fields)?;
+                finish_row(&keys, &rows, opts.compact.as_ref())
+            } else {
+                let mut compiler = crate::compiler::Compiler::new();
+                compiler.compile(fields)
+            }
         }
         Layout::Columnar | Layout::Pax => {
             let (keys, rows) = records_from_fields(fields)?;

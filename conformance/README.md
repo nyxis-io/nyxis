@@ -42,7 +42,7 @@ Each test vector consists of two files:
 { "error": "ERR_BAD_MAGIC" }
 ```
 
-Supported error codes: `ERR_BAD_MAGIC`, `ERR_DICT_MISMATCH`, `ERR_OUT_OF_BOUNDS`, `ERR_INVALID_FLAGS`, `ERR_INCOMPATIBLE_FLAGS`, `ERR_INVALID_PAGE_MAGIC`
+Supported error codes: `ERR_BAD_MAGIC`, `ERR_DICT_MISMATCH`, `ERR_OUT_OF_BOUNDS`, `ERR_INVALID_FLAGS`, `ERR_INCOMPATIBLE_FLAGS`, `ERR_INVALID_PAGE_MAGIC`, `ERR_UNSUPPORTED_FLAGS`
 
 ## Conformance Runner Contract
 
@@ -98,3 +98,15 @@ cargo run --release --bin gen_conformance -- ../conformance
 | `pax_flat8_strings_p128_300` | positive | 300 records, page size 128, id/name/score, string `name` = `user_{i}`, PAX |
 | `pax_streaming_unsealed` | negative | Unsealed PAX (3 pages, no footer) — batch open → ERR_BAD_MAGIC |
 | `pax_invalid_page_magic` | negative | Corrupt NXSP at first page → ERR_INVALID_PAGE_MAGIC |
+
+### v1.3 compact vectors (`v13/`)
+
+v1.3 row-layout compact encodings live under `conformance/v13/`. The Rust reference
+reader (`conformance/run_rust.rs`) validates these vectors. Language drivers that
+do not yet implement v1.3 decode **MUST** reject files carrying preamble bits
+`0x0010`–`0x0080` with `ERR_UNSUPPORTED_FLAGS` at open time.
+
+| Vector | Type | What it tests |
+|--------|------|---------------|
+| `compact_dense_multi_10` | positive | 10 dense records, narrow ints + f64, delta tail-index |
+| `compact_logs_dense_20` | positive | 20 log-shaped records; low-cardinality `level` promoted to value pool |

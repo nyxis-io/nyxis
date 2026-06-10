@@ -37,6 +37,10 @@ pub enum NxsError {
     InvalidPageMagic,
     /// Optional per-page CRC mismatch.
     PageCrcMismatch,
+    /// Unknown or unsupported preamble flag bits (v1.3 REQUIRED-class flags on v1.2 readers).
+    UnsupportedFlags(u16),
+    /// Patch / write value exceeds declared narrow cell width.
+    ValueOutOfRange,
 }
 
 impl fmt::Display for NxsError {
@@ -66,6 +70,10 @@ impl fmt::Display for NxsError {
             NxsError::UnsupportedFieldType => write!(f, "ERR_UNSUPPORTED_FIELD_TYPE"),
             NxsError::InvalidPageMagic => write!(f, "ERR_INVALID_PAGE_MAGIC"),
             NxsError::PageCrcMismatch => write!(f, "ERR_PAGE_CRC_MISMATCH"),
+            NxsError::UnsupportedFlags(bits) => {
+                write!(f, "ERR_UNSUPPORTED_FLAGS: 0x{bits:04X}")
+            }
+            NxsError::ValueOutOfRange => write!(f, "ERR_VALUE_OUT_OF_RANGE"),
         }
     }
 }

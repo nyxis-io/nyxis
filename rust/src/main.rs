@@ -22,8 +22,19 @@ struct Cli {
 enum Commands {
     /// Compile `.nxs` source to `.nxb` binary
     Compile(CompileArgs),
+    /// Byte breakdown by segment and field (payload vs padding)
+    Stats(StatsArgs),
     /// Schema registry (gRPC `nyxis.registry.v1` — requires `nxs-registryd`)
     Registry(RegistryArgs),
+}
+
+#[derive(Parser)]
+struct StatsArgs {
+    /// Emit structured JSON instead of the default text table
+    #[arg(long)]
+    json: bool,
+    /// Input `.nxb` file (`-` for stdin)
+    input: PathBuf,
 }
 
 #[derive(Parser)]
@@ -32,6 +43,9 @@ struct CompileArgs {
     layout: String,
     #[arg(long, value_name = "N")]
     page_size: Option<u32>,
+    /// Enable v1.3 compact encoding (dense frames, packed bools, narrow cells, delta tail-index).
+    #[arg(long)]
+    compact: bool,
     /// Input `.nxs` file
     input: PathBuf,
     /// Output `.nxb` file (default: same basename with `.nxb`)
@@ -94,7 +108,41 @@ fn main() {
     let cli = Cli::parse();
     match cli.command {
         Commands::Compile(args) => run_compile(args),
+        Commands::Stats(args) => run_stats(args),
         Commands::Registry(args) => run_registry(args),
+    }
+}
+
+fn run_stats(args: StatsArgs) {
+    let (data, path_label) = if args.input.as_os_str() == "-" {
+        let mut buf = Vec::new();
+        if let Err(e) = std::io::Read::read_to_end(&mut std::io::stdin(), &mut buf) {
+            eprintln!("error: read stdin: {e}");
+            std::process::exit(1);
+        }
+        (buf, None)
+    } else {
+        let path = &args.input;
+        let data = std::fs::read(path).unwrap_or_else(|e| {
+            eprintln!("error: read {}: {e}", path.display());
+            std::process::exit(1);
+        });
+        (data, Some(path.display().to_string()))
+    };
+
+    let stats = nxs::stats::analyze_with_path(&data, path_label.as_deref()).unwrap_or_else(|e| {
+        eprintln!("error: {e}");
+        std::process::exit(1);
+    });
+
+    let result = if args.json {
+        nxs::stats::render_json(&mut std::io::stdout(), &stats)
+    } else {
+        nxs::stats::render_text(&mut std::io::stdout(), &stats)
+    };
+    if let Err(e) = result {
+        eprintln!("error: {e}");
+        std::process::exit(1);
     }
 }
 
@@ -106,6 +154,11 @@ fn run_compile(args: CompileArgs) {
     let opts = CompileOptions {
         layout,
         page_size: args.page_size.unwrap_or(0),
+        compact: if args.compact {
+            Some(nxs::compact::CompactOptions::compact())
+        } else {
+            None
+        },
     };
 
     let output_path = args

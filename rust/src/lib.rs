@@ -32,6 +32,7 @@
 pub mod arrow_project;
 pub mod col_reduce;
 pub mod column_prefetch;
+pub mod compact;
 pub mod compiler;
 pub mod consts;
 pub mod convert;
@@ -44,6 +45,7 @@ pub mod pax_stream;
 pub mod prefetch;
 pub mod query;
 pub mod segment_reader;
+pub mod stats;
 pub mod stream_reader;
 pub mod wal;
 pub mod writer;
@@ -122,6 +124,26 @@ mod layout_tests {
         ];
         let bytes = finish_columnar(&keys, &rows).unwrap();
         assert!(bytes.len() > 64);
+    }
+
+    #[test]
+    fn row_compile_compact_multi_record() {
+        let src = r#"
+            r0 { id: =0 username: "alice" age: =20 active: ?true score: ~0.5 }
+            r1 { id: =1 username: "bob" age: =21 active: ?false score: ~1.0 }
+        "#;
+        let mut opts = layout::CompileOptions::default();
+        opts.compact = Some(crate::compact::CompactOptions::compact());
+        let bytes = compile_source_with_opts(src, &opts).expect("compact compile");
+        let flags = u16::from_le_bytes(bytes[6..8].try_into().unwrap());
+        assert!(flags & crate::consts::FLAG_DENSE_FRAMES != 0);
+        assert_eq!(
+            u16::from_le_bytes(bytes[4..6].try_into().unwrap()),
+            crate::consts::VERSION_V13
+        );
+        let reader = crate::query::Reader::new(&bytes).unwrap();
+        assert_eq!(reader.record_count(), 2);
+        assert_eq!(reader.record(1).unwrap().get_str("username"), Some("bob"));
     }
 
     #[test]

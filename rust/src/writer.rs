@@ -22,6 +22,10 @@ use std::io::Write;
 /// w.end_object();
 /// let bytes = w.finish();
 /// ```
+use crate::compact::{
+    build_delta_tail_index, build_extended_schema, encode_compact_record, infer_narrow_widths,
+    scan_keyword_promotion, scan_u16_string_lengths, CompactCell, CompactOptions, ExtendedSchema,
+};
 use crate::consts::{
     FLAG_SCHEMA_EMBEDDED, MAGIC_FILE, MAGIC_FOOTER, MAGIC_LIST, MAGIC_OBJ, VERSION,
 };
@@ -75,6 +79,8 @@ struct Frame {
     needs_sort: bool,
     /// (slot, offset_in_buf) for each value, for sort-if-needed path.
     slot_offsets: Vec<(u16, u32)>,
+    /// v1.3 compact cells buffered until end_object.
+    compact_cells: Vec<(u16, CompactCell)>,
 }
 
 pub struct NxsWriter<'a> {
@@ -85,30 +91,42 @@ pub struct NxsWriter<'a> {
     record_offsets: Vec<u32>,
     /// Actual sigil used per slot (set on first write to a slot)
     slot_sigils: Vec<u8>,
+    compact: Option<CompactOptions>,
+    int_min: Vec<i64>,
+    int_max: Vec<i64>,
+    string_cols: Vec<Vec<String>>,
+    /// Buffered per-record cells; encoded at finish with final schema.
+    pending_records: Vec<Vec<(u16, CompactCell)>>,
 }
 
 impl<'a> NxsWriter<'a> {
     /// Create a new writer for the given schema.
     pub fn new(schema: &'a Schema) -> Self {
+        Self::with_compact(schema, None)
+    }
+
+    /// Pre-allocate a capacity hint (bytes).
+    pub fn with_capacity(schema: &'a Schema, cap: usize) -> Self {
+        let mut w = Self::with_compact(schema, None);
+        w.buf = Vec::with_capacity(cap);
+        w.record_offsets = Vec::with_capacity(1024);
+        w
+    }
+
+    /// Create a writer with optional v1.3 compact encoding.
+    pub fn with_compact(schema: &'a Schema, compact: Option<CompactOptions>) -> Self {
         let n = schema.keys.len();
         NxsWriter {
             schema,
             buf: Vec::with_capacity(4096),
             frames: Vec::with_capacity(4),
             record_offsets: Vec::new(),
-            slot_sigils: vec![0u8; n], // 0 = "not yet set"
-        }
-    }
-
-    /// Pre-allocate a capacity hint (bytes).
-    pub fn with_capacity(schema: &'a Schema, cap: usize) -> Self {
-        let n = schema.keys.len();
-        NxsWriter {
-            schema,
-            buf: Vec::with_capacity(cap),
-            frames: Vec::with_capacity(4),
-            record_offsets: Vec::with_capacity(1024),
-            slot_sigils: vec![0u8; n], // 0 = "not yet set"
+            slot_sigils: vec![0u8; n],
+            compact,
+            int_min: vec![i64::MAX; n],
+            int_max: vec![i64::MIN; n],
+            string_cols: vec![Vec::new(); n],
+            pending_records: Vec::new(),
         }
     }
 
@@ -116,8 +134,20 @@ impl<'a> NxsWriter<'a> {
     #[inline]
     pub fn begin_object(&mut self) {
         // Record top-level object start offsets (for the tail-index)
-        if self.frames.is_empty() {
+        if self.frames.is_empty() && self.compact.is_none() {
             self.record_offsets.push(self.buf.len() as u32);
+        }
+        if self.compact.is_some() {
+            self.frames.push(Frame {
+                start: self.buf.len(),
+                bitmask: Vec::new(),
+                offset_table: Vec::new(),
+                last_slot: -1,
+                needs_sort: false,
+                slot_offsets: Vec::new(),
+                compact_cells: Vec::new(),
+            });
+            return;
         }
         let start = self.buf.len();
         // Reserve: Magic(4) + Length(4) + Bitmask + max u16 offsets for all slots
@@ -136,6 +166,7 @@ impl<'a> NxsWriter<'a> {
             last_slot: -1,
             needs_sort: false,
             slot_offsets: Vec::with_capacity(self.schema.keys.len()),
+            compact_cells: Vec::new(),
         });
 
         // Write placeholder magic + length (will back-patch length at end)
@@ -157,6 +188,10 @@ impl<'a> NxsWriter<'a> {
     #[inline]
     pub fn end_object(&mut self) {
         let frame = self.frames.pop().expect("end_object without begin_object");
+        if self.compact.is_some() {
+            self.pending_records.push(frame.compact_cells);
+            return;
+        }
         let total_len = self.buf.len() - frame.start;
 
         // Back-patch Length field
@@ -238,31 +273,67 @@ impl<'a> NxsWriter<'a> {
     }
 
     /// Seal the file and return the complete `.nxb` bytes; one tail-index entry per top-level object.
-    pub fn finish(self) -> Vec<u8> {
+    pub fn finish(mut self) -> Vec<u8> {
         debug_assert!(self.frames.is_empty(), "unclosed objects");
 
-        let schema_bytes = build_schema(&self.schema.keys, &self.slot_sigils);
+        let compact_opts = self.compact.clone();
+        let preamble_flags = compact_opts
+            .as_ref()
+            .map(|o: &CompactOptions| FLAG_SCHEMA_EMBEDDED | o.preamble_flags())
+            .unwrap_or(FLAG_SCHEMA_EMBEDDED);
+        let version = compact_opts
+            .as_ref()
+            .map(|o: &CompactOptions| o.version())
+            .unwrap_or(VERSION);
+
+        let ext_schema = compact_opts
+            .as_ref()
+            .map(|opts| self.build_extended_schema(opts));
+        let schema_bytes = if let (Some(ref opts), Some(ref ext)) = (&compact_opts, &ext_schema) {
+            build_extended_schema(ext, opts.preamble_flags())
+        } else {
+            build_schema(&self.schema.keys, &self.slot_sigils)
+        };
         let dict_hash = murmur3_64(&schema_bytes);
 
-        let data_sector = self.buf;
+        let mut data_sector = self.buf;
+        if let (Some(ref opts), Some(ref ext)) = (&compact_opts, &ext_schema) {
+            data_sector = Vec::new();
+            self.record_offsets.clear();
+            for cells in &self.pending_records {
+                self.record_offsets.push(data_sector.len() as u32);
+                let obj = encode_compact_record(cells, ext, opts).expect("compact encode");
+                data_sector.extend_from_slice(&obj);
+            }
+            while data_sector.len() % 8 != 0 {
+                data_sector.push(0);
+            }
+        }
         let data_start_abs = 32u64 + schema_bytes.len() as u64;
 
         let tail_ptr: u64 = data_start_abs + data_sector.len() as u64;
-        // Build per-record tail-index
         let abs_offsets: Vec<u64> = self
             .record_offsets
             .iter()
             .map(|rel| data_start_abs + u64::from(*rel))
             .collect();
-        let tail = build_tail_index_records(&abs_offsets, tail_ptr);
+        let tail = if compact_opts.as_ref().is_some_and(|o| o.delta_tail) {
+            build_delta_tail_index(
+                &abs_offsets,
+                tail_ptr,
+                compact_opts.as_ref().unwrap().delta_block_size,
+            )
+            .expect("delta tail-index")
+        } else {
+            build_tail_index_records(&abs_offsets, tail_ptr)
+        };
 
         let total = 32 + schema_bytes.len() + data_sector.len() + tail.len();
         let mut out = Vec::with_capacity(total);
 
-        // Preamble
         out.extend_from_slice(&MAGIC_FILE.to_le_bytes());
-        out.extend_from_slice(&VERSION.to_le_bytes());
-        out.extend_from_slice(&FLAG_SCHEMA_EMBEDDED.to_le_bytes());
+        out.extend_from_slice(&version.to_le_bytes());
+        out.extend_from_slice(&preamble_flags.to_le_bytes());
         out.extend_from_slice(&dict_hash.to_le_bytes());
         out.extend_from_slice(&0u64.to_le_bytes());
         out.extend_from_slice(&0u64.to_le_bytes());
@@ -271,6 +342,54 @@ impl<'a> NxsWriter<'a> {
         out.extend_from_slice(&data_sector);
         out.extend_from_slice(&tail);
         out
+    }
+
+    fn build_extended_schema(&self, opts: &CompactOptions) -> ExtendedSchema {
+        let sigils: Vec<u8> = self
+            .slot_sigils
+            .iter()
+            .map(|&s| if s == 0 { b'"' } else { s })
+            .collect();
+        let mut widths = if opts.narrow_cells {
+            infer_narrow_widths(&sigils, &self.int_min, &self.int_max)
+        } else {
+            vec![0u8; sigils.len()]
+        };
+        let (mut field_attrs, value_pool) = if opts.keyword_promotion {
+            scan_keyword_promotion(
+                &sigils,
+                &self.string_cols,
+                opts.keyword_max_ratio,
+                opts.keyword_min_records,
+            )
+        } else {
+            (vec![0u8; sigils.len()], Vec::new())
+        };
+        if opts.narrow_cells {
+            for (i, attr) in field_attrs.iter().enumerate() {
+                if *attr & crate::consts::FIELD_ATTR_PROMOTED != 0 {
+                    widths[i] = 2;
+                }
+            }
+        }
+        if opts.u16_string_lengths {
+            scan_u16_string_lengths(&sigils, &self.string_cols, &mut field_attrs);
+        }
+        ExtendedSchema {
+            keys: self.schema.keys.clone(),
+            sigils,
+            widths,
+            field_attrs,
+            value_pool,
+        }
+    }
+
+    fn push_compact(&mut self, slot: Slot, cell: CompactCell) {
+        let idx = slot.0 as usize;
+        if let Some(frame) = self.frames.last_mut() {
+            frame.compact_cells.push((slot.0, cell));
+        }
+        let _ = idx;
     }
 
     // ── Typed write methods ──────────────────────────────────────────────────
@@ -315,6 +434,15 @@ impl<'a> NxsWriter<'a> {
     #[inline]
     pub fn write_i64(&mut self, slot: Slot, v: i64) {
         self.mark_slot_sigil(slot, b'=');
+        let idx = slot.0 as usize;
+        if idx < self.int_min.len() {
+            self.int_min[idx] = self.int_min[idx].min(v);
+            self.int_max[idx] = self.int_max[idx].max(v);
+        }
+        if self.compact.is_some() {
+            self.push_compact(slot, CompactCell::I64(v));
+            return;
+        }
         self.mark_slot(slot);
         self.buf.extend_from_slice(&v.to_le_bytes());
     }
@@ -323,6 +451,10 @@ impl<'a> NxsWriter<'a> {
     #[inline]
     pub fn write_f64(&mut self, slot: Slot, v: f64) {
         self.mark_slot_sigil(slot, b'~');
+        if self.compact.is_some() {
+            self.push_compact(slot, CompactCell::F64(v));
+            return;
+        }
         self.mark_slot(slot);
         self.buf.extend_from_slice(&v.to_le_bytes());
     }
@@ -331,6 +463,10 @@ impl<'a> NxsWriter<'a> {
     #[inline]
     pub fn write_bool(&mut self, slot: Slot, v: bool) {
         self.mark_slot_sigil(slot, b'?');
+        if self.compact.is_some() {
+            self.push_compact(slot, CompactCell::Bool(v));
+            return;
+        }
         self.mark_slot(slot);
         self.buf.push(if v { 0x01 } else { 0x00 });
         self.buf.extend_from_slice(&[0u8; 7]);
@@ -340,6 +476,10 @@ impl<'a> NxsWriter<'a> {
     #[inline]
     pub fn write_time(&mut self, slot: Slot, unix_ns: i64) {
         self.mark_slot_sigil(slot, b'@');
+        if self.compact.is_some() {
+            self.push_compact(slot, CompactCell::Time(unix_ns));
+            return;
+        }
         self.mark_slot(slot);
         self.buf.extend_from_slice(&unix_ns.to_le_bytes());
     }
@@ -358,6 +498,14 @@ impl<'a> NxsWriter<'a> {
     #[inline]
     pub fn write_str(&mut self, slot: Slot, v: &str) {
         self.mark_slot_sigil(slot, b'"');
+        let idx = slot.0 as usize;
+        if idx < self.string_cols.len() {
+            self.string_cols[idx].push(v.to_string());
+        }
+        if self.compact.is_some() {
+            self.push_compact(slot, CompactCell::Str(v.to_string()));
+            return;
+        }
         self.mark_slot(slot);
         let bytes = v.as_bytes();
         self.buf

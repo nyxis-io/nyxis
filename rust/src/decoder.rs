@@ -1,8 +1,10 @@
 /// Minimal .nxb decoder — reads the preamble and walks the root object,
 /// returning a flat list of (key_index, value_bytes) for inspection.
+use crate::compact::{parse_delta_tail_layout, parse_extended_schema};
 use crate::consts::{
-    FLAG_COLUMNAR, FLAG_PAX, MAGIC_FILE, MAGIC_FOOTER, MAGIC_LIST, MAGIC_OBJ, SIGIL_BINARY,
-    SIGIL_BOOL, SIGIL_FLOAT, SIGIL_INT, SIGIL_LINK, SIGIL_NULL, SIGIL_STR, SIGIL_TIME,
+    FLAG_COLUMNAR, FLAG_DELTA_TAIL, FLAG_PAX, FLAG_V13_COMPACT_MASK, MAGIC_FILE, MAGIC_FOOTER,
+    MAGIC_LIST, MAGIC_OBJ, SIGIL_BINARY, SIGIL_BOOL, SIGIL_FLOAT, SIGIL_INT, SIGIL_LINK,
+    SIGIL_NULL, SIGIL_STR, SIGIL_TIME,
 };
 use crate::error::{NxsError, Result};
 
@@ -129,55 +131,59 @@ pub fn decode(data: &[u8]) -> Result<DecodedFile> {
 
     if schema_embedded && pos + 2 <= data.len() {
         let schema_start = pos;
-        let key_count = u16::from_le_bytes(
-            data[pos..pos + 2]
-                .try_into()
-                .map_err(|_| NxsError::OutOfBounds)?,
-        ) as usize;
-        if key_count > 256 {
-            return Err(NxsError::OutOfBounds); // spec max is 256 keys
-        }
-        pos += 2;
-        // TypeManifest
-        let end = pos.checked_add(key_count).ok_or(NxsError::OutOfBounds)?;
-        if end > data.len() {
-            return Err(NxsError::OutOfBounds);
-        }
-        key_sigils = data[pos..end].to_vec();
-        pos = end;
-        // StringPool — cap key name length to prevent OOM
-        for _ in 0..key_count {
-            let start = pos;
-            while pos < data.len() && data[pos] != 0 {
-                if pos - start > 256 {
+        let schema_end = if flags & FLAG_V13_COMPACT_MASK != 0 {
+            let (ext, end) = parse_extended_schema(data, pos, flags)?;
+            keys = ext.keys;
+            key_sigils = ext.sigils;
+            end
+        } else {
+            let key_count = u16::from_le_bytes(
+                data[pos..pos + 2]
+                    .try_into()
+                    .map_err(|_| NxsError::OutOfBounds)?,
+            ) as usize;
+            if key_count > 256 {
+                return Err(NxsError::OutOfBounds);
+            }
+            pos += 2;
+            let end = pos.checked_add(key_count).ok_or(NxsError::OutOfBounds)?;
+            if end > data.len() {
+                return Err(NxsError::OutOfBounds);
+            }
+            key_sigils = data[pos..end].to_vec();
+            pos = end;
+            for _ in 0..key_count {
+                let start = pos;
+                while pos < data.len() && data[pos] != 0 {
+                    if pos - start > 256 {
+                        return Err(NxsError::OutOfBounds);
+                    }
+                    pos += 1;
+                }
+                let name = String::from_utf8_lossy(&data[start..pos]).to_string();
+                keys.push(name);
+                if pos >= data.len() {
                     return Err(NxsError::OutOfBounds);
                 }
                 pos += 1;
             }
-            let name = String::from_utf8_lossy(&data[start..pos]).to_string();
-            keys.push(name);
-            if pos >= data.len() {
+            if pos > data.len() {
                 return Err(NxsError::OutOfBounds);
             }
-            pos += 1; // skip null terminator
-        }
-        // align to 8 — guard against pos already past end
-        if pos > data.len() {
-            return Err(NxsError::OutOfBounds);
-        }
-        while pos % 8 != 0 {
-            pos += 1;
-        }
-        if pos > data.len() {
-            return Err(NxsError::OutOfBounds);
-        }
-        let schema_end = pos;
+            while pos % 8 != 0 {
+                pos += 1;
+            }
+            if pos > data.len() {
+                return Err(NxsError::OutOfBounds);
+            }
+            pos
+        };
 
-        // Validate DictHash
         let computed = murmur3_64(&data[schema_start..schema_end]);
         if computed != dict_hash {
             return Err(NxsError::DictMismatch);
         }
+        pos = schema_end;
     }
 
     let data_sector_start = pos;
@@ -223,21 +229,22 @@ pub fn decode(data: &[u8]) -> Result<DecodedFile> {
         ) as usize;
         (rc, tail_ptr as usize)
     } else {
-        let tail_offset = if tail_ptr as usize as u64 == tail_ptr {
-            tail_ptr as usize
+        let tail_offset = usize::try_from(tail_ptr).map_err(|_| NxsError::OutOfBounds)?;
+        if flags & FLAG_DELTA_TAIL != 0 {
+            let layout = parse_delta_tail_layout(data, tail_offset)?;
+            (layout.record_count, tail_offset)
         } else {
-            return Err(NxsError::OutOfBounds);
-        };
-        let rc = if tail_offset.saturating_add(4) <= data.len() {
-            u32::from_le_bytes(
-                data[tail_offset..tail_offset + 4]
-                    .try_into()
-                    .map_err(|_| NxsError::OutOfBounds)?,
-            ) as usize
-        } else {
-            0
-        };
-        (rc, tail_offset.saturating_add(4))
+            let rc = if tail_offset.saturating_add(4) <= data.len() {
+                u32::from_le_bytes(
+                    data[tail_offset..tail_offset + 4]
+                        .try_into()
+                        .map_err(|_| NxsError::OutOfBounds)?,
+                ) as usize
+            } else {
+                0
+            };
+            (rc, tail_offset.saturating_add(4))
+        }
     };
 
     Ok(DecodedFile {

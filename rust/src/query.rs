@@ -14,6 +14,12 @@
 //! ```
 
 use crate::column_prefetch::ColumnWarmState;
+use crate::compact::{
+    self, decode_f64_cell, decode_int_cell, parse_delta_tail_layout, parse_extended_schema,
+    read_packed_bool, read_str_cell_len, resolve_field_offset, DeltaTailLayout, ExtendedSchema,
+    RowCellPlan,
+};
+use crate::consts::{FLAG_DELTA_TAIL, FLAG_DENSE_FRAMES, FLAG_V13_COMPACT_MASK};
 use crate::error::{NxsError, Result};
 use crate::layout::{
     col_var_parts, column_sector_len, is_var_sigil, null_bitmap_bytes, var_str_at,
@@ -60,11 +66,15 @@ fn col_bit(bm: &[u8], rec: usize) -> bool {
 /// mutexes so the reader remains [`Send`] + [`Sync`].
 pub struct Reader<'a> {
     data: &'a [u8],
+    flags: u16,
     keys: Vec<String>,
     key_sigils: Vec<u8>,
+    ext_schema: Option<ExtendedSchema>,
+    cell_plan: Option<RowCellPlan>,
     key_index: std::collections::HashMap<String, usize>,
     record_count: usize,
     tail_start: usize,
+    pub(crate) delta_tail: Option<DeltaTailLayout>,
     layout: Layout,
     col_buf_off: Vec<u64>,
     col_buf_len: Vec<u64>,
@@ -93,19 +103,23 @@ impl<'a> Reader<'a> {
         }
 
         let flags = u16::from_le_bytes(data[6..8].try_into().map_err(|_| NxsError::OutOfBounds)?);
-        if flags & FLAG_COLUMNAR != 0 && flags & FLAG_PAX != 0 {
-            return Err(NxsError::InvalidFlags);
-        }
+        crate::layout::validate_preamble_flags(flags)?;
         let preamble_tail =
             u64::from_le_bytes(data[16..24].try_into().map_err(|_| NxsError::OutOfBounds)?);
-        if flags & FLAG_COLUMNAR != 0 && preamble_tail == 0 {
-            return Err(NxsError::IncompatibleFlags);
-        }
 
-        let (keys, key_sigils, _schema_end) = if flags & FLAG_SCHEMA_EMBEDDED != 0 {
-            parse_schema(data, 32)?
+        let (keys, key_sigils, ext_schema, cell_plan) = if flags & FLAG_SCHEMA_EMBEDDED != 0 {
+            if flags & FLAG_V13_COMPACT_MASK != 0 {
+                let (ext, _) = parse_extended_schema(data, 32, flags)?;
+                let plan = RowCellPlan::new(&ext, flags);
+                let keys = ext.keys.clone();
+                let sigils = ext.sigils.clone();
+                (keys, sigils, Some(ext), Some(plan))
+            } else {
+                let (keys, sigils, _) = parse_schema(data, 32)?;
+                (keys, sigils, None, None)
+            }
         } else {
-            (vec![], vec![], 32)
+            (vec![], vec![], None, None)
         };
 
         let key_index: std::collections::HashMap<String, usize> = keys
@@ -114,6 +128,7 @@ impl<'a> Reader<'a> {
             .map(|(i, k)| (k.clone(), i))
             .collect();
 
+        let mut delta_tail = None;
         let (layout, record_count, tail_start, col_buf_off, col_buf_len) = if flags & FLAG_COLUMNAR
             != 0
         {
@@ -189,18 +204,29 @@ impl<'a> Reader<'a> {
             if tail_ptr > data.len().saturating_sub(4) {
                 return Err(NxsError::OutOfBounds);
             }
-            let record_count =
-                u32::from_le_bytes(data[tail_ptr..tail_ptr + 4].try_into().unwrap()) as usize;
-            (Layout::Row, record_count, tail_ptr + 4, vec![], vec![])
+            if flags & FLAG_DELTA_TAIL != 0 {
+                let layout = parse_delta_tail_layout(data, tail_ptr)?;
+                let record_count = layout.record_count;
+                delta_tail = Some(layout);
+                (Layout::Row, record_count, tail_ptr, vec![], vec![])
+            } else {
+                let record_count =
+                    u32::from_le_bytes(data[tail_ptr..tail_ptr + 4].try_into().unwrap()) as usize;
+                (Layout::Row, record_count, tail_ptr + 4, vec![], vec![])
+            }
         };
 
         Ok(Self {
             data,
+            flags,
             keys,
             key_sigils,
+            ext_schema,
+            cell_plan,
             key_index,
             record_count,
             tail_start,
+            delta_tail,
             layout,
             col_buf_off,
             col_buf_len,
@@ -593,7 +619,8 @@ impl<'a> Reader<'a> {
         col_var_parts(&self.data[off..end], self.record_count)
     }
 
-    fn col_field_parts(&self, slot: usize) -> Result<(&[u8], &[u8])> {
+    /// Null bitmap + dense value buffer for a fixed-width columnar field.
+    pub fn col_field_parts(&self, slot: usize) -> Result<(&[u8], &[u8])> {
         if self
             .key_sigils
             .get(slot)
@@ -646,8 +673,7 @@ impl<'a> Reader<'a> {
         }
         self.touch_record_page(i);
         let offset = if self.layout == Layout::Row {
-            let entry = self.tail_start + i * 10;
-            u64::from_le_bytes(self.data.get(entry + 2..entry + 10)?.try_into().ok()?) as usize
+            self.row_record_offset(i)?
         } else {
             i
         };
@@ -665,6 +691,31 @@ impl<'a> Reader<'a> {
             pred: AlwaysTrue,
             index: 0,
         }
+    }
+
+    fn row_record_offset(&self, index: usize) -> Option<usize> {
+        if let Some(ref dt) = self.delta_tail {
+            compact::delta_record_offset(self.data, dt, index).ok()
+        } else {
+            let entry = self.tail_start + index * 10;
+            Some(
+                u64::from_le_bytes(self.data.get(entry + 2..entry + 10)?.try_into().ok()?) as usize,
+            )
+        }
+    }
+
+    /// Materialise a keyword or promoted-string value by field name.
+    pub fn get_keyword(&self, key: &str, record_index: usize) -> Option<String> {
+        let slot = self.slot(key)?;
+        let ext = self.ext_schema.as_ref()?;
+        let sig = *self.key_sigils.get(slot)?;
+        if sig != crate::consts::SIGIL_KEYWORD && !ext.is_promoted(slot) {
+            return None;
+        }
+        let rec = self.record(record_index)?;
+        let off = rec.resolve(slot)?;
+        let idx = u16::from_le_bytes(self.data.get(off..off + 2)?.try_into().ok()?);
+        compact::materialise_keyword(ext, slot, idx)
     }
 
     /// Return a lazy iterator over records matching `pred`.
@@ -688,8 +739,26 @@ pub struct Record<'data, 'reader> {
 }
 
 impl<'data, 'reader> Record<'data, 'reader> {
+    /// Byte offset of this record's NYXO object (row layout only).
+    pub fn object_offset(&self) -> Option<usize> {
+        match self.reader.layout {
+            Layout::Row => Some(self.offset),
+            _ => None,
+        }
+    }
+
     /// Resolve the byte offset of slot `s` within this object. Returns `None` if absent.
     fn resolve(&self, slot: usize) -> Option<usize> {
+        if let (Some(ext), Some(plan)) = (&self.reader.ext_schema, &self.reader.cell_plan) {
+            return resolve_field_offset(
+                self.data,
+                self.offset,
+                slot,
+                ext,
+                plan,
+                self.reader.flags & FLAG_DENSE_FRAMES != 0,
+            );
+        }
         resolve_slot(self.data, self.offset, slot)
     }
 
@@ -712,6 +781,10 @@ impl<'data, 'reader> Record<'data, 'reader> {
             Layout::Pax => self.reader.pax_get_i64(self.offset, slot),
             Layout::Row => {
                 let off = self.resolve(slot)?;
+                if let Some(ext) = &self.reader.ext_schema {
+                    let w = ext.cell_width(slot);
+                    return decode_int_cell(self.data, off, w).ok();
+                }
                 Some(i64::from_le_bytes(
                     self.data.get(off..off + 8)?.try_into().ok()?,
                 ))
@@ -738,6 +811,10 @@ impl<'data, 'reader> Record<'data, 'reader> {
             return self.reader.pax_get_f64(self.offset, slot);
         }
         let off = self.resolve(slot)?;
+        if let Some(ext) = &self.reader.ext_schema {
+            let w = ext.cell_width(slot);
+            return decode_f64_cell(self.data, off, w).ok();
+        }
         Some(f64::from_le_bytes(
             self.data.get(off..off + 8)?.try_into().ok()?,
         ))
@@ -760,6 +837,11 @@ impl<'data, 'reader> Record<'data, 'reader> {
             }
             Layout::Pax => self.reader.pax_get_bool(self.offset, slot),
             Layout::Row => {
+                if let (Some(ext), Some(plan)) = (&self.reader.ext_schema, &self.reader.cell_plan) {
+                    if plan.packed_bools && plan.bool_slots.contains(&slot) {
+                        return read_packed_bool(self.data, self.offset, slot, ext, plan);
+                    }
+                }
                 let off = self.resolve(slot)?;
                 Some(*self.data.get(off)? != 0)
             }
@@ -784,6 +866,16 @@ impl<'data, 'reader> Record<'data, 'reader> {
             Layout::Pax => self.reader.pax_get_str(self.offset, slot),
             Layout::Row => {
                 let off = self.resolve(slot)?;
+                if let Some(ext) = &self.reader.ext_schema {
+                    if ext.is_promoted(slot) {
+                        let idx = u16::from_le_bytes(self.data.get(off..off + 2)?.try_into().ok()?);
+                        return ext.value_pool.get(idx as usize).map(|s| s.as_str());
+                    }
+                    let prefix = ext.str_len_prefix(slot);
+                    let len = read_str_cell_len(self.data, off, prefix).ok()?;
+                    let bytes = self.data.get(off + prefix..off + prefix + len)?;
+                    return std::str::from_utf8(bytes).ok();
+                }
                 let len =
                     u32::from_le_bytes(self.data.get(off..off + 4)?.try_into().ok()?) as usize;
                 let bytes = self.data.get(off + 4..off + 4 + len)?;
@@ -874,10 +966,7 @@ impl<'data, 'reader, P: Predicate> Iterator for Records<'data, 'reader, P> {
             // For Columnar/PAX layout: there is no row tail-index; the record is identified
             // by its zero-based record index directly.
             let abs = match r.layout {
-                Layout::Row => {
-                    let entry = r.tail_start + i * 10;
-                    u64::from_le_bytes(r.data.get(entry + 2..entry + 10)?.try_into().ok()?) as usize
-                }
+                Layout::Row => r.row_record_offset(i)?,
                 Layout::Columnar | Layout::Pax => i,
             };
             if self.pred.test(r.data, r, abs) {
@@ -1382,7 +1471,7 @@ mod tests {
 
     fn make_nxb() -> Vec<u8> {
         let schema = Schema::new(&["id", "username", "score", "active"]);
-        let mut w = NxsWriter::new(&schema);
+        let mut w = NxsWriter::with_capacity(&schema, 4096);
         for (id, name, score, active) in [
             (1i64, "alice", 95.0f64, true),
             (2i64, "bob", 42.0f64, false),
@@ -1662,5 +1751,166 @@ mod tests {
             assert_eq!(rec.get_str("name"), Some(want.as_str()));
             assert_eq!(rec.get_i64("id"), Some(i as i64));
         }
+    }
+
+    #[test]
+    fn compact_v13_single_record() {
+        use crate::compact::CompactOptions;
+        use crate::writer::{NxsWriter, Schema, Slot};
+
+        let schema = Schema::new(&["id", "score"]);
+        let mut w = NxsWriter::with_compact(&schema, Some(CompactOptions::compact()));
+        w.begin_object();
+        w.write_i64(Slot(0), 42);
+        w.write_f64(Slot(1), 3.5);
+        w.end_object();
+        let bytes = w.finish();
+        let r = Reader::new(&bytes).unwrap();
+        let rec = r.record(0).unwrap();
+        assert_eq!(rec.get_i64("id"), Some(42));
+        assert!((rec.get_f64("score").unwrap() - 3.5).abs() < 1e-9);
+    }
+
+    #[test]
+    fn get_keyword_promoted_string() {
+        use crate::compact::CompactOptions;
+        use crate::writer::{NxsWriter, Schema, Slot};
+
+        let schema = Schema::new(&["level", "msg"]);
+        let mut w = NxsWriter::with_compact(&schema, Some(CompactOptions::compact()));
+        for i in 0..40usize {
+            let level = match i % 3 {
+                0 => "INFO",
+                1 => "WARN",
+                _ => "ERROR",
+            };
+            w.begin_object();
+            w.write_str(Slot(0), level);
+            w.write_str(Slot(1), "event");
+            w.end_object();
+        }
+        let bytes = w.finish();
+        let reader = Reader::new(&bytes).unwrap();
+        assert!(reader.ext_schema.as_ref().unwrap().is_promoted(0));
+        assert_eq!(reader.get_keyword("level", 1), Some("WARN".to_string()));
+        assert_eq!(reader.record(1).unwrap().get_str("level"), Some("WARN"));
+    }
+
+    #[test]
+    fn compact_v13_roundtrip() {
+        use crate::compact::CompactOptions;
+        use crate::writer::{NxsWriter, Schema, Slot};
+
+        const SLOTS: &[&str] = &["id", "username", "age", "active", "score"];
+        let schema = Schema::new(SLOTS);
+        let opts = CompactOptions::compact();
+        let mut w = NxsWriter::with_compact(&schema, Some(opts));
+        for i in 0..50usize {
+            w.begin_object();
+            w.write_i64(Slot(0), i as i64);
+            w.write_str(Slot(1), &format!("user_{i:04}"));
+            w.write_i64(Slot(2), (20 + (i % 50)) as i64);
+            w.write_bool(Slot(3), i % 2 == 0);
+            w.write_f64(Slot(4), i as f64 * 0.5);
+            w.end_object();
+        }
+        let bytes = w.finish();
+        let r = Reader::new(&bytes).unwrap();
+        assert_eq!(r.record_count(), 50);
+        let rec = r.record(7).expect("record 7");
+        assert_eq!(rec.get_i64("id"), Some(7));
+        assert_eq!(rec.get_str("username"), Some("user_0007"));
+        assert_eq!(rec.get_i64("age"), Some(27));
+        assert_eq!(rec.get_bool("active"), Some(false));
+        assert!((rec.get_f64("score").unwrap() - 3.5).abs() < 1e-9);
+        assert!(bytes.len() < 50 * 60);
+    }
+
+    fn records_1000_fixture_rows() -> (Vec<String>, Vec<crate::layout::RecordRow>) {
+        use crate::layout::{Cell, RecordRow};
+
+        const KEYS: &[&str] = &[
+            "id",
+            "username",
+            "email",
+            "age",
+            "balance",
+            "active",
+            "score",
+            "created_at",
+        ];
+        let rows: Vec<RecordRow> = (0..1000)
+            .map(|i| RecordRow {
+                cells: vec![
+                    Cell::I64(i as i64),
+                    Cell::Str(format!("user_{i:07}")),
+                    Cell::Str(format!("user{i}@example.com")),
+                    Cell::I64(20 + (i % 50) as i64),
+                    Cell::F64(100.0 + i as f64 * 1.37),
+                    Cell::Bool(i % 3 != 0),
+                    Cell::F64((i as f64 % 100.0) / 10.0),
+                    Cell::Time(1_700_000_000_000_000_000 + i as i64),
+                ],
+            })
+            .collect();
+        let keys: Vec<String> = KEYS.iter().map(|s| (*s).to_string()).collect();
+        (keys, rows)
+    }
+
+    /// Gate: every field on every record must decode identically to the v1.2 row file.
+    #[test]
+    fn compact_records_1000_matches_v12_decode() {
+        use crate::compact::CompactOptions;
+        use crate::layout::finish_row;
+
+        let (keys, rows) = records_1000_fixture_rows();
+        let v12 = finish_row(&keys, &rows, None).unwrap();
+        let compact = finish_row(&keys, &rows, Some(&CompactOptions::compact())).unwrap();
+        let r12 = Reader::new(&v12).unwrap();
+        let r13 = Reader::new(&compact).unwrap();
+        assert_eq!(r12.record_count(), 1000);
+        assert_eq!(r13.record_count(), 1000);
+        let ext = r13.ext_schema.as_ref().unwrap();
+        assert!(!ext.is_promoted(1));
+        assert!(!ext.is_promoted(2));
+
+        for i in 0..1000 {
+            let a = r12.record(i).unwrap();
+            let b = r13.record(i).unwrap();
+            assert_eq!(a.get_i64("id"), b.get_i64("id"), "id @ {i}");
+            assert_eq!(
+                a.get_str("username"),
+                b.get_str("username"),
+                "username @ {i}"
+            );
+            assert_eq!(a.get_str("email"), b.get_str("email"), "email @ {i}");
+            assert_eq!(a.get_i64("age"), b.get_i64("age"), "age @ {i}");
+            assert_eq!(a.get_f64("score"), b.get_f64("score"), "score @ {i}");
+            assert_eq!(a.get_bool("active"), b.get_bool("active"), "active @ {i}");
+            assert_eq!(
+                a.get_f64("balance").map(|v| (v * 1e9).round() as i64),
+                b.get_f64("balance").map(|v| (v * 1e9).round() as i64),
+                "balance @ {i}"
+            );
+            assert_eq!(
+                a.get_i64("created_at"),
+                b.get_i64("created_at"),
+                "created_at @ {i}"
+            );
+        }
+        assert!(
+            compact.len() < v12.len(),
+            "compact {} vs v12 {}",
+            compact.len(),
+            v12.len()
+        );
+        // u16 length prefixes only shrink cells when padding boundary shifts; this
+        // fixture's 12/17-char strings stay on the same 8-byte pad grid.
+        assert!(
+            (86_000..=94_000).contains(&compact.len()),
+            "compact size: {} bytes (v12 {})",
+            compact.len(),
+            v12.len()
+        );
     }
 }
