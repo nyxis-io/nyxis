@@ -9,8 +9,9 @@ Viewport prefetch and adaptive strategy reduce remote range-fetch count and wall
 ## Fixture
 
 - **Schema:** flat 8-field row layout: `id`, `username`, `email`, `age`, `balance`, `active`, `score`, `created_at` (same as Workload B / `site/bench`).
-- **Publication size:** 1M records → **132 MB** row `.nxb` (`workload_B_nxs_1000000.nxb`).
-- **Spec targets (§12):** 100 MB (F1/F2) and 500 MB (F3). The 132 MB fixture is used for publication; **results scale linearly with record count** — extrapolate without rerunning until a 4M-row fixture is generated.
+- **Publication size (v1.3 compact default):** 1M records → **~79 MiB** row `.nxb` (`site/bench/fixtures/records_1000000.nxb`, 83,007,958 bytes). Same flat-8 schema as Workload B.
+- **Frozen native runs (2026-05):** used v1.2 row **`workload_B_nxs_1000000.nxb`** (~132 MiB). Timings in `bench/results/*/workload_f.jsonl` are valid; **results scale linearly with record count** — extrapolate to compact footprint without rerunning until prefetch engine constants change.
+- **Spec targets (§12):** 100 MB (F1/F2) and 500 MB (F3).
 
 ## Remote I/O model
 

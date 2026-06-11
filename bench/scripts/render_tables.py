@@ -319,7 +319,7 @@ F_NOTE = (
     "See **Projected browser** column (20 ms RTT model).\n\n"
     "† **Prefetch fetches** = `fetchRange` calls from the prefetch engine only. "
     "0 in lazy mode = in-memory backing store bypasses the recorder; disk/network readers issue on-demand fetches.\n\n"
-    "_F4 `MemStats.Sys` includes Go runtime + full fixture backing store (~132 MB), not production client RSS. "
+    "_F4 `MemStats.Sys` includes Go runtime + full fixture backing store (~79–132 MiB depending on v1.3 vs v1.2 row fixture), not production client RSS. "
     "Browser with `max_pages=64` ≈ 4 MB steady-state._"
 )
 
