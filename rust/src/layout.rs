@@ -25,20 +25,25 @@ pub const DECODER_MIN_VERSION_V13: &str = "1.3.0";
 
 /// Batch `nxs compile` default: emit v1.3 compact when `true`.
 ///
-/// Flip in a one-line launch commit after tier-0 drivers decode v1.3. Until then,
-/// compact is opt-in via `--compact` (hidden); `--legacy-v12` forces v1.2 row layout.
-pub const COMPILE_DEFAULT_COMPACT: bool = false;
+/// `--legacy-v12` forces v1.2 row layout for one release cycle.
+pub const COMPILE_DEFAULT_COMPACT: bool = true;
 
 /// Resolve whether batch compile emits v1.3 compact row encoding.
-pub fn resolve_compact_encoding(legacy_v12: bool, force_compact: bool) -> Option<CompactOptions> {
-    if legacy_v12 {
+pub fn resolve_compact_encoding(legacy_v12: bool) -> Option<CompactOptions> {
+    if legacy_v12 || !COMPILE_DEFAULT_COMPACT {
+        None
+    } else {
+        Some(CompactOptions::compact())
+    }
+}
+
+fn row_compact_opts(opts: &CompileOptions) -> Option<CompactOptions> {
+    if opts.legacy_v12 {
         return None;
     }
-    if force_compact || COMPILE_DEFAULT_COMPACT {
-        Some(CompactOptions::compact())
-    } else {
-        None
-    }
+    opts.compact
+        .clone()
+        .or_else(|| resolve_compact_encoding(false))
 }
 
 /// Layout selection for compile / writer finish.
@@ -75,6 +80,8 @@ pub struct CompileOptions {
     pub layout: Layout,
     pub page_size: u32,
     pub compact: Option<CompactOptions>,
+    /// When true, emit v1.2 row layout even if `COMPILE_DEFAULT_COMPACT` is enabled.
+    pub legacy_v12: bool,
 }
 
 impl CompileOptions {
@@ -627,9 +634,16 @@ pub fn finish_row(
 pub fn compile_fields(fields: &[Field], opts: &CompileOptions) -> Result<Vec<u8>> {
     match opts.layout {
         Layout::Row => {
-            if opts.compact.is_some() {
-                let (keys, rows) = records_from_fields(fields)?;
-                finish_row(&keys, &rows, opts.compact.as_ref())
+            if let Some(ref compact) = row_compact_opts(opts) {
+                match records_from_fields(fields) {
+                    Ok((keys, rows)) => finish_row(&keys, &rows, Some(compact)),
+                    // Nested NYXO/NYXL values still use the v1.2 row compiler until a compact nested path exists.
+                    Err(NxsError::ParseError(_)) | Err(NxsError::UnsupportedFieldType) => {
+                        let mut compiler = crate::compiler::Compiler::new();
+                        compiler.compile(fields)
+                    }
+                    Err(e) => Err(e),
+                }
             } else {
                 let mut compiler = crate::compiler::Compiler::new();
                 compiler.compile(fields)
@@ -837,11 +851,11 @@ mod tests {
 
     #[test]
     fn resolve_compact_encoding_legacy_wins() {
-        assert!(resolve_compact_encoding(true, false).is_none());
-        assert!(resolve_compact_encoding(true, true).is_none());
-        assert!(resolve_compact_encoding(false, true).is_some());
-        if !COMPILE_DEFAULT_COMPACT {
-            assert!(resolve_compact_encoding(false, false).is_none());
+        assert!(resolve_compact_encoding(true).is_none());
+        if COMPILE_DEFAULT_COMPACT {
+            assert!(resolve_compact_encoding(false).is_some());
+        } else {
+            assert!(resolve_compact_encoding(false).is_none());
         }
     }
 }
