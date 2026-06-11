@@ -122,3 +122,4 @@ field-by-field decode tests in the Rust reference reader, **not** by matching pr
 | `compact_dense_multi_10` | positive | 10 dense records, narrow ints + f64, delta tail-index |
 | `compact_logs_dense_20` | positive | 20 log-shaped records; low-cardinality `level` promoted to value pool |
 | `compact_sparse_100` | positive | 100 sparse-framed records (conformance `sparse` mask); dense/sparse coexistence in one file |
+| `compact_streaming_unsealed` | forward stream | Compact row file truncated before footer (`TailPtr = 0`); readers MUST forward-decode every complete NYXO without the tail-index |

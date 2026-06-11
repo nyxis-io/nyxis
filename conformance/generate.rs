@@ -1081,6 +1081,58 @@ fn make_compact_sparse_100() -> Vector {
     }
 }
 
+fn forward_stream_expected_json(keys: &[&str], records: &[Vec<Option<(&str, JV)>>]) -> String {
+    let body = expected_json(keys, records);
+    format!("{{\"forward_stream\":true,{}", &body[1..])
+}
+
+/// Compact row file truncated before tail-index/footer; `TailPtr = 0`.
+/// Readers MUST forward-decode every complete NYXO without the tail-index.
+fn make_compact_streaming_unsealed() -> Vector {
+    use nxs::query::Reader;
+
+    const TOTAL: usize = 20;
+    const VISIBLE: usize = 12;
+    const LEVELS: [&str; 4] = ["INFO", "WARN", "ERROR", "DEBUG"];
+    let keys = vec!["id".into(), "level".into(), "msg".into()];
+    let rows: Vec<RecordRow> = (0..TOTAL)
+        .map(|i| RecordRow {
+            cells: vec![
+                Cell::I64(i as i64),
+                Cell::Str(LEVELS[i % 4].to_string()),
+                Cell::Str(format!("event {i}")),
+            ],
+        })
+        .collect();
+    let full = finish_row(&keys, &rows, Some(&CompactOptions::compact())).expect("compact row");
+    let reader = Reader::new(&full).expect("sealed reader for offsets");
+    let last = VISIBLE - 1;
+    let off = reader
+        .record(last)
+        .expect("record")
+        .object_offset()
+        .expect("row offset");
+    let len = u32::from_le_bytes(full[off + 4..off + 8].try_into().unwrap()) as usize;
+    let mut nxb = full[..off + len].to_vec();
+    nxb[16..24].copy_from_slice(&0u64.to_le_bytes());
+
+    let records: Vec<Vec<Option<(&str, JV)>>> = (0..VISIBLE)
+        .map(|i| {
+            vec![
+                Some(("id", JV::Int(i as i64))),
+                Some(("level", JV::Str(LEVELS[i % 4].into()))),
+                Some(("msg", JV::Str(format!("event {i}")))),
+            ]
+        })
+        .collect();
+    let expected = forward_stream_expected_json(&["id", "level", "msg"], &records);
+    Vector {
+        name: "compact_streaming_unsealed",
+        nxb,
+        expected,
+    }
+}
+
 fn make_compact_dense_multi_10() -> Vector {
     let keys = vec!["id".into(), "score".into()];
     let rows: Vec<RecordRow> = (0..10)
@@ -1220,6 +1272,7 @@ fn main() {
         make_compact_logs_dense_20(),
         make_compact_dense_multi_10(),
         make_compact_sparse_100(),
+        make_compact_streaming_unsealed(),
     ] {
         let nxb_path = v13_dir.join(format!("{}.nxb", v.name));
         let json_path = v13_dir.join(format!("{}.expected.json", v.name));

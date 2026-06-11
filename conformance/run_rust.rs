@@ -14,6 +14,7 @@ use std::path::Path;
 use nxs::decoder::{decode, DecodedValue};
 use nxs::error::NxsError;
 use nxs::query::Reader;
+use nxs::stream_reader::StreamReader;
 
 // ── Minimal JSON parser for expected.json ─────────────────────────────────────
 
@@ -254,6 +255,68 @@ fn parse_expected_positive(expected_json: &Jv) -> Result<(usize, Vec<String>, Ve
     }
 }
 
+fn stream_value_matches(
+    sr: &StreamReader<'_>,
+    obj_offset: usize,
+    key: &str,
+    expected: &Jv,
+) -> Result<(), String> {
+    match expected {
+        Jv::Null => Ok(()),
+        Jv::Bool(e) => match sr.get_bool_at(obj_offset, key) {
+            Some(v) if v == *e => Ok(()),
+            Some(v) => Err(format!("field {key:?}: expected bool {e}, got {v}")),
+            None => Err(format!("field {key:?}: absent")),
+        },
+        Jv::Int(e) => match sr.get_i64_at(obj_offset, key) {
+            Some(v) if v == *e => Ok(()),
+            Some(v) => Err(format!("field {key:?}: expected int {e}, got {v}")),
+            None => Err(format!("field {key:?}: absent")),
+        },
+        Jv::Float(e) => match sr.get_f64_at(obj_offset, key) {
+            Some(v) if approx_eq(v, *e) => Ok(()),
+            Some(v) => Err(format!("field {key:?}: expected float {e}, got {v}")),
+            None => Err(format!("field {key:?}: absent")),
+        },
+        Jv::Str(e) => match sr.get_str_at(obj_offset, key) {
+            Some(v) if v == e => Ok(()),
+            Some(v) => Err(format!("field {key:?}: expected str {e:?}, got {v:?}")),
+            None => Err(format!("field {key:?}: absent")),
+        },
+        _ => Err(format!("field {key:?}: unsupported expected type")),
+    }
+}
+
+fn run_forward_stream(dir: &Path, name: &str, expected_json: &Jv) -> Result<(), String> {
+    let nxb_path = dir.join(format!("{}.nxb", name));
+    let data = fs::read(&nxb_path).map_err(|e| format!("read {}: {}", nxb_path.display(), e))?;
+    let (exp_count, _exp_keys, exp_records) =
+        parse_expected_positive(expected_json).map_err(|e| format!("{name}: {e}"))?;
+    let mut sr = StreamReader::open(&data).map_err(|e| format!("{name}: stream open: {e}"))?;
+    if sr.is_sealed() {
+        return Err(format!("{name}: forward_stream vector must be unsealed"));
+    }
+    let mut decoded = 0usize;
+    while let Some(off) = sr.poll_next_offset() {
+        if decoded >= exp_records.len() {
+            return Err(format!("{name}: extra record at offset {off}"));
+        }
+        let Jv::Object(ref fields) = *exp_records[decoded] else {
+            return Err(format!("{name}: record {decoded} not an object"));
+        };
+        for (key, val) in fields {
+            stream_value_matches(&sr, off, key, val)?;
+        }
+        decoded += 1;
+    }
+    if decoded != exp_count {
+        return Err(format!(
+            "{name}: expected {exp_count} forward-decoded records, got {decoded}"
+        ));
+    }
+    Ok(())
+}
+
 fn reader_value_matches(
     rec: &nxs::query::Record<'_, '_>,
     key: &str,
@@ -482,6 +545,9 @@ fn run_vector(vector_dir: &Path, base: &str) -> Result<(), String> {
     let is_negative = matches!(&expected, Jv::Object(fields) if
         fields.iter().any(|(k,_)| k == "error")
     );
+    let is_forward_stream = matches!(&expected, Jv::Object(fields) if fields.iter().any(|(k, v)| {
+        k == "forward_stream" && matches!(v, Jv::Bool(true))
+    }));
     if is_negative {
         let code = match &expected {
             Jv::Object(fields) => fields
@@ -498,6 +564,8 @@ fn run_vector(vector_dir: &Path, base: &str) -> Result<(), String> {
             _ => String::new(),
         };
         run_negative(vector_dir, base, &code)
+    } else if is_forward_stream {
+        run_forward_stream(vector_dir, base, &expected)
     } else {
         run_positive(vector_dir, base, &expected)
     }

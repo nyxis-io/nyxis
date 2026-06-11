@@ -147,8 +147,9 @@
 
       <h3>JSON Deserialization Benchmarks</h3>
       <p>
-        Across our 10-language conformance suite, running a CPU-bound reducer over a 1M-record (131 MB) structured
-        dataset yields the following processing speedups compared to full-file JSON parsing:
+        Across our 10-language conformance suite, running a CPU-bound reducer over a 1M-record (~79&nbsp;MiB compact
+        row, ~132&nbsp;MiB legacy v1.2) structured dataset yields the following processing speedups compared to full-file
+        JSON parsing:
       </p>
       <ul>
         <li><strong>High-Efficiency Core Runtimes:</strong> <code>1.0× to 1.1×</code> (Ties in Go and JS/V8, where
@@ -179,7 +180,7 @@
               </td>
             </tr>
             <tr>
-              <td>RAM footprint (131&nbsp;MB file)</td>
+              <td>RAM footprint (1M-record row file)</td>
               <td class="col-bad">Up to 5× volatile heap explosion (AST + objects)</td>
               <td class="col-good">Near 0&nbsp;MB — only instantiates visible viewport rows</td>
             </tr>
