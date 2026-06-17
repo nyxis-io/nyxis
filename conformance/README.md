@@ -113,6 +113,10 @@ bits and `upgrade your nyxis driver to >= 1.3.0`.
 **Driver decode triage (launch):** tier-0 JavaScript (browser demos); tier-1 Go,
 Python, C; tier-2 Ruby, PHP, C#; tier-3 Kotlin, Swift (may trail with README note).
 
+`compact_streaming_unsealed` (`forward_stream: true`) is validated by the Rust
+reference reader and JavaScript runner only. Other v13 runners skip it until they
+implement `StreamReader` forward-decode.
+
 Cross-version logical equivalence (v1.2 row vs v1.3 `--compact` on the same data) is validated by
 field-by-field decode tests in the Rust reference reader, **not** by matching preamble `DictHash`
 (extended schema headers differ).
@@ -122,3 +126,4 @@ field-by-field decode tests in the Rust reference reader, **not** by matching pr
 | `compact_dense_multi_10` | positive | 10 dense records, narrow ints + f64, delta tail-index |
 | `compact_logs_dense_20` | positive | 20 log-shaped records; low-cardinality `level` promoted to value pool |
 | `compact_sparse_100` | positive | 100 sparse-framed records (conformance `sparse` mask); dense/sparse coexistence in one file |
+| `compact_streaming_unsealed` | forward stream | Compact row file truncated before footer (`TailPtr = 0`); readers MUST forward-decode every complete NYXO without the tail-index |

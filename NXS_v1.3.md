@@ -109,6 +109,12 @@ compiler sets this flag with `--compact`. Logical field order in the schema
 header is unchanged. Files without the flag retain schema declaration order on
 the wire (v1.3.0-compat readers).
 
+Dense frames (and sparse compact frames, which retain v1.2 NYXO length prefixes)
+**MUST** be forward-decodable record-by-record without the tail-index: each
+complete NYXO object is self-delimiting via its `Length` field. The tail-index
+accelerates O(1) seek to record *k* but is never required for sequential reads
+(WAL ingest, HTTP download in flight, unsealed stream writers).
+
 ### 4.3 Patching semantics
 
 Unchanged for fixed-width cells in dense frames: offsets are computable, so

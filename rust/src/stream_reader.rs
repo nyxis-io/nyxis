@@ -1,15 +1,20 @@
 //! Incremental reader for streamable `.nxb` files (`TailPtr = 0` until seal).
 //!
 //! Polls a growing buffer for complete NYXO top-level objects without requiring
-//! `MagicFooter` or a tail-index.
+//! `MagicFooter` or a tail-index. v1.3 compact dense/sparse frames are forward-
+//! decodable the same way as v1.2 streamable rows.
 
+use crate::compact::{
+    decode_f64_cell, decode_int_cell, parse_extended_schema, read_packed_bool, read_str_cell_len,
+    resolve_field_offset, ExtendedSchema, RowCellPlan,
+};
+use crate::consts::{FLAG_DENSE_FRAMES, FLAG_SCHEMA_EMBEDDED, FLAG_V13_COMPACT_MASK};
 use crate::error::{NxsError, Result};
 use crate::query::{parse_schema, resolve_slot};
 
 const MAGIC_FILE: u32 = 0x4E59_5842;
 const MAGIC_OBJ: u32 = 0x4E59_584F;
 const MAGIC_FOOTER: u32 = 0x2153_584E;
-const FLAG_SCHEMA_EMBEDDED: u16 = 0x0002;
 
 /// End offset (exclusive) of the NYXO object at `off`, if fully present in `data`.
 pub fn complete_nyxo_end(data: &[u8], off: usize) -> Option<usize> {
@@ -35,10 +40,13 @@ pub fn complete_nyxo_end(data: &[u8], off: usize) -> Option<usize> {
 /// Reader for an unsealed `.nxb` stream (growing file or pipe).
 pub struct StreamReader<'a> {
     data: &'a [u8],
+    flags: u16,
     keys: Vec<String>,
     #[allow(dead_code)]
     key_sigils: Vec<u8>,
     key_index: std::collections::HashMap<String, usize>,
+    ext_schema: Option<ExtendedSchema>,
+    cell_plan: Option<RowCellPlan>,
     data_start: usize,
     cursor: usize,
     sealed: bool,
@@ -63,11 +71,25 @@ impl<'a> StreamReader<'a> {
             ));
         }
 
-        let (keys, key_sigils, data_start) = if flags & FLAG_SCHEMA_EMBEDDED != 0 {
-            parse_schema(data, 32)?
-        } else {
-            (vec![], vec![], 32)
-        };
+        let v13 = flags & FLAG_V13_COMPACT_MASK != 0;
+        let (keys, key_sigils, ext_schema, cell_plan, data_start) =
+            if flags & FLAG_SCHEMA_EMBEDDED != 0 {
+                if v13 {
+                    let (schema, end) = parse_extended_schema(data, 32, flags)?;
+                    if end > data.len() {
+                        return Err(NxsError::OutOfBounds);
+                    }
+                    let keys = schema.keys.clone();
+                    let key_sigils = schema.sigils.clone();
+                    let plan = RowCellPlan::new(&schema, flags);
+                    (keys, key_sigils, Some(schema), Some(plan), end)
+                } else {
+                    let (keys, key_sigils, data_start) = parse_schema(data, 32)?;
+                    (keys, key_sigils, None, None, data_start)
+                }
+            } else {
+                (vec![], vec![], None, None, 32)
+            };
 
         let key_index: std::collections::HashMap<String, usize> = keys
             .iter()
@@ -75,7 +97,6 @@ impl<'a> StreamReader<'a> {
             .map(|(i, k)| (k.clone(), i))
             .collect();
 
-        // Header TailPtr stays 0 until seal; detect seal via EOF footer + in-bounds tail block.
         let sealed = if data.len() < 16 {
             false
         } else {
@@ -99,9 +120,12 @@ impl<'a> StreamReader<'a> {
 
         Ok(Self {
             data,
+            flags,
             keys,
             key_sigils,
             key_index,
+            ext_schema,
+            cell_plan,
             data_start,
             cursor: data_start,
             sealed,
@@ -125,19 +149,71 @@ impl<'a> StreamReader<'a> {
         complete_nyxo_end(self.data, self.data_start).is_some()
     }
 
+    fn resolve_field_at(&self, obj_offset: usize, slot: usize) -> Option<usize> {
+        if let (Some(ext), Some(plan)) = (&self.ext_schema, &self.cell_plan) {
+            resolve_field_offset(
+                self.data,
+                obj_offset,
+                slot,
+                ext,
+                plan,
+                self.flags & FLAG_DENSE_FRAMES != 0,
+            )
+        } else {
+            resolve_slot(self.data, obj_offset, slot)
+        }
+    }
+
     /// Read `i64` field at a top-level object offset.
     pub fn get_i64_at(&self, obj_offset: usize, key: &str) -> Option<i64> {
         let slot = *self.key_index.get(key)?;
-        let off = resolve_slot(self.data, obj_offset, slot)?;
+        let off = self.resolve_field_at(obj_offset, slot)?;
+        if let Some(ext) = &self.ext_schema {
+            return decode_int_cell(self.data, off, ext.cell_width(slot)).ok();
+        }
         Some(i64::from_le_bytes(
             self.data.get(off..off + 8)?.try_into().ok()?,
         ))
     }
 
-    /// Read `&str` field at a top-level object offset.
-    pub fn get_str_at(&self, obj_offset: usize, key: &str) -> Option<&'a str> {
+    /// Read `f64` field at a top-level object offset.
+    pub fn get_f64_at(&self, obj_offset: usize, key: &str) -> Option<f64> {
         let slot = *self.key_index.get(key)?;
-        let off = resolve_slot(self.data, obj_offset, slot)?;
+        let off = self.resolve_field_at(obj_offset, slot)?;
+        if let Some(ext) = &self.ext_schema {
+            return decode_f64_cell(self.data, off, ext.cell_width(slot)).ok();
+        }
+        Some(f64::from_le_bytes(
+            self.data.get(off..off + 8)?.try_into().ok()?,
+        ))
+    }
+
+    /// Read `bool` field at a top-level object offset.
+    pub fn get_bool_at(&self, obj_offset: usize, key: &str) -> Option<bool> {
+        let slot = *self.key_index.get(key)?;
+        if let (Some(ext), Some(plan)) = (&self.ext_schema, &self.cell_plan) {
+            if plan.packed_bools && plan.bool_slots.contains(&slot) {
+                return read_packed_bool(self.data, obj_offset, slot, ext, plan);
+            }
+        }
+        let off = self.resolve_field_at(obj_offset, slot)?;
+        Some(self.data.get(off)? != &0)
+    }
+
+    /// Read `&str` field at a top-level object offset.
+    pub fn get_str_at(&self, obj_offset: usize, key: &str) -> Option<&str> {
+        let slot = *self.key_index.get(key)?;
+        let off = self.resolve_field_at(obj_offset, slot)?;
+        if let Some(ext) = &self.ext_schema {
+            if ext.is_promoted(slot) {
+                let idx = u16::from_le_bytes(self.data.get(off..off + 2)?.try_into().ok()?);
+                return ext.value_pool.get(idx as usize).map(|s| s.as_str());
+            }
+            let prefix = ext.str_len_prefix(slot);
+            let len = read_str_cell_len(self.data, off, prefix).ok()?;
+            let bytes = self.data.get(off + prefix..off + prefix + len)?;
+            return std::str::from_utf8(bytes).ok();
+        }
         let len = u32::from_le_bytes(self.data.get(off..off + 4)?.try_into().ok()?) as usize;
         let bytes = self.data.get(off + 4..off + 4 + len)?;
         std::str::from_utf8(bytes).ok()
@@ -155,6 +231,9 @@ impl<'a> StreamReader<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::compact::CompactOptions;
+    use crate::layout::{finish_row, Cell, RecordRow};
+    use crate::query::Reader;
     use crate::writer::{
         write_stream_file_footer, write_stream_file_header, NxsWriter, Schema, Slot,
     };
@@ -208,5 +287,42 @@ mod tests {
             let partial = std::fs::read(&path).unwrap();
             assert!(StreamReader::open(&partial).unwrap().is_sealed());
         }
+    }
+
+    #[test]
+    fn compact_forward_decode_before_footer() {
+        const LEVELS: [&str; 4] = ["INFO", "WARN", "ERROR", "DEBUG"];
+        const VISIBLE: usize = 8;
+        let keys = vec!["id".into(), "level".into(), "msg".into()];
+        let rows: Vec<RecordRow> = (0..20)
+            .map(|i| RecordRow {
+                cells: vec![
+                    Cell::I64(i as i64),
+                    Cell::Str(LEVELS[i % 4].to_string()),
+                    Cell::Str(format!("event {i}")),
+                ],
+            })
+            .collect();
+        let full = finish_row(&keys, &rows, Some(&CompactOptions::compact())).unwrap();
+        let reader = Reader::new(&full).unwrap();
+        let last = VISIBLE - 1;
+        let off = reader.record(last).unwrap().object_offset().unwrap();
+        let len = u32::from_le_bytes(full[off + 4..off + 8].try_into().unwrap()) as usize;
+        let mut partial = full[..off + len].to_vec();
+        partial[16..24].copy_from_slice(&0u64.to_le_bytes());
+
+        let mut sr = StreamReader::open(&partial).unwrap();
+        assert!(!sr.is_sealed());
+        let mut count = 0usize;
+        while let Some(obj_off) = sr.poll_next_offset() {
+            assert_eq!(sr.get_i64_at(obj_off, "id"), Some(count as i64));
+            assert_eq!(sr.get_str_at(obj_off, "level"), Some(LEVELS[count % 4]));
+            assert_eq!(
+                sr.get_str_at(obj_off, "msg"),
+                Some(format!("event {count}").as_str())
+            );
+            count += 1;
+        }
+        assert_eq!(count, VISIBLE);
     }
 }

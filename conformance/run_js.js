@@ -2,7 +2,7 @@
 // NXS conformance runner for JavaScript (Node.js)
 // Usage: node conformance/run_js.js conformance/
 
-import { readFileSync, readdirSync } from "fs";
+import { existsSync, readFileSync, readdirSync } from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath, pathToFileURL } from "url";
 
@@ -10,7 +10,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const conformanceDir = process.argv[2] || join(__dirname);
 
 const drv = process.env.DRV || join(__dirname, "..", "..", "nyxis-drivers");
-const { NxsReader, NxsError } = await import(
+const { NxsReader, NxsStreamReader } = await import(
   pathToFileURL(join(drv, "js", "nxs.js")).href
 );
 
@@ -123,6 +123,55 @@ function runPositive(name, nxbPath, expected) {
   }
 }
 
+function recordFieldsMatch(obj, reader, ri, expRec) {
+  for (const [key, expVal] of Object.entries(expRec)) {
+    const slot = reader.keyIndex.get(key);
+    if (slot === undefined) {
+      throw new Error(`rec[${ri}].${key}: key not in schema`);
+    }
+    const sigilByte = reader.keySigils[slot];
+    let actual;
+    if (sigilByte === 0x3D) actual = obj.getI64BySlot(slot);
+    else if (sigilByte === 0x7E) actual = obj.getF64BySlot(slot);
+    else if (sigilByte === 0x3F) actual = obj.getBoolBySlot(slot);
+    else if (sigilByte === 0x22) actual = obj.getStrBySlot(slot);
+    else if (sigilByte === 0x40) actual = obj.getI64BySlot(slot);
+    else actual = obj.get(key);
+    if (expVal !== null && !valuesMatch(actual, expVal)) {
+      throw new Error(
+        `rec[${ri}].${key}: expected ${JSON.stringify(expVal)}, got ${JSON.stringify(actual)}`,
+      );
+    }
+  }
+}
+
+function runForwardStream(name, nxbPath, expected) {
+  const buf = readFileSync(nxbPath);
+  const seen = [];
+  const sr = new NxsStreamReader({
+    onRecord(obj, idx) {
+      seen.push({ idx, obj });
+    },
+  });
+  const chunk = 97;
+  for (let off = 0; off < buf.length; off += chunk) {
+    sr.push(buf.subarray(off, Math.min(off + chunk, buf.length)));
+  }
+  sr.endOfStream();
+  if (seen.length !== expected.record_count) {
+    throw new Error(
+      `forward_stream record_count: expected ${expected.record_count}, got ${seen.length}`,
+    );
+  }
+  for (let ri = 0; ri < expected.records.length; ri++) {
+    const { idx, obj } = seen[ri];
+    if (idx !== ri) {
+      throw new Error(`record index mismatch at ${ri}: got idx ${idx}`);
+    }
+    recordFieldsMatch(obj, sr, ri, expected.records[ri]);
+  }
+}
+
 function runNegative(name, nxbPath, expectedCode) {
   const buf = readFileSync(nxbPath);
   let caught = null;
@@ -142,30 +191,46 @@ function runNegative(name, nxbPath, expectedCode) {
 
 // ── Main ──────────────────────────────────────────────────────────────────────
 
-const entries = readdirSync(conformanceDir)
-  .filter(f => f.endsWith(".expected.json"))
-  .map(f => f.replace(".expected.json", ""))
-  .sort();
+function discoverVectors(root) {
+  const out = [];
+  const scan = (dir, prefix) => {
+    if (!existsSync(dir)) return;
+    for (const f of readdirSync(dir).filter((n) => n.endsWith(".expected.json")).sort()) {
+      const base = f.replace(".expected.json", "");
+      out.push({
+        label: prefix ? `${prefix}/${base}` : base,
+        dir,
+        base,
+      });
+    }
+  };
+  scan(root, "");
+  scan(join(root, "v13"), "v13");
+  return out;
+}
 
 let pass = 0, fail = 0;
 
-for (const name of entries) {
-  const jsonPath = join(conformanceDir, `${name}.expected.json`);
-  const nxbPath  = join(conformanceDir, `${name}.nxb`);
+for (const { label, dir, base } of discoverVectors(conformanceDir)) {
+  const jsonPath = join(dir, `${base}.expected.json`);
+  const nxbPath = join(dir, `${base}.nxb`);
 
   const expected = JSON.parse(readFileSync(jsonPath, "utf8"));
   const isNegative = "error" in expected;
+  const isForwardStream = expected.forward_stream === true;
 
   try {
     if (isNegative) {
-      runNegative(name, nxbPath, expected.error);
+      runNegative(label, nxbPath, expected.error);
+    } else if (isForwardStream) {
+      runForwardStream(label, nxbPath, expected);
     } else {
-      runPositive(name, nxbPath, expected);
+      runPositive(label, nxbPath, expected);
     }
-    console.log(`  PASS  ${name}`);
+    console.log(`  PASS  ${label}`);
     pass++;
   } catch (e) {
-    console.error(`  FAIL  ${name} — ${e.message}`);
+    console.error(`  FAIL  ${label} — ${e.message}`);
     fail++;
   }
 }

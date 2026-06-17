@@ -36,11 +36,12 @@ function initDemo(){
     const m = (path || "").match(/records_(\d+)\.nxb$/i);
     if (!m) return 0;
     const n = parseInt(m[1], 10);
-    if (n >= 10_000_000) return 830_000_000;
-    if (n >= 1_000_000) return 83_000_000;
-    if (n >= 100_000) return 8_300_000;
-    if (n >= 10_000) return 830_000;
-    if (n >= 1_000) return 81_000;
+    // v1.3 compact fixtures (observed on-disk sizes, with headroom).
+    if (n >= 10_000_000) return 910_000_000;
+    if (n >= 1_000_000) return 85_000_000;
+    if (n >= 100_000) return 8_500_000;
+    if (n >= 10_000) return 850_000;
+    if (n >= 1_000) return 85_000;
     return 0;
   }
 
@@ -498,14 +499,22 @@ function initDemo(){
   
   function applyStreamingProgress(name, receivedBytes, totalBytes) {
     streamExpectedBytes = totalBytes || receivedBytes;
+    activeFormat = "NXB (streaming)";
     if (recordCount > 0) {
       updateViewportMetrics(false);
       if (virtualHeight > 0) overlayEl.classList.add("hide");
       ensureRowPool();
+    } else if (totalBytes > 0 && receivedBytes < totalBytes) {
+      overlayEl.classList.remove("hide");
+      overlayEl.textContent =
+        `Loading ${name}… ${fmtBytes(receivedBytes)} / ${fmtBytes(totalBytes)}`;
     }
     const total = totalBytes > 0 ? ` — ${fmtBytes(receivedBytes)} / ${fmtBytes(totalBytes)}` : receivedBytes > 0 ? ` — ${fmtBytes(receivedBytes)} received` : "";
+    const recordsLabel = recordCount > 0
+      ? `${fmtInt(recordCount)} records parsed`
+      : "0 records parsed";
     fileInfoEl.innerHTML =
-      `<strong>${escapeHtml(name)}</strong> <span style="color:var(--warn)">(streaming)</span>${total} — ${fmtInt(recordCount)} records parsed`;
+      `<strong>${escapeHtml(name)}</strong> <span style="color:var(--warn)">(streaming)</span>${total} — ${recordsLabel}`;
     updateTelemetry();
     scheduleRender();
   }
@@ -529,9 +538,13 @@ function initDemo(){
       return buildColumnsFromSchema(r.keys, r.keySigils);
     }
     if (r.recordCount === 0) return [];
+    // v1.3 compact row: toObject() uses the v1.2 rank path — use embedded schema keys.
+    if (r.extSchema && r.keys?.length) {
+      return buildColumnsFromSchema(r.keys, r.keySigils);
+    }
     const present = r.record(0).toObject();
     const topKeys = Object.keys(present);
-  
+
     // Multi-record bench fixtures: flat fields on each record.
     if (r.recordCount > 1) {
       return topKeys.map(key => ({
@@ -689,17 +702,34 @@ function initDemo(){
     }
   }
 
+  function syncStreamCacheAccessor() {
+    if (!streamCacheAccessor || !streamReader) return;
+    streamCacheAccessor.keys = streamReader.keys;
+    streamCacheAccessor.keySigils = streamReader.keySigils;
+    streamCacheAccessor.keyIndex = streamReader.keyIndex;
+    streamCacheAccessor.flags = streamReader.flags;
+    streamCacheAccessor.version = streamReader.version;
+    streamCacheAccessor.extSchema = streamReader.extSchema ?? null;
+    streamCacheAccessor.cellPlan = streamReader.cellPlan ?? null;
+  }
+
   function ensureStreamCacheAccessor(totalBytes) {
-    if (!localNxbCache || streamCacheAccessor) return;
+    if (!localNxbCache || !streamReader) return;
     const fetchRange = (byteStart, byteLength) => localNxbCache.readRange(byteStart, byteLength);
-    streamCacheBytes = new SparseBytes(totalBytes || streamExpectedBytes || Number.MAX_SAFE_INTEGER, [], fetchRange);
-    streamCacheAccessor = {
-      bytes: streamCacheBytes.asIndexed(),
-      keys: streamReader.keys,
-      keySigils: streamReader.keySigils,
-      keyIndex: streamReader.keyIndex,
-      _layout: "row",
-    };
+    if (!streamCacheBytes) {
+      streamCacheBytes = new SparseBytes(
+        totalBytes || streamExpectedBytes || Number.MAX_SAFE_INTEGER,
+        [],
+        fetchRange,
+      );
+    }
+    if (!streamCacheAccessor) {
+      streamCacheAccessor = {
+        bytes: streamCacheBytes.asIndexed(),
+        _layout: "row",
+      };
+    }
+    syncStreamCacheAccessor();
   }
 
   function rdU32At(bytes, off) {
@@ -1195,6 +1225,7 @@ function initDemo(){
           if (gen !== loadGeneration) return;
           applyColumns(buildColumnsFromSchema(keys, keySigils));
           if (shouldCacheLocally) ensureStreamCacheAccessor(sizeBytes);
+          applyStreamingProgress(name, streamReceivedBytes, sizeBytes);
         },
         onRecord(obj, idx) {
           if (gen !== loadGeneration) return;
@@ -1253,12 +1284,8 @@ function initDemo(){
           sr.push(value);
         }
         if (done) break;
-        if ((received & 0xfffff) < value.byteLength || recordCount === 1) {
-          overlayEl.textContent =
-            `Loading ${name}… ${fmtBytes(received)}${sizeBytes ? ` / ${fmtBytes(sizeBytes)}` : ""} — ${fmtInt(recordCount)} records`;
-          if (recordCount > 0) {
-            applyStreamingProgress(name, received, sizeBytes);
-          }
+        if (!value?.byteLength || (received & 0xfffff) < value.byteLength || recordCount === 1) {
+          applyStreamingProgress(name, received, sizeBytes);
         }
       }
       if (gen !== loadGeneration) return;
@@ -1266,6 +1293,7 @@ function initDemo(){
       const totalBytes = sizeBytes || received;
       if (received <= STREAM_SEAL_BYTES) {
         reader = sr.finish();
+        recordCount = reader.recordCount;
         streamReader = null;
         recordOffsets = null;
         recordFileOffsets = null;
@@ -1284,6 +1312,7 @@ function initDemo(){
           overlayEl.textContent = `Loading ${name} from cache…`;
           reader = await openCachedNxbReader(writeCache, totalBytes);
           if (gen !== loadGeneration) return;
+          recordCount = reader.recordCount;
           activeFormat = "NXB (sparse IDB)";
           cursor = reader.cursor();
           rawBuffer = null;
