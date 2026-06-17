@@ -113,6 +113,10 @@ bits and `upgrade your nyxis driver to >= 1.3.0`.
 **Driver decode triage (launch):** tier-0 JavaScript (browser demos); tier-1 Go,
 Python, C; tier-2 Ruby, PHP, C#; tier-3 Kotlin, Swift (may trail with README note).
 
+`compact_streaming_unsealed` (`forward_stream: true`) is validated by the Rust
+reference reader and JavaScript runner only. Other v13 runners skip it until they
+implement `StreamReader` forward-decode.
+
 Cross-version logical equivalence (v1.2 row vs v1.3 `--compact` on the same data) is validated by
 field-by-field decode tests in the Rust reference reader, **not** by matching preamble `DictHash`
 (extended schema headers differ).

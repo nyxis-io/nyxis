@@ -244,6 +244,14 @@ def main():
         with open(json_path) as f:
             expected = json.load(f)
 
+        if expected.get("forward_stream") is True:
+            print(
+                f"  SKIP  {name} (forward_stream requires StreamReader; not implemented)",
+                file=sys.stderr,
+            )
+            skipped += 1
+            continue
+
         is_negative = "error" in expected
         backend = "cext" if _HAS_CEXT else "pure"
         try:

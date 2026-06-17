@@ -1069,7 +1069,6 @@ function initDemo(){
         if (rel !== null) {
           accessor = new NxsObject(streamReader, rel);
         } else if (streamCacheRecordReady(idx)) {
-          syncStreamCacheAccessor();
           accessor = new NxsObject(streamCacheAccessor, recordFileOffsetFor(idx));
         } else {
           return false; // record not yet resident — caller hides the row
